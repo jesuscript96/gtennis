@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.sqlite3
+db.sqlite3
+.env
+.env.local
+.env.*.local
+*.log
+
+# Django
+/backend/staticfiles/
+/backend/media/
+
+# Node / Next.js
+node_modules/
+/frontend/.next/
+/frontend/out/
+/frontend/.vercel/
+npm-debug.log*
+
+# Data (never commit real player data — GDPR)
+/data/*.xlsx
+*.xlsx
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

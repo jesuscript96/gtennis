@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a9c6dd"/>
+      <stop offset="60%" stop-color="#d7e2e6"/>
+      <stop offset="100%" stop-color="#f0e2c9"/>
+    </linearGradient>
+    <linearGradient id="clay" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#bd5e34"/>
+      <stop offset="100%" stop-color="#9c4426"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="86%" cy="30%" r="40%">
+      <stop offset="0%" stop-color="#fff4dc" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#fff4dc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vig" cx="50%" cy="46%" r="78%">
+      <stop offset="62%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.36"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <rect width="1600" height="600" fill="url(#sun)"/>
+
+  <!-- umbrella-pine canopies on the horizon -->
+  <g>
+    <ellipse cx="230" cy="360" rx="190" ry="70" fill="#3f6b44"/>
+    <ellipse cx="470" cy="372" rx="150" ry="58" fill="#4a7a4e"/>
+    <ellipse cx="700" cy="356" rx="210" ry="78" fill="#3a6440"/>
+    <ellipse cx="980" cy="368" rx="180" ry="64" fill="#477551"/>
+    <ellipse cx="1240" cy="358" rx="200" ry="74" fill="#3f6b46"/>
+    <ellipse cx="1470" cy="372" rx="170" ry="60" fill="#4a7a4e"/>
+    <rect x="0" y="392" width="1600" height="22" fill="#34593a"/>
+  </g>
+
+  <!-- clay surface -->
+  <rect x="0" y="404" width="1600" height="596" fill="url(#clay)"/>
+
+  <!-- court lines (perspective) -->
+  <g stroke="#f1ede4" stroke-opacity="0.9" fill="none" stroke-linecap="round">
+    <line x1="650" y1="414" x2="170" y2="1000" stroke-width="3"/>
+    <line x1="950" y1="414" x2="1430" y2="1000" stroke-width="3"/>
+    <line x1="650" y1="414" x2="950" y2="414" stroke-width="3"/>
+    <line x1="170" y1="1000" x2="1430" y2="1000" stroke-width="6"/>
+    <line x1="540" y1="566" x2="1060" y2="566" stroke-width="3"/>
+    <line x1="800" y1="566" x2="800" y2="654" stroke-width="3"/>
+    <line x1="800" y1="414" x2="800" y2="430" stroke-width="3"/>
+    <line x1="800" y1="980" x2="800" y2="1000" stroke-width="6"/>
+  </g>
+
+  <!-- net -->
+  <g>
+    <line x1="470" y1="654" x2="470" y2="590" stroke="#274030" stroke-width="7"/>
+    <line x1="1130" y1="654" x2="1130" y2="590" stroke="#274030" stroke-width="7"/>
+    <polygon points="470,592 1130,592 1130,654 470,654" fill="#1f3326" opacity="0.5"/>
+    <line x1="470" y1="592" x2="1130" y2="592" stroke="#f1ede4" stroke-width="5" stroke-opacity="0.95"/>
+    <g stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.4">
+      <line x1="560" y1="592" x2="560" y2="654"/>
+      <line x1="660" y1="592" x2="660" y2="654"/>
+      <line x1="760" y1="592" x2="760" y2="654"/>
+      <line x1="860" y1="592" x2="860" y2="654"/>
+      <line x1="960" y1="592" x2="960" y2="654"/>
+      <line x1="1050" y1="592" x2="1050" y2="654"/>
+    </g>
+  </g>
+
+  <rect width="1600" height="1000" fill="url(#vig)"/>
+</svg>

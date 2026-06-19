@@ -1,0 +1,68 @@
+# Render blueprint — all services in Frankfurt (EU) for GDPR (player health data).
+# Frontend deploys separately on Vercel (root directory: frontend/).
+services:
+  - type: web
+    name: gtenis-api
+    runtime: docker
+    rootDir: backend
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /admin/login/
+    preDeployCommand: python manage.py migrate
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "false"
+      - key: ALLOWED_HOSTS
+        value: .onrender.com
+      - key: DATABASE_URL
+        fromDatabase: { name: gtenis-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: gtenis-redis, type: redis, property: connectionString }
+
+  - type: worker
+    name: gtenis-worker
+    runtime: docker
+    rootDir: backend
+    region: frankfurt
+    dockerCommand: celery -A config worker -l info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: gtenis-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: gtenis-redis, type: redis, property: connectionString }
+
+  # The 5 PM Rule (PRD §07) as scheduled cron jobs.
+  - type: cron
+    name: gtenis-generar-domingo
+    runtime: docker
+    rootDir: backend
+    region: frankfurt
+    schedule: "0 9 * * 0"
+    dockerCommand: python manage.py shell -c "from scheduling.tasks import generate_next_week_draft as f; f()"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: gtenis-db, property: connectionString }
+
+  - type: cron
+    name: gtenis-alerta-viernes
+    runtime: docker
+    rootDir: backend
+    region: frankfurt
+    schedule: "30 16 * * 5"
+    dockerCommand: python manage.py shell -c "from scheduling.tasks import alert_empty_availability as f; f()"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: gtenis-db, property: connectionString }
+
+  - type: redis
+    name: gtenis-redis
+    region: frankfurt
+    plan: starter
+    ipAllowList: []
+
+databases:
+  - name: gtenis-db
+    region: frankfurt
+    plan: basic-256mb
