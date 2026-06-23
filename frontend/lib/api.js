@@ -30,10 +30,11 @@ async function req(path, opts = {}) {
   }
   if (!res.ok) {
     let detail;
+    const txt = await res.text();
     try {
-      detail = await res.json();
+      detail = JSON.parse(txt);
     } catch {
-      detail = await res.text();
+      detail = txt;
     }
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
