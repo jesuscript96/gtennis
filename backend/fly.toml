@@ -1,0 +1,40 @@
+# fly.toml app configuration file generated for gtennis-api-jesus on 2026-06-19T14:52:28-06:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'gtennis-api-jesus'
+primary_region = 'fra'
+console_command = '/code/manage.py shell'
+
+[build]
+
+[deploy]
+  release_command = 'sh -c "python manage.py migrate --noinput && python manage.py seed_base"'
+
+[env]
+  PORT = '8000'
+  ALLOWED_HOSTS = 'gtennis-api-jesus.fly.dev,localhost,127.0.0.1'
+  DEBUG = 'false'
+
+[processes]
+  app = 'gunicorn --bind :8000 --workers 2 config.wsgi'
+  celery = 'celery -A config worker --loglevel=INFO'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024
+
+[[statics]]
+  guest_path = '/code/static'
+  url_prefix = '/static/'

@@ -10,4 +10,5 @@ router.register("asignaciones", views.AsignacionViewSet)
 
 urlpatterns = router.urls + [
     path("configuracion/", views.ConfiguracionView.as_view()),
+    path("ahora/", views.AhoraView.as_view()),
 ]

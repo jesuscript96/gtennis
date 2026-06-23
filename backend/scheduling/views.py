@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from django.utils import timezone as djtz
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,13 +9,34 @@ from rest_framework.views import APIView
 from academy.models import Sede, Turno
 from engine.service import generate, regenerate_afternoon
 
-from .models import Asignacion, ConfiguracionMotor, Disponibilidad, Semana
+from .models import DIAS, Asignacion, ConfiguracionMotor, Disponibilidad, Semana
 from .serializers import (
     AsignacionSerializer,
     ConfiguracionMotorSerializer,
     DisponibilidadSerializer,
     SemanaSerializer,
 )
+
+
+def _sedes_payload():
+    return [
+        {
+            "id": s.id,
+            "nombre": s.nombre,
+            "es_satelite": s.es_satelite,
+            "densidad_default": s.densidad_default,
+            "pistas": [{"id": p.id, "numero": p.numero} for p in s.pistas.all()],
+        }
+        for s in Sede.objects.filter(activa=True).prefetch_related("pistas")
+    ]
+
+
+def _turnos_payload():
+    return [
+        {"id": t.id, "codigo": t.codigo, "bloque": t.bloque,
+         "hora_inicio": t.hora_inicio, "hora_fin": t.hora_fin}
+        for t in Turno.objects.all()
+    ]
 
 
 class ConfiguracionView(APIView):
@@ -33,9 +55,79 @@ class ConfiguracionView(APIView):
         return Response(s.data)
 
 
+class AhoraView(APIView):
+    """Live 'NOW' view: resolves the current day/shift in Europe/Madrid and
+    returns the courts to render for that moment."""
+
+    def get(self, request):
+        now = djtz.localtime()
+        dia = now.weekday()  # 0=Mon .. 6=Sun
+        t = now.time()
+        turnos = list(Turno.objects.all().order_by("orden"))
+        actual = proximo = None
+        mins = None
+        if dia <= 5:
+            for tr in turnos:
+                if tr.hora_inicio <= t <= tr.hora_fin:
+                    actual = tr
+                    break
+            if actual is None:
+                for tr in turnos:
+                    if t < tr.hora_inicio:
+                        proximo = tr
+                        delta = (datetime.combine(now.date(), tr.hora_inicio)
+                                 - datetime.combine(now.date(), t))
+                        mins = int(delta.total_seconds() // 60)
+                        break
+        mostrado = actual or proximo
+        status = "en_curso" if actual else ("proximo" if proximo else "cerrado")
+
+        monday = now.date() - timedelta(days=dia)
+        semana = Semana.objects.filter(fecha_inicio=monday).first()
+        asignaciones = []
+        if semana and mostrado and dia <= 5:
+            qs = (
+                Asignacion.objects.filter(semana=semana, dia=dia, turno=mostrado)
+                .select_related("jugador", "jugador__division", "entrenador",
+                                "turno", "pista", "pista__sede")
+            )
+            asignaciones = AsignacionSerializer(qs, many=True).data
+
+        return Response({
+            "status": status,
+            "ahora": now.strftime("%H:%M"),
+            "dia": dia,
+            "dia_nombre": dict(DIAS).get(dia, "Domingo"),
+            "turno_actual": {"codigo": actual.codigo} if actual else None,
+            "proximo": {"codigo": proximo.codigo, "en_minutos": mins} if proximo else None,
+            "turno_mostrado": mostrado.codigo if mostrado else None,
+            "semana": SemanaSerializer(semana).data if semana else None,
+            "sedes": _sedes_payload(),
+            "turnos": _turnos_payload(),
+            "asignaciones": asignaciones,
+        })
+
+
 class SemanaViewSet(viewsets.ModelViewSet):
     queryset = Semana.objects.all()
     serializer_class = SemanaSerializer
+
+    @action(detail=True, methods=["get"])
+    def tabla(self, request, pk=None):
+        """All assignments of the week, for the structured weekly tables."""
+        semana = self.get_object()
+        qs = (
+            Asignacion.objects.filter(semana=semana)
+            .select_related("jugador", "jugador__division", "entrenador",
+                            "turno", "pista", "pista__sede")
+        )
+        return Response({
+            "semana": SemanaSerializer(semana).data,
+            "dias": [{"idx": i, "nombre": n} for i, n in DIAS],
+            "turnos": _turnos_payload(),
+            "sedes": _sedes_payload(),
+            "asignaciones": AsignacionSerializer(qs, many=True).data,
+        })
 
     @action(detail=True, methods=["post"])
     def generar(self, request, pk=None):
