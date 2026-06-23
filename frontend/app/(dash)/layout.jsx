@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getToken } from "../../lib/api";
 import Sidebar from "../../components/Sidebar";
+import SettingsMenu from "../../components/SettingsMenu";
 
 export default function DashLayout({ children }) {
   const router = useRouter();
@@ -19,7 +20,12 @@ export default function DashLayout({ children }) {
   return (
     <div className="shell">
       <Sidebar />
-      <main className="content">{children}</main>
+      <main className="content">
+        <div className="topbar">
+          <SettingsMenu align="right" />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

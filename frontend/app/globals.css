@@ -37,10 +37,11 @@ body {
 a { color: inherit; text-decoration: none; }
 
 /* ---- App shell ---- */
-.shell { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 248px 1fr; height: 100vh; }
 .sidebar {
   background: var(--bg-sidebar); border-right: 1px solid var(--border);
   padding: 22px 14px; display: flex; flex-direction: column;
+  height: 100vh; position: sticky; top: 0;
 }
 .sidebar .brand { font-family: var(--font-serif); font-size: 22px; font-weight: 500; padding: 4px 12px 22px; }
 .sidebar .brand span { color: var(--accent); }
@@ -226,3 +227,114 @@ table.grid th { text-align: left; color: var(--muted); font-weight: 500; font-si
 .mac-help-btn:hover { background: rgba(26,28,28,0.62); }
 .login-hint { margin: 3px 0 0; max-width: 230px; font-size: 12.5px; line-height: 1.45; color: rgba(255,255,255,0.84); text-shadow: 0 1px 8px rgba(0,0,0,0.5); }
 .login-error { color: #ffd7d2; font-size: 12.5px; text-shadow: 0 1px 8px rgba(0,0,0,0.55); margin: 3px 0 0; }
+
+/* ============ NOW / pistas visuales ============ */
+.now-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.now-status { display: flex; align-items: baseline; gap: 14px; }
+.now-clock { font-family: var(--font-serif); font-size: 30px; font-weight: 500; }
+.now-turno { font-size: 14px; color: var(--muted); }
+.now-turno b { color: var(--text); font-weight: 500; }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--st-disponible); margin-right: 6px; }
+.now-tabs { display: inline-flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
+.now-tabs button { border: none; background: transparent; padding: 7px 16px; border-radius: 999px; font-size: 13px; cursor: pointer; color: var(--muted); }
+.now-tabs button.active { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.turno-chips { display: inline-flex; gap: 6px; }
+.turno-chips button { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 5px 11px; font-size: 12px; cursor: pointer; color: var(--muted); }
+.turno-chips button.active { background: #eae6dd; color: var(--text); font-weight: 500; }
+
+.sede-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 22px 0 12px; }
+.court-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 16px; }
+
+.court { border-radius: 14px; border: 1px solid var(--border); overflow: hidden; background: var(--surface); }
+.court.is-empty { opacity: 0.72; }
+.court-top { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; }
+.court-name { font-size: 13px; font-weight: 500; }
+.court-state { font-size: 10px; padding: 2px 9px; border-radius: 999px; color: #fff; }
+
+/* --- modo cancha (SVG cenital) --- */
+.court-cancha .court-field { position: relative; width: 100%; aspect-ratio: 4 / 3; }
+.court-cancha .court-field svg { display: block; width: 100%; height: 100%; }
+.court-av { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 2px; z-index: 2; }
+.court-av .nm { font-size: 9px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.75); max-width: 66px; text-align: center; line-height: 1.05; }
+.court-free { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.9); font-size: 13px; z-index: 2; }
+
+/* --- modo foto --- */
+.court-foto .court-field {
+  position: relative; width: 100%; aspect-ratio: 4 / 3;
+  background: url(/pista.jpeg) center/cover no-repeat, #2b2b2b;
+}
+.court-foto .court-field::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0.05) 45%, rgba(0,0,0,0.34) 100%); z-index: 1; }
+.court-foto .court-free { z-index: 2; }
+/* Las bolitas (jugadores/coach) van posicionadas sobre la foto, igual que en modo cancha. */
+.court-av .avatar { box-shadow: 0 1px 5px rgba(0,0,0,0.5); }
+.court-coach .nm { color: rgba(255,255,255,0.88); }
+
+/* ---- Barra superior (tuerca arriba-derecha) ---- */
+.topbar { display: flex; justify-content: flex-end; align-items: center; margin: -8px 0 14px; min-height: 28px; }
+
+/* ---- Menú de administración (tuerca) ---- */
+.settings-menu { position: relative; display: inline-flex; }
+.gear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px; cursor: pointer;
+  background: var(--surface); color: var(--muted); border: 1px solid var(--border-strong);
+}
+.gear:hover { background: #f3f1ec; color: var(--text); }
+.gear.active { color: var(--accent); border-color: var(--accent); }
+.settings-pop {
+  position: absolute; z-index: 60; min-width: 210px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 6px; box-shadow: 0 12px 40px rgba(31,30,29,0.16);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.settings-pop.down { top: calc(100% + 8px); }
+.settings-pop.up { bottom: calc(100% + 8px); }
+.settings-pop.right { right: 0; }
+.settings-pop.left { left: 0; }
+.settings-pop-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted); padding: 6px 10px 4px;
+}
+.settings-pop a { padding: 8px 10px; border-radius: 8px; color: var(--text); font-size: 14px; }
+.settings-pop a:hover { background: #efece5; }
+.settings-pop a.active { background: #eae6dd; font-weight: 500; }
+
+/* ---- Pie del sidebar con tuerca ---- */
+.sidebar .user-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sidebar .user-id { min-width: 0; }
+
+/* ---- Tablero de la semana ---- */
+.week-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.week-board {
+  display: flex; gap: 14px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start;
+}
+.week-col {
+  flex: 1 0 230px; min-width: 230px; max-width: 320px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+}
+.week-col-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 4px 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px;
+}
+.week-col-head .wk-day { font-weight: 500; font-size: 14px; }
+.week-col-head .wk-count {
+  font-size: 11px; color: var(--muted); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px;
+}
+.wk-empty { color: var(--muted); font-size: 13px; padding: 6px 4px; }
+.week-turno { margin-bottom: 12px; }
+.wk-turno-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted); margin: 0 0 6px 2px;
+}
+.wk-session {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 9px; margin-bottom: 7px;
+}
+.wk-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 7px; }
+.wk-head .wk-pista { font-size: 12px; font-weight: 600; }
+.wk-head .wk-sede { font-size: 11px; color: var(--muted); }
+.wk-players { display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.wk-av { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 42px; }
+.wk-av .nm { font-size: 9px; color: var(--muted); text-align: center; line-height: 1.05; max-width: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-av.coach .nm { color: var(--text); }

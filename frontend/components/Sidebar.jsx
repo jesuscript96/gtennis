@@ -3,20 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getUser, logout } from "../lib/api";
+import SettingsMenu from "./SettingsMenu";
 
 const NAV = [
-  ["/", "Panel"],
-  ["/cuadrante", "Cuadrante"],
+  ["/", "Inicio"],
+  ["/cuadrante", "Cuadrante (día)"],
+  ["/semana", "Semana"],
   ["/ausencias", "Ausencias y estados"],
   ["/semanas", "Semanas"],
   ["/jugadores", "Jugadores"],
   ["/entrenadores", "Entrenadores"],
-  ["/sedes", "Sedes"],
-  ["/pistas", "Pistas"],
-  ["/divisiones", "Divisiones"],
-  ["/rencillas", "Rencillas"],
-  ["/contratos", "Contratos"],
-  ["/configuracion", "Criterios del motor"],
 ];
 
 export default function Sidebar() {
@@ -40,8 +36,13 @@ export default function Sidebar() {
         ))}
       </nav>
       <div className="user">
-        <div className="name">{user?.nombre || user?.username || "—"}</div>
-        <div className="role">{user?.is_superadmin ? "Super Admin" : "Entrenador"}</div>
+        <div className="user-row">
+          <div className="user-id">
+            <div className="name">{user?.nombre || user?.username || "—"}</div>
+            <div className="role">{user?.is_superadmin ? "Super Admin" : "Entrenador"}</div>
+          </div>
+          <SettingsMenu align="left" up />
+        </div>
         <button onClick={onLogout}>Cerrar sesión</button>
       </div>
     </aside>

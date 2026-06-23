@@ -79,3 +79,6 @@ export const publicarSemana = (id) =>
 export const getConfig = () => req("/configuracion/");
 export const saveConfig = (body) =>
   req("/configuracion/", { method: "PATCH", body: JSON.stringify(body) });
+
+export const getAhora = () => req("/ahora/");
+export const getTabla = (id) => req(`/semanas/${id}/tabla/`);
