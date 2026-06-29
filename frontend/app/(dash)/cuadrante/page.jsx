@@ -8,6 +8,7 @@ import {
   generarSemana,
   regenerarTarde,
   publicarSemana,
+  swapAsignacion,
 } from "../../../lib/api";
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -27,6 +28,28 @@ const LEYENDA = [
   ["Climatología", "var(--st-clima)"],
   ["Ausencia coach", "var(--st-coach)"],
 ];
+
+function onDragStart(e, id, kind) {
+  e.dataTransfer.setData("application/json", JSON.stringify({ id, kind }));
+  e.dataTransfer.effectAllowed = "move";
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add("drop-ok");
+}
+function onDragLeave(e) {
+  e.currentTarget.classList.remove("drop-ok");
+}
+function makeDrop(targetId, kind, onSwap) {
+  return (e) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove("drop-ok");
+    let src;
+    try { src = JSON.parse(e.dataTransfer.getData("application/json")); } catch { return; }
+    if (!src || src.kind !== kind || src.id === targetId) return;
+    onSwap(src.id, targetId, kind);
+  };
+}
 
 export default function CuadrantePage() {
   const [semanaId, setSemanaId] = useState(null);
@@ -67,6 +90,15 @@ export default function CuadrantePage() {
     }
   }
 
+  async function onSwap(aId, bId, kind) {
+    try {
+      await swapAsignacion(aId, bId, kind);
+      await load(semanaId, dia);
+    } catch (e) {
+      setError(String(e.message || e));
+    }
+  }
+
   if (error) return <div><p className="err">{error}</p></div>;
   if (!data) return <p className="msg">Cargando cuadrante…</p>;
 
@@ -99,6 +131,8 @@ export default function CuadrantePage() {
         </button>
       </div>
 
+      <p className="dnd-hint">Arrastra un jugador sobre otro para intercambiarlos. Lo mismo con los entrenadores.</p>
+
       <table className="grid">
         <thead>
           <tr>
@@ -108,7 +142,7 @@ export default function CuadrantePage() {
         </thead>
         <tbody>
           {data.sedes.map((sede) => (
-            <SedeBlock key={sede.id} sede={sede} turnos={data.turnos} cellMap={cellMap} />
+            <SedeBlock key={sede.id} sede={sede} turnos={data.turnos} cellMap={cellMap} onSwap={onSwap} />
           ))}
         </tbody>
       </table>
@@ -122,7 +156,7 @@ export default function CuadrantePage() {
   );
 }
 
-function SedeBlock({ sede, turnos, cellMap }) {
+function SedeBlock({ sede, turnos, cellMap, onSwap }) {
   return (
     <>
       <tr className="sede-row">
@@ -131,20 +165,29 @@ function SedeBlock({ sede, turnos, cellMap }) {
       {sede.pistas.map((p) => (
         <tr key={p.id}>
           <td className="pista-label">P{p.numero}</td>
-          {turnos.map((t) => <Cell key={t.id} items={cellMap[`${p.id}_${t.id}`]} />)}
+          {turnos.map((t) => <Cell key={t.id} items={cellMap[`${p.id}_${t.id}`]} onSwap={onSwap} />)}
         </tr>
       ))}
     </>
   );
 }
 
-function Cell({ items }) {
+function Cell({ items, onSwap }) {
   if (!items || items.length === 0) return <td className="cell empty" />;
   const color = ESTADO_COLOR[items[0].estado] || "var(--glass-border)";
   return (
     <td className="cell" style={{ borderLeftColor: color }}>
       {items.map((a) => (
-        <div className="player" key={a.id}>
+        <div
+          className="player dnd"
+          key={a.id}
+          draggable
+          onDragStart={(e) => onDragStart(e, a.id, "jugador")}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={makeDrop(a.id, "jugador", onSwap)}
+          title="Arrastra para intercambiar"
+        >
           <Avatar nombre={a.jugador_nombre} fotoUrl={a.jugador_foto} kind="player" />
           <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
           <span>{a.jugador_nombre}</span>
@@ -152,7 +195,15 @@ function Cell({ items }) {
         </div>
       ))}
       {items[0].entrenador_nombre ? (
-        <div className="coach">
+        <div
+          className="coach dnd"
+          draggable
+          onDragStart={(e) => onDragStart(e, items[0].id, "entrenador")}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={makeDrop(items[0].id, "entrenador", onSwap)}
+          title="Arrastra para intercambiar entrenador"
+        >
           <Avatar nombre={items[0].entrenador_nombre} fotoUrl={items[0].entrenador_foto} kind="coach" />
           {items[0].entrenador_nombre}
         </div>

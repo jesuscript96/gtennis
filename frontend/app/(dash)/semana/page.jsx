@@ -1,8 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getLatestSemana, getTabla } from "../../../lib/api";
+import { getLatestSemana, getTabla, swapAsignacion } from "../../../lib/api";
 import Avatar from "../../../components/Avatar";
+
+function onDragStart(e, id, kind) {
+  e.dataTransfer.setData("application/json", JSON.stringify({ id, kind }));
+  e.dataTransfer.effectAllowed = "move";
+}
+function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add("drop-ok"); }
+function onDragLeave(e) { e.currentTarget.classList.remove("drop-ok"); }
+function makeDrop(targetId, kind, onSwap) {
+  return (e) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove("drop-ok");
+    let src;
+    try { src = JSON.parse(e.dataTransfer.getData("application/json")); } catch { return; }
+    if (!src || src.kind !== kind || src.id === targetId) return;
+    onSwap(src.id, targetId, kind);
+  };
+}
 
 const ESTADO_COLOR = {
   DISPONIBLE: "var(--st-disponible)",
@@ -32,13 +49,14 @@ function buildSessions(asignaciones) {
     });
     s.players.push({
       id: a.jugador,
+      asignacion: a.id,
       nombre: a.jugador_nombre,
       foto: a.jugador_foto,
       division: a.division_nivel,
       estado: a.estado,
     });
     if (a.entrenador && !s.coach) {
-      s.coach = { id: a.entrenador, nombre: a.entrenador_nombre, foto: a.entrenador_foto };
+      s.coach = { id: a.entrenador, asignacion: a.id, nombre: a.entrenador_nombre, foto: a.entrenador_foto };
     }
   }
   return byDia;
@@ -46,6 +64,7 @@ function buildSessions(asignaciones) {
 
 export default function SemanaPage() {
   const [data, setData] = useState(null);
+  const [semanaId, setSemanaId] = useState(null);
   const [error, setError] = useState(null);
 
   const [sede, setSede] = useState("");
@@ -58,12 +77,22 @@ export default function SemanaPage() {
       try {
         const s = await getLatestSemana();
         if (!s) return setError("No hay semanas. Crea y genera una en Semanas.");
+        setSemanaId(s.id);
         setData(await getTabla(s.id));
       } catch (e) {
         setError(String(e.message || e));
       }
     })();
   }, []);
+
+  async function onSwap(aId, bId, kind) {
+    try {
+      await swapAsignacion(aId, bId, kind);
+      if (semanaId) setData(await getTabla(semanaId));
+    } catch (e) {
+      setError(String(e.message || e));
+    }
+  }
 
   const sessions = useMemo(() => (data ? buildSessions(data.asignaciones) : {}), [data]);
 
@@ -186,7 +215,7 @@ export default function SemanaPage() {
                         {byTurno[t.codigo]
                           .sort((a, b) => a.sede.localeCompare(b.sede) || a.pista_numero - b.pista_numero)
                           .map((s) => (
-                            <Session key={s.key} s={s} />
+                            <Session key={s.key} s={s} onSwap={onSwap} />
                           ))}
                       </div>
                     ))
@@ -200,7 +229,7 @@ export default function SemanaPage() {
   );
 }
 
-function Session({ s }) {
+function Session({ s, onSwap }) {
   const color = ESTADO_COLOR[s.players[0]?.estado] || "var(--border-strong)";
   return (
     <div className="wk-session" style={{ borderLeft: `3px solid ${color}` }}>
@@ -210,13 +239,31 @@ function Session({ s }) {
       </div>
       <div className="wk-players">
         {s.players.map((p) => (
-          <div className="wk-av" key={p.id} title={p.nombre}>
+          <div
+            className="wk-av dnd"
+            key={p.id}
+            title={`${p.nombre} · arrastra para intercambiar`}
+            draggable
+            onDragStart={(e) => onDragStart(e, p.asignacion, "jugador")}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={makeDrop(p.asignacion, "jugador", onSwap)}
+          >
             <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
             <span className="nm">{first(p.nombre)}</span>
           </div>
         ))}
         {s.coach && (
-          <div className="wk-av coach" key={`c-${s.coach.id}`} title={`Coach: ${s.coach.nombre}`}>
+          <div
+            className="wk-av coach dnd"
+            key={`c-${s.coach.id}`}
+            title={`Coach: ${s.coach.nombre} · arrastra para intercambiar`}
+            draggable
+            onDragStart={(e) => onDragStart(e, s.coach.asignacion, "entrenador")}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={makeDrop(s.coach.asignacion, "entrenador", onSwap)}
+          >
             <Avatar nombre={s.coach.nombre} fotoUrl={s.coach.foto} kind="coach" />
             <span className="nm">{first(s.coach.nombre)}</span>
           </div>

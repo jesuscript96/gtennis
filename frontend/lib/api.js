@@ -83,3 +83,5 @@ export const saveConfig = (body) =>
 
 export const getAhora = () => req("/ahora/");
 export const getTabla = (id) => req(`/semanas/${id}/tabla/`);
+export const swapAsignacion = (a, b, campo) =>
+  req("/asignaciones/swap/", { method: "POST", body: JSON.stringify({ a, b, campo }) });

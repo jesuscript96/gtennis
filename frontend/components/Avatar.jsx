@@ -13,7 +13,7 @@ function initials(nombre) {
 // kind: "player" (borde dorado) | "coach" (borde negro)
 export default function Avatar({ nombre, fotoUrl, kind = "player" }) {
   if (fotoUrl) {
-    return <img className={`avatar ${kind}`} src={fotoUrl} alt={nombre || ""} title={nombre} />;
+    return <img className={`avatar ${kind}`} src={fotoUrl} alt={nombre || ""} title={nombre} draggable={false} />;
   }
   return (
     <span className={`avatar ${kind}`} title={nombre}>

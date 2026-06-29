@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAhora, getCuadrante } from "../lib/api";
 import CourtCard from "./CourtCard";
+import { CENTRAL_COLS, isCentral, modeForSurface, surfaceOf } from "../lib/clublayout";
 
 export default function NowView() {
   const [meta, setMeta] = useState(null);
   const [day, setDay] = useState(null);
-  const [mode, setMode] = useState("cancha");
+  const [mode, setMode] = useState("club");
   const [override, setOverride] = useState(null);
   const [error, setError] = useState(null);
 
@@ -36,6 +37,20 @@ export default function NowView() {
   const byPista = {};
   for (const a of asig) (byPista[a.pista] ||= []).push(a);
 
+  const courtFor = (p, defaultSurfaceMode) => {
+    const items = byPista[p.id] || [];
+    const players = items.map((a) => ({
+      id: a.jugador, nombre: a.jugador_nombre, foto: a.jugador_foto,
+      division: a.division_nivel, estado: a.estado,
+    }));
+    const c = items.find((a) => a.entrenador_nombre);
+    const coach = c ? { nombre: c.entrenador_nombre, foto: c.entrenador_foto } : null;
+    const cardMode = mode === "club" ? defaultSurfaceMode : mode;
+    return (
+      <CourtCard key={p.id} pista={{ label: `Pista ${p.numero}` }} players={players} coach={coach} mode={cardMode} />
+    );
+  };
+
   const statusEl =
     meta.status === "en_curso" ? (
       <span className="now-turno"><span className="live-dot" />En curso · {meta.dia_nombre} · turno <b>{meta.turno_actual.codigo}</b></span>
@@ -53,8 +68,9 @@ export default function NowView() {
           {statusEl}
         </div>
         <div className="now-tabs">
-          <button className={mode === "cancha" ? "active" : ""} onClick={() => setMode("cancha")}>Vista cancha</button>
-          <button className={mode === "foto" ? "active" : ""} onClick={() => setMode("foto")}>Vista foto</button>
+          <button className={mode === "club" ? "active" : ""} onClick={() => setMode("club")}>Club</button>
+          <button className={mode === "cancha" ? "active" : ""} onClick={() => setMode("cancha")}>Cancha</button>
+          <button className={mode === "foto" ? "active" : ""} onClick={() => setMode("foto")}>Foto</button>
         </div>
       </div>
 
@@ -73,32 +89,36 @@ export default function NowView() {
       {!meta.semana ? (
         <p className="msg">No hay cuadrante para esta semana. Genera una en Semanas.</p>
       ) : (
-        meta.sedes.map((sede) => (
-          <div key={sede.id}>
-            <div className="sede-title">{sede.nombre}{sede.es_satelite ? " · satélite" : ""}</div>
-            <div className="court-grid">
-              {sede.pistas.map((p) => {
-                const items = byPista[p.id] || [];
-                const players = items.map((a) => ({
-                  id: a.jugador, nombre: a.jugador_nombre, foto: a.jugador_foto,
-                  division: a.division_nivel, estado: a.estado,
-                }));
-                const c = items.find((a) => a.entrenador_nombre);
-                const coach = c ? { nombre: c.entrenador_nombre, foto: c.entrenador_foto } : null;
-                return (
-                  <CourtCard
-                    key={p.id}
-                    pista={{ label: `Pista ${p.numero}` }}
-                    players={players}
-                    coach={coach}
-                    mode={mode}
-                  />
-                );
-              })}
+        meta.sedes.map((sede) => {
+          const central = isCentral(sede.nombre);
+          const byNum = {};
+          for (const p of sede.pistas) byNum[p.numero] = p;
+          return (
+            <div key={sede.id}>
+              <div className="sede-title">{sede.nombre}{sede.es_satelite ? " · satélite" : ""}</div>
+              {central ? (
+                <div className="club">
+                  {CENTRAL_COLS.map((col, ci) => (
+                    <div key={ci} className={`club-col ${ci === 0 ? "left" : ""}`}>
+                      {col.map((num) => {
+                        const p = byNum[num];
+                        if (!p) return null;
+                        return courtFor(p, modeForSurface(surfaceOf(num)));
+                      })}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="court-grid">
+                  {sede.pistas.map((p) => courtFor(p, "cancha"))}
+                </div>
+              )}
             </div>
-          </div>
-        ))
+          );
+        })
       )}
+
+      <div className="club-entrada">Entrada · estás aquí</div>
     </div>
   );
 }

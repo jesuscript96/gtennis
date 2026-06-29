@@ -205,3 +205,45 @@ class AsignacionViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(manual=True)
+
+    @action(detail=False, methods=["post"])
+    def swap(self, request):
+        """Drag & drop swap between two cells. campo='jugador' swaps the two
+        players (row-level); campo='entrenador' swaps the coach of the two
+        courts (all rows of each pista/turno)."""
+        from django.db import transaction
+        from academy.models import Jugador
+
+        a_id = request.data.get("a")
+        b_id = request.data.get("b")
+        campo = request.data.get("campo", "jugador")
+        with transaction.atomic():
+            A = Asignacion.objects.select_for_update().get(pk=a_id)
+            B = Asignacion.objects.select_for_update().get(pk=b_id)
+
+            if campo == "entrenador":
+                ca, cb = A.entrenador_id, B.entrenador_id
+                Asignacion.objects.filter(
+                    semana=A.semana, dia=A.dia, turno=A.turno, pista=A.pista
+                ).update(entrenador=cb, manual=True)
+                Asignacion.objects.filter(
+                    semana=B.semana, dia=B.dia, turno=B.turno, pista=B.pista
+                ).update(entrenador=ca, manual=True)
+            else:
+                ja, jb = A.jugador_id, B.jugador_id
+                if ja != jb:
+                    # Park A on a free player so the unique (semana,dia,turno,
+                    # jugador) constraint never clashes mid-swap.
+                    used = set(
+                        Asignacion.objects.filter(
+                            semana=A.semana, dia=A.dia, turno=A.turno
+                        ).values_list("jugador_id", flat=True)
+                    )
+                    temp = (
+                        Jugador.objects.exclude(id__in=used | {ja, jb})
+                        .values_list("id", flat=True).first()
+                    ) or jb
+                    A.jugador_id = temp; A.manual = True; A.save()
+                    B.jugador_id = ja; B.manual = True; B.save()
+                    A.jugador_id = jb; A.save()
+        return Response({"ok": True})
