@@ -26,6 +26,7 @@ class Player:
     id: int
     division: int | None = None          # None = not yet classified (wildcard)
     sponsor_coach_id: int | None = None
+    priority: int = 1                    # higher = more likely to be assigned
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class PairingInput:
     # Tunable criteria (read from ConfiguracionMotor). Defaults = current values.
     w_assign: int = 1000
     w_satellite: int = 5
+    w_central: int = 100
     w_repeat: int = 10
     apply_neighbor: bool = True
 
@@ -110,9 +112,13 @@ def solve_pairing(data: PairingInput) -> PairingResult:
 
     # --- Objective ---------------------------------------------------------
     terms = []
-    # 1) Maximise assigned players (dominant term).
+    # 1) Maximise assigned players, weighted by division/state priority.
+    #    Bonus per player on central (non-satellite) courts ensures the
+    #    GTennis academy courts fill first.
     for p in players:
-        terms.append(data.w_assign * sum(x[p.id, c.id] for c in courts))
+        for c in courts:
+            bonus = data.w_central if not c.is_satellite else 0
+            terms.append((data.w_assign * p.priority + bonus) * x[p.id, c.id])
     # 2) Prefer the base venue: small penalty per used satellite court.
     for c in courts:
         if c.is_satellite:

@@ -14,16 +14,16 @@ class SemanaSerializer(serializers.ModelSerializer):
 
 class DisponibilidadSerializer(serializers.ModelSerializer):
     jugador_nombre = serializers.CharField(source="jugador.nombre", read_only=True)
-    turno_codigo = serializers.CharField(
-        source="turno.codigo", read_only=True, default=None
-    )
+    ambito_display = serializers.CharField(source="get_ambito_display", read_only=True)
     estado_display = serializers.CharField(source="get_estado_display", read_only=True)
+    subtipo_display = serializers.CharField(source="get_subtipo_display", read_only=True)
 
     class Meta:
         model = Disponibilidad
         fields = [
-            "id", "semana", "jugador", "jugador_nombre", "dia", "turno",
-            "turno_codigo", "estado", "estado_display", "subtipo", "nota",
+            "id", "semana", "jugador", "jugador_nombre", "dia", "ambito",
+            "ambito_display", "estado", "estado_display", "subtipo",
+            "subtipo_display", "nota",
         ]
 
 
@@ -31,7 +31,8 @@ class ConfiguracionMotorSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConfiguracionMotor
         fields = [
-            "peso_asignacion", "peso_satelite", "peso_repeticion",
+            "peso_asignacion", "peso_satelite", "peso_central",
+            "peso_repeticion",
             "max_dias_misma_pista", "aplicar_vecindad", "time_limit_s",
         ]
 

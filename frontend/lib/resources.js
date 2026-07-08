@@ -15,7 +15,17 @@ const SUBTIPO_OPTS = [
   { value: "ENFERMEDAD", label: "Baja por enfermedad" },
   { value: "ESTUDIOS", label: "Estudios" },
   { value: "PRUEBA_MEDICA", label: "Prueba médica" },
+  { value: "VACACIONES", label: "Vacaciones" },
   { value: "MILONGA", label: "Milonga" },
+];
+const AMBITO_OPTS = [
+  { value: "DIA", label: "Todo el día" },
+  { value: "MANANA", label: "Toda la mañana" },
+  { value: "TARDE", label: "Toda la tarde" },
+  { value: "M1", label: "Turno M1" },
+  { value: "M2", label: "Turno M2" },
+  { value: "T1", label: "Turno T1" },
+  { value: "T2", label: "Turno T2" },
 ];
 
 export const RESOURCES = {
@@ -155,24 +165,24 @@ export const RESOURCES = {
     singular: "registro",
     help:
       "Aquí marcas las faltas y estados que IMPACTAN el cuadrante: lesión, " +
-      "enfermedad, torneo, climatología, etc. Tras registrarlas, ve al Cuadrante " +
-      "y pulsa «Generar semana» (o «Regenerar tarde») para que el motor las aplique. " +
-      "Deja el turno vacío para que afecte a todo el día.",
+      "enfermedad, torneo, climatología, vacaciones, etc. Elige la temporalidad " +
+      "(todo el día, toda la mañana, toda la tarde o un turno). Tras registrarlas, " +
+      "ve al Cuadrante y pulsa «Generar semana» (o «Regenerar tarde») para aplicarlas.",
     columns: [
       { key: "jugador_nombre", label: "Jugador" },
       { key: "dia", label: "Día", render: (v) => DIAS_LABELS[v] },
-      { key: "turno_codigo", label: "Turno", render: (v) => v || "Todo el día" },
+      { key: "ambito_display", label: "Temporalidad" },
       { key: "estado_display", label: "Estado" },
-      { key: "subtipo", label: "Subtipo", render: (v) => v || "—" },
+      { key: "subtipo_display", label: "Motivo", render: (v) => v || "—" },
       { key: "nota", label: "Nota" },
     ],
     fields: [
       { name: "semana", label: "Semana", type: "fk", endpoint: "semanas", optionLabel: (o) => o.fecha_inicio, required: true },
       { name: "jugador", label: "Jugador", type: "fk", endpoint: "jugadores", optionLabel: (o) => o.nombre, required: true },
       { name: "dia", label: "Día", type: "select", numeric: true, options: DIA_OPTS, required: true },
-      { name: "turno", label: "Turno (vacío = todo el día)", type: "fk", endpoint: "turnos", optionLabel: (o) => o.codigo },
+      { name: "ambito", label: "Temporalidad", type: "select", options: AMBITO_OPTS, required: true },
       { name: "estado", label: "Estado", type: "select", options: ESTADO_OPTS, required: true },
-      { name: "subtipo", label: "Subtipo (solo si es ausencia de jugador)", type: "select", options: SUBTIPO_OPTS },
+      { name: "subtipo", label: "Motivo (si es ausencia de jugador)", type: "select", options: SUBTIPO_OPTS },
       { name: "nota", label: "Nota", type: "text" },
     ],
   },

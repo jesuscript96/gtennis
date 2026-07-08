@@ -12,6 +12,7 @@ from django.db import transaction
 from academy.models import Contrato, Entrenador, Pista, Rencilla, Turno
 from scheduling.models import (
     DIAS,
+    ESTADOS_DEPRIORIZADOS,
     ESTADOS_EXCLUYENTES,
     Asignacion,
     ConfiguracionMotor,
@@ -55,17 +56,32 @@ def _sponsor_map() -> dict[int, set[int]]:
     return m
 
 
-def _overrides(semana: Semana, dia: int) -> dict[tuple[int, int | None], Disponibilidad]:
-    """(jugador_id, turno_id|None) -> Disponibilidad for the day."""
+def _overrides(semana: Semana, dia: int) -> dict[tuple[int, str], Disponibilidad]:
+    """(jugador_id, ambito) -> Disponibilidad for the day. ambito is one of
+    DIA / MANANA / TARDE / M1 / M2 / T1 / T2."""
     out = {}
     for d in Disponibilidad.objects.filter(semana=semana, dia=dia):
-        out[(d.jugador_id, d.turno_id)] = d
+        out[(d.jugador_id, d.ambito)] = d
     return out
 
 
-def _effective_state(overrides, jugador_id, turno_id):
-    d = overrides.get((jugador_id, turno_id)) or overrides.get((jugador_id, None))
-    return d.estado if d else Estado.DISPONIBLE
+def _effective_state(overrides, jugador_id, turno):
+    """Resolución por prioridad: turno concreto > bloque (mañana/tarde) > día."""
+    for key in (turno.codigo, turno.bloque, "DIA"):
+        d = overrides.get((jugador_id, key))
+        if d:
+            return d.estado
+    return Estado.DISPONIBLE
+
+
+def _player_priority(division, state):
+    """Higher-division players get higher priority (8 → 1).
+    Players with molestias/torneo are deprioritised so they fill spots
+    only after fully-available players."""
+    base = division if division else 4
+    if state in ESTADOS_DEPRIORIZADOS:
+        base = max(1, base // 2)
+    return base
 
 
 def _available_players(semana, dia, turno, sponsors) -> list[Player]:
@@ -74,17 +90,20 @@ def _available_players(semana, dia, turno, sponsors) -> list[Player]:
     overrides = _overrides(semana, dia)
     players = []
     for j in Jugador.objects.filter(activo=True).select_related("division"):
-        state = _effective_state(overrides, j.id, turno.id)
+        state = _effective_state(overrides, j.id, turno)
         if state in ESTADOS_EXCLUYENTES:
             continue
+        division = j.division.nivel if j.division else None
         coach = next(iter(sponsors.get(j.id, set())), None)
         players.append(
             Player(
                 id=j.id,
-                division=j.division.nivel if j.division else None,
+                division=division,
                 sponsor_coach_id=coach,
+                priority=_player_priority(division, state),
             )
         )
+    players.sort(key=lambda p: p.priority, reverse=True)
     return players
 
 
@@ -176,13 +195,15 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     time_limit_s=cfg.time_limit_s,
                     w_assign=cfg.peso_asignacion,
                     w_satellite=cfg.peso_satelite,
+                    w_central=cfg.peso_central,
                     w_repeat=cfg.peso_repeticion,
                     apply_neighbor=cfg.aplicar_vecindad,
                 )
             )
-            # Wipe only non-manual cells for this slot, then repopulate.
+            # Regenerar = rehacer el turno desde cero (incluye celdas editadas a
+            # mano/por swap), para no chocar con el unique al reasignar.
             Asignacion.objects.filter(
-                semana=semana, dia=dia, turno=turno, manual=False
+                semana=semana, dia=dia, turno=turno
             ).delete()
             for court_id, member_ids in result.courts.items():
                 coach_id = _assign_coaches(member_ids, sponsors, semana, load)
@@ -194,7 +215,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                         pista_id=court_id,
                         jugador_id=jid,
                         entrenador_id=coach_id,
-                        estado=_effective_state(overrides, jid, turno.id),
+                        estado=_effective_state(overrides, jid, turno),
                     )
                 if courts_by_id[court_id].is_satellite:
                     report["overflow"].append(

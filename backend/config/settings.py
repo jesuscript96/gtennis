@@ -77,6 +77,10 @@ if DATABASE_URL:
             "PASSWORD": u.password,
             "HOST": u.hostname,
             "PORT": u.port or 5432,
+            # Cierra conexiones por petición y comprueba que estén vivas: evita
+            # 500 por "server closed the connection" tras reposo/arranque en frío.
+            "CONN_MAX_AGE": 0,
+            "CONN_HEALTH_CHECKS": True,
         }
     }
 else:
@@ -117,9 +121,15 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 100,
 }
 
-CORS_ALLOWED_ORIGINS = os.environ.get(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
-).split(",")
+CORS_ALLOWED_ORIGINS = [
+    o for o in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001",
+    ).split(",") if o.strip()
+]
+
+# Permite cualquier despliegue del proyecto en Vercel (producción y previews).
+CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://gtennis-.*\.vercel\.app$"]
 
 # En desarrollo, permite cualquier origen local (puertos de preview, etc.).
 if DEBUG:

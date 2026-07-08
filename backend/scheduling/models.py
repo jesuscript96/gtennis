@@ -19,14 +19,33 @@ class SubtipoAusencia(models.TextChoices):
     ENFERMEDAD = "ENFERMEDAD", "Baja por enfermedad"
     ESTUDIOS = "ESTUDIOS", "Estudios"
     PRUEBA_MEDICA = "PRUEBA_MEDICA", "Prueba médica"
+    VACACIONES = "VACACIONES", "Vacaciones"
     MILONGA = "MILONGA", "Milonga"
 
 
+class Ambito(models.TextChoices):
+    """Temporalidad de una disponibilidad/ausencia."""
+
+    DIA = "DIA", "Todo el día"
+    MANANA = "MANANA", "Toda la mañana"
+    TARDE = "TARDE", "Toda la tarde"
+    M1 = "M1", "Turno M1"
+    M2 = "M2", "Turno M2"
+    T1 = "T1", "Turno T1"
+    T2 = "T2", "Turno T2"
+
+
 # Players excluded from auto-pairing for the shift/day.
+# EN_TORNEO and AUSENCIA_JUGADOR are no longer excluded — they are
+# deprioritised so they fill courts only after fully-available players.
 ESTADOS_EXCLUYENTES = {
+    Estado.CLIMATOLOGIA,
+}
+
+# States that reduce priority in the pairing objective.
+ESTADOS_DEPRIORIZADOS = {
     Estado.AUSENCIA_JUGADOR,
     Estado.EN_TORNEO,
-    Estado.CLIMATOLOGIA,
 }
 
 DIAS = [
@@ -67,7 +86,11 @@ class Disponibilidad(models.Model):
     )
     jugador = models.ForeignKey(Jugador, on_delete=models.CASCADE)
     dia = models.PositiveSmallIntegerField(choices=DIAS)
-    # Null turno => applies to the whole day.
+    # Temporalidad: todo el día / toda la mañana / toda la tarde / un turno.
+    ambito = models.CharField(
+        max_length=10, choices=Ambito.choices, default=Ambito.DIA
+    )
+    # Legacy (ya no se usa para el alcance; lo resuelve `ambito`).
     turno = models.ForeignKey(
         Turno, on_delete=models.CASCADE, null=True, blank=True
     )
@@ -80,7 +103,7 @@ class Disponibilidad(models.Model):
     class Meta:
         verbose_name = "Disponibilidad"
         verbose_name_plural = "Disponibilidades"
-        unique_together = ("semana", "jugador", "dia", "turno")
+        unique_together = ("semana", "jugador", "dia", "ambito")
 
     def __str__(self):
         return f"{self.jugador} · D{self.dia} · {self.get_estado_display()}"
@@ -126,6 +149,9 @@ class ConfiguracionMotor(models.Model):
     )
     peso_satelite = models.PositiveIntegerField(
         default=5, help_text="Penalización por usar una pista satélite."
+    )
+    peso_central = models.PositiveIntegerField(
+        default=100, help_text="Bonus por jugador asignado a pista no satélite (rellenar GTennis primero)."
     )
     peso_repeticion = models.PositiveIntegerField(
         default=10, help_text="Penalización por repetir pareja (rotación)."

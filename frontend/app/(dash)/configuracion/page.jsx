@@ -5,6 +5,7 @@ import { getConfig, saveConfig } from "../../../lib/api";
 
 const NUM_FIELDS = [
   ["peso_asignacion", "Peso · que todos jueguen", "Prioridad dominante. Cuanto más alto, antes repite pareja que dejar a alguien fuera."],
+  ["peso_central", "Peso · priorizar pistas GTennis", "Bonus por cada jugador asignado a pista central. Más alto = llena GTennis antes de usar satélites."],
   ["peso_satelite", "Peso · evitar satélites", "Penalización por usar pistas satélite. Más alto = se usan solo si hace falta."],
   ["peso_repeticion", "Peso · antirrepetición", "Penalización por repetir pareja. Más alto = más rotación."],
   ["max_dias_misma_pista", "Máx. días misma pista", "A partir de estas repeticiones en la semana, se penaliza fuerte."],
@@ -30,6 +31,7 @@ export default function ConfiguracionPage() {
       const saved = await saveConfig({
         ...cfg,
         peso_asignacion: Number(cfg.peso_asignacion),
+        peso_central: Number(cfg.peso_central),
         peso_satelite: Number(cfg.peso_satelite),
         peso_repeticion: Number(cfg.peso_repeticion),
         max_dias_misma_pista: Number(cfg.max_dias_misma_pista),

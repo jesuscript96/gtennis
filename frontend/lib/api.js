@@ -19,11 +19,30 @@ export function logout() {
   localStorage.removeItem("gt_user");
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Reintenta ante errores transitorios (p.ej. la máquina del backend arrancando
+// en frío en Fly tras estar en reposo): así el 500/502 no llega al usuario.
+const RETRY_DELAYS = [1000, 2500];
+
 async function req(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
   const t = getToken();
   if (t) headers["Authorization"] = `Token ${t}`;
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers, cache: "no-store" });
+  const safe = (opts.method || "GET").toUpperCase() === "GET";
+
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(`${BASE}${path}`, { ...opts, headers, cache: "no-store" });
+    } catch (e) {
+      if (attempt < RETRY_DELAYS.length) { await sleep(RETRY_DELAYS[attempt]); continue; }
+      throw new Error("No se pudo conectar con el servidor. Reinténtalo en unos segundos.");
+    }
+    const transient = res.status >= 502 || (safe && res.status >= 500);
+    if (transient && attempt < RETRY_DELAYS.length) { await sleep(RETRY_DELAYS[attempt]); continue; }
+    break;
+  }
+
   if (res.status === 401 && typeof window !== "undefined") {
     logout();
     if (!path.startsWith("/auth/")) window.location.href = "/login";
