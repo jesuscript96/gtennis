@@ -1,4 +1,5 @@
-const BASE = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api").replace(/\/$/, "");
+const rawBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api").replace(/\/$/, "");
+const BASE = rawBase.endsWith("/api") ? rawBase : `${rawBase}/api`;
 
 export function getToken() {
   return typeof window !== "undefined" ? localStorage.getItem("gt_token") : null;
@@ -52,8 +53,15 @@ async function req(path, opts = {}) {
     const txt = await res.text();
     try {
       detail = JSON.parse(txt);
+      if (typeof detail === "object" && detail !== null) {
+        detail = detail.detail || detail.error || detail.message || JSON.stringify(detail);
+      }
     } catch {
-      detail = txt;
+      if (txt.trim().startsWith("<") || txt.includes("<!doctype")) {
+        detail = `Error (${res.status}): No se pudo completar la petición al backend (${res.statusText || "Respuesta HTML no válida"}).`;
+      } else {
+        detail = txt;
+      }
     }
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
