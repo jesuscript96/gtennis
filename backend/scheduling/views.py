@@ -6,10 +6,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from academy.models import Sede, Turno
-from engine.service import generate, regenerate_afternoon
+from academy.models import Entrenador, Jugador, Sede, Turno
+from engine.service import _effective_state, _overrides, generate, regenerate_afternoon
 
-from .models import DIAS, Asignacion, ConfiguracionMotor, Disponibilidad, Semana
+from .models import DIAS, ESTADOS_EXCLUYENTES, Asignacion, ConfiguracionMotor, Disponibilidad, Semana
 from .serializers import (
     AsignacionSerializer,
     ConfiguracionMotorSerializer,
@@ -61,50 +61,84 @@ class AhoraView(APIView):
 
     def get(self, request):
         now = djtz.localtime()
-        dia = now.weekday()  # 0=Mon .. 6=Sun
+        hoy = now.weekday()  # 0=Mon .. 6=Sun
         t = now.time()
         turnos = list(Turno.objects.all().order_by("orden"))
-        actual = proximo = None
-        mins = None
-        if dia <= 5:
+        empty = {
+            "ahora": now.strftime("%H:%M"), "dia": hoy,
+            "dia_nombre": dict(DIAS).get(hoy, "Domingo"),
+            "turno_actual": None, "proximo": None, "turno_mostrado": None,
+            "sedes": _sedes_payload(), "turnos": _turnos_payload(), "asignaciones": [],
+        }
+
+        # Semana de referencia: la de esta semana (si está generada) o la última generada.
+        monday = now.date() - timedelta(days=hoy)
+        semana = Semana.objects.filter(
+            fecha_inicio=monday, generado_at__isnull=False
+        ).first() or (
+            Semana.objects.filter(generado_at__isnull=False)
+            .order_by("-fecha_inicio").first()
+        )
+        if not semana:
+            return Response({"status": "sin_semana", "semana": None, **empty})
+
+        dias_con_datos = set(
+            Asignacion.objects.filter(semana=semana).values_list("dia", flat=True)
+        )
+        es_semana_actual = semana.fecha_inicio == monday
+
+        # 1) ¿Hay un turno EN CURSO ahora mismo?
+        actual = None
+        if es_semana_actual and hoy <= 5 and hoy in dias_con_datos:
             for tr in turnos:
                 if tr.hora_inicio <= t <= tr.hora_fin:
                     actual = tr
                     break
-            if actual is None:
-                for tr in turnos:
-                    if t < tr.hora_inicio:
-                        proximo = tr
-                        delta = (datetime.combine(now.date(), tr.hora_inicio)
-                                 - datetime.combine(now.date(), t))
-                        mins = int(delta.total_seconds() // 60)
+
+        mins = None
+        if actual:
+            dia_sel, turno_sel, status = hoy, actual, "en_curso"
+        else:
+            # 2) El PRÓXIMO (día, turno) con datos, empezando desde "ahora".
+            slots = [(d, tr) for d in range(6) for tr in turnos]
+            start = 0
+            if es_semana_actual and hoy <= 5:
+                for i, (d, tr) in enumerate(slots):
+                    if d > hoy or (d == hoy and tr.hora_inicio > t):
+                        start = i
                         break
-        mostrado = actual or proximo
-        status = "en_curso" if actual else ("proximo" if proximo else "cerrado")
+            dia_sel = turno_sel = None
+            for k in range(len(slots)):
+                d, tr = slots[(start + k) % len(slots)]
+                if d in dias_con_datos:
+                    dia_sel, turno_sel = d, tr
+                    break
+            if dia_sel is None:
+                dia_sel, turno_sel = hoy, turnos[0]
+            status = "proximo"
+            if es_semana_actual and dia_sel == hoy and turno_sel.hora_inicio > t:
+                delta = (datetime.combine(now.date(), turno_sel.hora_inicio)
+                         - datetime.combine(now.date(), t))
+                mins = int(delta.total_seconds() // 60)
 
-        monday = now.date() - timedelta(days=dia)
-        semana = Semana.objects.filter(fecha_inicio=monday).first()
-        asignaciones = []
-        if semana and mostrado and dia <= 5:
-            qs = (
-                Asignacion.objects.filter(semana=semana, dia=dia, turno=mostrado)
-                .select_related("jugador", "jugador__division", "entrenador",
-                                "turno", "pista", "pista__sede")
-            )
-            asignaciones = AsignacionSerializer(qs, many=True).data
-
+        qs = (
+            Asignacion.objects.filter(semana=semana, dia=dia_sel, turno=turno_sel)
+            .select_related("jugador", "jugador__division", "entrenador",
+                            "turno", "pista", "pista__sede")
+        )
         return Response({
             "status": status,
             "ahora": now.strftime("%H:%M"),
-            "dia": dia,
-            "dia_nombre": dict(DIAS).get(dia, "Domingo"),
-            "turno_actual": {"codigo": actual.codigo} if actual else None,
-            "proximo": {"codigo": proximo.codigo, "en_minutos": mins} if proximo else None,
-            "turno_mostrado": mostrado.codigo if mostrado else None,
-            "semana": SemanaSerializer(semana).data if semana else None,
+            "dia": dia_sel,
+            "dia_nombre": dict(DIAS).get(dia_sel, "Domingo"),
+            "turno_actual": {"codigo": turno_sel.codigo} if status == "en_curso" else None,
+            "proximo": ({"codigo": turno_sel.codigo, "en_minutos": mins}
+                        if status == "proximo" else None),
+            "turno_mostrado": turno_sel.codigo,
+            "semana": SemanaSerializer(semana).data,
             "sedes": _sedes_payload(),
             "turnos": _turnos_payload(),
-            "asignaciones": asignaciones,
+            "asignaciones": AsignacionSerializer(qs, many=True).data,
         })
 
 
@@ -185,6 +219,115 @@ class SemanaViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["get"])
+    def panel(self, request, pk=None):
+        """Panel lateral para la vista de semana: jugadores agrupados por
+        entrenador para un día dado (?dia=0).
+
+        Devuelve dos secciones:
+        - por_entrenador: entrenadores disponibles con sus jugadores
+        - sin_entrenador: entrenadores no disponibles cuyos jugadores sí lo están
+        """
+        semana = self.get_object()
+        dia = int(request.query_params.get("dia", 0))
+
+        overrides = _overrides(semana, dia)
+        assigned_ids = set(
+            Asignacion.objects.filter(semana=semana, dia=dia).values_list(
+                "jugador_id", flat=True
+            )
+        )
+
+        # Un turno "ficticio" para resolver el estado a nivel de día.
+        # _effective_state prueba turno > bloque > DIA; sin turno concreto,
+        # cae al ámbito DIA.
+        class _DiaOnly:
+            codigo = None
+            bloque = None
+        dia_state = _DiaOnly()
+
+        coaches = list(Entrenador.objects.filter(activo=True).order_by("nombre"))
+        coach_map = {c.id: c for c in coaches}
+
+        players = (
+            Jugador.objects.filter(activo=True)
+            .select_related("division", "entrenador_responsable")
+            .order_by("nombre")
+        )
+
+        por_entrenador = []
+        sin_entrenador = []
+
+        # Agrupar jugadores por entrenador_responsable
+        by_coach = {}
+        no_coach = []
+        for j in players:
+            state = _effective_state(overrides, j.id, dia_state)
+            if state in ESTADOS_EXCLUYENTES:
+                continue
+            entry = {
+                "id": j.id,
+                "nombre": j.nombre,
+                "foto_url": j.foto_url or "",
+                "division_nivel": j.division.nivel if j.division else None,
+                "estado": state,
+                "tiene_asignacion": j.id in assigned_ids,
+            }
+            cid = j.entrenador_responsable_id
+            if cid and cid in coach_map:
+                by_coach.setdefault(cid, []).append(entry)
+            else:
+                no_coach.append(entry)
+
+        for c in coaches:
+            jugador_list = by_coach.get(c.id, [])
+            if not jugador_list:
+                continue
+            coach_data = {
+                "entrenador": {
+                    "id": c.id,
+                    "nombre": c.nombre,
+                    "foto_url": c.foto_url or "",
+                    "disponible": c.disponible_semana,
+                },
+                "jugadores": jugador_list,
+            }
+            if c.disponible_semana:
+                por_entrenador.append(coach_data)
+            else:
+                sin_entrenador.append(coach_data)
+
+        # Jugadores sin entrenador responsable asignado
+        if no_coach:
+            sin_entrenador.append({
+                "entrenador": {
+                    "id": None,
+                    "nombre": "Sin entrenador",
+                    "foto_url": "",
+                    "disponible": False,
+                },
+                "jugadores": no_coach,
+            })
+
+        # Entrenadores disponibles SIN pista asignada ese día (para el banquillo).
+        assigned_coach_ids = set(
+            Asignacion.objects.filter(semana=semana, dia=dia)
+            .exclude(entrenador=None)
+            .values_list("entrenador_id", flat=True)
+        )
+        entrenadores_libres = [
+            {"id": c.id, "nombre": c.nombre, "foto_url": c.foto_url or ""}
+            for c in coaches
+            if c.disponible_semana and c.id not in assigned_coach_ids
+        ]
+
+        return Response({
+            "dia": dia,
+            "por_entrenador": por_entrenador,
+            "sin_entrenador": sin_entrenador,
+            "entrenadores_libres": entrenadores_libres,
+        })
+
 
 class DisponibilidadViewSet(viewsets.ModelViewSet):
     serializer_class = DisponibilidadSerializer
@@ -247,3 +390,70 @@ class AsignacionViewSet(viewsets.ModelViewSet):
                     B.jugador_id = ja; B.manual = True; B.save()
                     A.jugador_id = jb; A.save()
         return Response({"ok": True})
+
+    @action(detail=False, methods=["post"])
+    def manual_assign(self, request):
+        """Asignar manualmente un jugador a una pista/turno desde el panel.
+        Crea una Asignacion con manual=True. Respeta capacidad de la pista
+        y evita duplicados (semana, dia, turno, jugador)."""
+        from academy.models import Pista
+
+        jugador_id = request.data.get("jugador_id")
+        semana_id = request.data.get("semana")
+        dia = request.data.get("dia")
+        turno_id = request.data.get("turno")
+        pista_id = request.data.get("pista")
+
+        if not all([jugador_id, semana_id, dia is not None, turno_id, pista_id]):
+            return Response({"error": "Faltan parámetros."}, status=400)
+
+        # ¿Ya asignado a este turno ese día?
+        existing = Asignacion.objects.filter(
+            semana_id=semana_id, dia=dia, turno_id=turno_id, jugador_id=jugador_id
+        ).first()
+        if existing:
+            return Response(
+                {"error": "El jugador ya tiene asignación en este turno."},
+                status=409,
+            )
+
+        # ¿Capacidad de la pista?
+        pista = Pista.objects.select_related("sede").get(pk=pista_id)
+        count = Asignacion.objects.filter(
+            semana_id=semana_id, dia=dia, turno_id=turno_id, pista_id=pista_id
+        ).count()
+        if count >= pista.sede.densidad_default:
+            return Response(
+                {"error": f"La pista está llena ({count}/{pista.sede.densidad_default})."},
+                status=409,
+            )
+
+        asig = Asignacion.objects.create(
+            semana_id=semana_id,
+            dia=dia,
+            turno_id=turno_id,
+            pista_id=pista_id,
+            jugador_id=jugador_id,
+            manual=True,
+        )
+        return Response(AsignacionSerializer(asig).data, status=201)
+
+    @action(detail=False, methods=["post"])
+    def set_coach(self, request):
+        """Colocar un entrenador del banquillo en una pista/turno (todas sus
+        filas). El que estuviera queda libre para el banquillo."""
+        semana_id = request.data.get("semana")
+        dia = request.data.get("dia")
+        turno_id = request.data.get("turno")
+        pista_id = request.data.get("pista")
+        entrenador_id = request.data.get("entrenador_id")
+        if not all([semana_id, dia is not None, turno_id, pista_id, entrenador_id]):
+            return Response({"error": "Faltan parámetros."}, status=400)
+        n = Asignacion.objects.filter(
+            semana_id=semana_id, dia=dia, turno_id=turno_id, pista_id=pista_id
+        ).update(entrenador_id=entrenador_id, manual=True)
+        if n == 0:
+            return Response(
+                {"error": "La pista no tiene jugadores en ese turno."}, status=409
+            )
+        return Response({"ok": True, "actualizadas": n})

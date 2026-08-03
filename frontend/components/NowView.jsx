@@ -55,9 +55,9 @@ export default function NowView() {
     meta.status === "en_curso" ? (
       <span className="now-turno"><span className="live-dot" />En curso · {meta.dia_nombre} · turno <b>{meta.turno_actual.codigo}</b></span>
     ) : meta.status === "proximo" ? (
-      <span className="now-turno">{meta.dia_nombre} · próximo turno <b>{meta.proximo.codigo}</b> en {meta.proximo.en_minutos} min</span>
+      <span className="now-turno">Próximo · {meta.dia_nombre} · turno <b>{meta.proximo.codigo}</b>{meta.proximo.en_minutos != null ? ` · en ${meta.proximo.en_minutos} min` : ""}</span>
     ) : (
-      <span className="now-turno">Academia cerrada</span>
+      <span className="now-turno">No hay semana generada</span>
     );
 
   return (

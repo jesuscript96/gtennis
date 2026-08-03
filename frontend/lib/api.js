@@ -102,5 +102,12 @@ export const saveConfig = (body) =>
 
 export const getAhora = () => req("/ahora/");
 export const getTabla = (id) => req(`/semanas/${id}/tabla/`);
+export const getPanel = (id, dia) => req(`/semanas/${id}/panel/?dia=${dia}`);
 export const swapAsignacion = (a, b, campo) =>
   req("/asignaciones/swap/", { method: "POST", body: JSON.stringify({ a, b, campo }) });
+export const manualAssign = (body) =>
+  req("/asignaciones/manual_assign/", { method: "POST", body: JSON.stringify(body) });
+export const setCoach = (body) =>
+  req("/asignaciones/set_coach/", { method: "POST", body: JSON.stringify(body) });
+export const removeAsignacion = (id) =>
+  req(`/asignaciones/${id}/`, { method: "DELETE" });
