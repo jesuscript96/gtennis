@@ -54,7 +54,7 @@ class EntrenadorViewSet(viewsets.ModelViewSet):
 
 
 class JugadorViewSet(viewsets.ModelViewSet):
-    queryset = Jugador.objects.select_related("division", "entrenador_responsable").all()
+    queryset = Jugador.objects.filter(activo=True).select_related("division", "entrenador_responsable").all()
     serializer_class = JugadorSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["nombre"]
