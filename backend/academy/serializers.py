@@ -4,6 +4,7 @@ from .models import (
     Contrato,
     Division,
     Entrenador,
+    Feedback,
     Jugador,
     Pista,
     Rencilla,
@@ -48,7 +49,7 @@ class EntrenadorSerializer(serializers.ModelSerializer):
         model = Entrenador
         fields = [
             "id", "nombre", "activo", "disponibilidad_notas", "disponible_semana",
-            "foto_url",
+            "foto_url", "gestiona_todos_jugadores",
         ]
 
 
@@ -63,9 +64,11 @@ class JugadorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Jugador
         fields = [
-            "id", "nombre", "edad", "es_menor", "consentimiento_rgpd",
-            "division", "division_nivel", "entrenador_responsable",
-            "entrenador_nombre", "foto_url", "activo", "notas",
+            "id", "nombre", "codigo_cliente", "categoria", "edad",
+            "fecha_nacimiento", "es_menor", "email", "telefono",
+            "consentimiento_rgpd", "division", "division_nivel",
+            "entrenador_responsable", "entrenador_nombre", "foto_url",
+            "activo", "notas",
         ]
 
 
@@ -79,6 +82,27 @@ class RencillaSerializer(serializers.ModelSerializer):
             "id", "jugador_a", "jugador_a_nombre", "jugador_b",
             "jugador_b_nombre", "activa", "motivo",
         ]
+
+
+class FeedbackSerializer(serializers.ModelSerializer):
+    prioridad_display = serializers.CharField(
+        source="get_prioridad_display", read_only=True
+    )
+    estado_display = serializers.CharField(
+        source="get_estado_display", read_only=True
+    )
+    creado_por_nombre = serializers.CharField(
+        source="creado_por.username", read_only=True, default=None
+    )
+
+    class Meta:
+        model = Feedback
+        fields = [
+            "id", "autor", "prioridad", "prioridad_display", "titulo",
+            "descripcion", "estado", "estado_display", "creado_por",
+            "creado_por_nombre", "created_at",
+        ]
+        read_only_fields = ["creado_por", "created_at"]
 
 
 class ContratoSerializer(serializers.ModelSerializer):

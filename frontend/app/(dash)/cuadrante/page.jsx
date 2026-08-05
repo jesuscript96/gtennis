@@ -24,6 +24,14 @@ const ESTADO_COLOR = {
   CLIMATOLOGIA: "var(--st-clima)",
   AUSENCIA_COACH: "var(--st-coach)",
 };
+const ESTADO_LABEL = {
+  AUSENCIA_JUGADOR: "Ausencia",
+  CALENTAMIENTO: "Calentamiento",
+  EN_TORNEO: "En torneo",
+  CLIMATOLOGIA: "Climatología",
+  AUSENCIA_COACH: "Ausencia coach",
+};
+const noDisponible = (estado) => estado && estado !== "DISPONIBLE";
 
 function setDrag(e, payload) {
   e.dataTransfer.setData("application/json", JSON.stringify(payload));
@@ -42,7 +50,7 @@ function benchPlayers(panel) {
   for (const g of [...(panel.por_entrenador || []), ...(panel.sin_entrenador || [])]) {
     for (const j of g.jugadores || []) {
       if (!j.tiene_asignacion) {
-        out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, coach: g.entrenador?.nombre });
+        out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, coach: g.entrenador?.nombre, estado: j.estado });
       }
     }
   }
@@ -202,11 +210,14 @@ export default function CuadrantePage() {
           <div className="bench-side-hint">Arrastra a una pista para colocar · suelta aquí para quitar</div>
           <div className="bench-scroll">
             <div className="bench-col-items">
-              {bench.length === 0 ? <span className="bench-empty">Todos los disponibles tienen pista.</span> :
+              {bench.length === 0 ? <span className="bench-empty">Todos tienen pista.</span> :
                 bench.map((p) => (
-                  <div key={p.id} className="bench-chip dnd" draggable
+                  <div key={p.id} className={`bench-chip dnd${noDisponible(p.estado) ? " nd" : ""}`} draggable
                     onDragStart={(e) => setDrag(e, { k: "bj", jugador: p.id })}
-                    title={`${p.nombre}${p.coach ? " · " + p.coach : ""}`}>
+                    title={`${p.nombre}${p.coach ? " · " + p.coach : ""}${noDisponible(p.estado) ? " · " + (ESTADO_LABEL[p.estado] || p.estado) + " (arrastra para forzar pista)" : ""}`}>
+                    {noDisponible(p.estado) && (
+                      <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
+                    )}
                     <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
                     <span>{p.nombre}{p.division ? ` · D${p.division}` : ""}</span>
                   </div>

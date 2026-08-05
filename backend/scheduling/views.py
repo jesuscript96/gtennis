@@ -3,13 +3,15 @@ from datetime import datetime, timedelta, timezone
 from django.utils import timezone as djtz
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academy.models import Entrenador, Jugador, Sede, Turno
 from engine.service import _effective_state, _overrides, generate, regenerate_afternoon
 
-from .models import DIAS, ESTADOS_EXCLUYENTES, Asignacion, ConfiguracionMotor, Disponibilidad, Semana
+from .models import DIAS, Asignacion, ConfiguracionMotor, Disponibilidad, Semana
 from .serializers import (
     AsignacionSerializer,
     ConfiguracionMotorSerializer,
@@ -263,8 +265,9 @@ class SemanaViewSet(viewsets.ModelViewSet):
         no_coach = []
         for j in players:
             state = _effective_state(overrides, j.id, dia_state)
-            if state in ESTADOS_EXCLUYENTES:
-                continue
+            # No se excluye ningún estado: los "no disponibles" (climatología,
+            # ausencia, torneo…) deben aparecer en el banquillo para poder
+            # forzar su asignación manualmente si se desea.
             entry = {
                 "id": j.id,
                 "nombre": j.nombre,
@@ -330,12 +333,58 @@ class SemanaViewSet(viewsets.ModelViewSet):
 
 
 class DisponibilidadViewSet(viewsets.ModelViewSet):
+    """Declarar ausencias/estados de jugadores.
+
+    Acceso (PRD: solo Super Admin y entrenadores inician sesión):
+      * Super Admin → cualquier jugador.
+      * Entrenador  → solo los jugadores que puede gestionar
+                      (todos, si `gestiona_todos_jugadores`, o su subconjunto).
+    """
+
     serializer_class = DisponibilidadSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _entrenador(self):
+        return getattr(self.request.user, "entrenador", None)
+
+    def _assert_puede(self, jugador):
+        user = self.request.user
+        if user.is_superadmin:
+            return
+        entrenador = self._entrenador()
+        if entrenador is None:
+            raise PermissionDenied("Tu usuario no está enlazado a un entrenador.")
+        if not entrenador.puede_gestionar(jugador):
+            raise PermissionDenied(
+                "No tienes acceso para gestionar a este jugador."
+            )
 
     def get_queryset(self):
-        qs = Disponibilidad.objects.all()
+        qs = Disponibilidad.objects.select_related("jugador", "semana")
+        user = self.request.user
+        if not user.is_superadmin:
+            entrenador = self._entrenador()
+            if entrenador is None:
+                return qs.none()
+            if not entrenador.gestiona_todos_jugadores:
+                qs = qs.filter(jugador__in=entrenador.jugadores_gestionados.all())
         semana = self.request.query_params.get("semana")
         return qs.filter(semana=semana) if semana else qs
+
+    def perform_create(self, serializer):
+        self._assert_puede(serializer.validated_data["jugador"])
+        serializer.save()
+
+    def perform_update(self, serializer):
+        jugador = serializer.validated_data.get(
+            "jugador", serializer.instance.jugador
+        )
+        self._assert_puede(jugador)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._assert_puede(instance.jugador)
+        instance.delete()
 
 
 class AsignacionViewSet(viewsets.ModelViewSet):
@@ -417,23 +466,35 @@ class AsignacionViewSet(viewsets.ModelViewSet):
                 status=409,
             )
 
-        # ¿Capacidad de la pista?
+        # ¿Capacidad de la pista? El auto-emparejamiento llena hasta
+        # `densidad_default` (2), pero manualmente se puede forzar hasta
+        # `densidad_max` (4) — p. ej. para colocar a un "no disponible".
         pista = Pista.objects.select_related("sede").get(pk=pista_id)
+        tope = pista.sede.densidad_max or pista.sede.densidad_default
         count = Asignacion.objects.filter(
             semana_id=semana_id, dia=dia, turno_id=turno_id, pista_id=pista_id
         ).count()
-        if count >= pista.sede.densidad_default:
+        if count >= tope:
             return Response(
-                {"error": f"La pista está llena ({count}/{pista.sede.densidad_default})."},
+                {"error": f"La pista está llena ({count}/{tope})."},
                 status=409,
             )
 
+        # Estado efectivo del jugador ese día/turno: si está "no disponible",
+        # la celda forzada conserva su color/estado en el cuadrante.
+        turno = Turno.objects.get(pk=turno_id)
+        estado = _effective_state(
+            _overrides(Semana.objects.get(pk=semana_id), int(dia)),
+            int(jugador_id),
+            turno,
+        )
         asig = Asignacion.objects.create(
             semana_id=semana_id,
             dia=dia,
             turno_id=turno_id,
             pista_id=pista_id,
             jugador_id=jugador_id,
+            estado=estado,
             manual=True,
         )
         return Response(AsignacionSerializer(asig).data, status=201)

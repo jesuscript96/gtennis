@@ -9,10 +9,10 @@ class Sede(models.Model):
 
     nombre = models.CharField(max_length=80, unique=True)
     es_satelite = models.BooleanField(default=False)
-    # Standard density is 2 players/court. Sta. Bárbara may go up to 4
-    # ("tocados" / readaptación players).
+    # Auto-pairing fills 2 players/court by default; a court can be pushed
+    # manually up to `densidad_max` (4) to force-add a "no disponible" player.
     densidad_default = models.PositiveSmallIntegerField(default=2)
-    densidad_max = models.PositiveSmallIntegerField(default=2)
+    densidad_max = models.PositiveSmallIntegerField(default=4)
     # Order in which satellites receive overflow.
     orden_desbordamiento = models.PositiveSmallIntegerField(default=0)
     activa = models.BooleanField(default=True)
@@ -99,6 +99,22 @@ class Entrenador(models.Model):
     # Photo in EU object storage (S3-compatible); signed-URL ref.
     foto_url = models.URLField(blank=True)
 
+    # --- Scope de gestión (declarar ausencias) -----------------------------
+    # Si True, este entrenador puede gestionar a TODOS los jugadores activos
+    # (caso de Sergio hoy). Si False, solo los de `jugadores_gestionados`.
+    gestiona_todos_jugadores = models.BooleanField(
+        default=False,
+        help_text="Acceso a declarar ausencias de todos los jugadores.",
+    )
+    # Subconjunto explícito de jugadores que este entrenador puede gestionar
+    # cuando no tiene acceso total. Independiente del `cluster` de emparejamiento
+    # (entrenador_responsable), que es una relación distinta del motor.
+    jugadores_gestionados = models.ManyToManyField(
+        "Jugador",
+        blank=True,
+        related_name="entrenadores_gestores",
+    )
+
     class Meta:
         verbose_name = "Entrenador"
         verbose_name_plural = "Entrenadores"
@@ -107,13 +123,41 @@ class Entrenador(models.Model):
     def __str__(self):
         return self.nombre
 
+    def jugadores_permitidos(self):
+        """Queryset de jugadores activos que este entrenador puede gestionar."""
+        activos = Jugador.objects.filter(activo=True)
+        if self.gestiona_todos_jugadores:
+            return activos
+        return activos.filter(entrenadores_gestores=self)
+
+    def puede_gestionar(self, jugador):
+        """¿Puede este entrenador declarar ausencias de `jugador`?"""
+        if self.gestiona_todos_jugadores:
+            return True
+        return self.jugadores_gestionados.filter(pk=jugador.pk).exists()
+
 
 class Jugador(models.Model):
     """Passive data entity — never logs in (PRD §01)."""
 
+    class Categoria(models.TextChoices):
+        ALTO_RENDIMIENTO = "ALTO_RENDIMIENTO", "Alto rendimiento"
+        PROFESIONAL = "PROFESIONAL", "Profesional nacional"
+
     nombre = models.CharField(max_length=120)
+    # Código de cliente del software de gestión de la escuela. Clave estable
+    # para reconciliar contra los Excel de alumnos (fuente de la verdad).
+    codigo_cliente = models.PositiveIntegerField(
+        null=True, blank=True, unique=True, db_index=True
+    )
+    categoria = models.CharField(
+        max_length=20, choices=Categoria.choices, blank=True
+    )
     edad = models.PositiveSmallIntegerField(null=True, blank=True)
+    fecha_nacimiento = models.DateField(null=True, blank=True)
     es_menor = models.BooleanField(default=False)
+    email = models.EmailField(blank=True)
+    telefono = models.CharField(max_length=60, blank=True)
     # GDPR Art. 9 + minors: explicit consent required to store health states.
     consentimiento_rgpd = models.BooleanField(default=False)
     division = models.ForeignKey(
@@ -135,6 +179,19 @@ class Jugador(models.Model):
         ordering = ["nombre"]
 
     def save(self, *args, **kwargs):
+        # La fecha de nacimiento manda: si está, recalcula la edad actual.
+        if self.fecha_nacimiento is not None:
+            from datetime import date
+
+            today = date.today()
+            self.edad = (
+                today.year
+                - self.fecha_nacimiento.year
+                - (
+                    (today.month, today.day)
+                    < (self.fecha_nacimiento.month, self.fecha_nacimiento.day)
+                )
+            )
         if self.edad is not None:
             self.es_menor = self.edad < 18
         super().save(*args, **kwargs)
@@ -195,3 +252,46 @@ class Contrato(models.Model):
 
     def __str__(self):
         return f"{self.jugador} → {self.entrenador}"
+
+
+class Feedback(models.Model):
+    """Peticiones / feedback del club: quién lo pide, qué prioridad merece y
+    qué se solicita. Backlog editable por Super Admin y entrenadores."""
+
+    class Prioridad(models.TextChoices):
+        ALTA = "ALTA", "Alta"
+        MEDIA = "MEDIA", "Media"
+        BAJA = "BAJA", "Baja"
+
+    class EstadoFeedback(models.TextChoices):
+        NUEVO = "NUEVO", "Nuevo"
+        EN_PROGRESO = "EN_PROGRESO", "En progreso"
+        HECHO = "HECHO", "Hecho"
+        DESCARTADO = "DESCARTADO", "Descartado"
+
+    # Quién da el feedback / hace la petición (texto libre; puede ser alguien
+    # que no tiene usuario en el sistema).
+    autor = models.CharField(max_length=120)
+    prioridad = models.CharField(
+        max_length=6, choices=Prioridad.choices, default=Prioridad.MEDIA
+    )
+    titulo = models.CharField(max_length=160, blank=True)
+    # Qué se solicita.
+    descripcion = models.TextField()
+    estado = models.CharField(
+        max_length=12, choices=EstadoFeedback.choices, default=EstadoFeedback.NUEVO
+    )
+    # Usuario logueado que registró la entrada (si lo hubo).
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="feedback_creados",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Feedback / petición"
+        verbose_name_plural = "Feedback y peticiones"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"[{self.get_prioridad_display()}] {self.titulo or self.descripcion[:40]}"

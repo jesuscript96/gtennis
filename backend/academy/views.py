@@ -1,9 +1,11 @@
+from django.db.models import Case, IntegerField, Value, When
 from rest_framework import filters, viewsets
 
 from .models import (
     Contrato,
     Division,
     Entrenador,
+    Feedback,
     Jugador,
     Pista,
     Rencilla,
@@ -14,6 +16,7 @@ from .serializers import (
     ContratoSerializer,
     DivisionSerializer,
     EntrenadorSerializer,
+    FeedbackSerializer,
     JugadorSerializer,
     PistaSerializer,
     RencillaSerializer,
@@ -66,3 +69,23 @@ class RencillaViewSet(viewsets.ModelViewSet):
 class ContratoViewSet(viewsets.ModelViewSet):
     queryset = Contrato.objects.all()
     serializer_class = ContratoSerializer
+
+
+class FeedbackViewSet(viewsets.ModelViewSet):
+    # Orden por severidad (Alta > Media > Baja) y luego por más reciente.
+    queryset = Feedback.objects.annotate(
+        _sev=Case(
+            When(prioridad="ALTA", then=Value(0)),
+            When(prioridad="MEDIA", then=Value(1)),
+            default=Value(2),
+            output_field=IntegerField(),
+        )
+    ).order_by("_sev", "-created_at")
+    serializer_class = FeedbackSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["autor", "titulo", "descripcion"]
+    ordering_fields = ["created_at", "prioridad", "estado"]
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(creado_por=user)

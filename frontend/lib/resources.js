@@ -27,6 +27,21 @@ const AMBITO_OPTS = [
   { value: "T1", label: "Turno T1" },
   { value: "T2", label: "Turno T2" },
 ];
+const PRIORIDAD_OPTS = [
+  { value: "ALTA", label: "Alta" },
+  { value: "MEDIA", label: "Media" },
+  { value: "BAJA", label: "Baja" },
+];
+const FEEDBACK_ESTADO_OPTS = [
+  { value: "NUEVO", label: "Nuevo" },
+  { value: "EN_PROGRESO", label: "En progreso" },
+  { value: "HECHO", label: "Hecho" },
+  { value: "DESCARTADO", label: "Descartado" },
+];
+const fmtFecha = (v) => {
+  if (!v) return "—";
+  try { return new Date(v).toLocaleDateString("es-ES"); } catch { return v; }
+};
 
 export const RESOURCES = {
   jugadores: {
@@ -184,6 +199,31 @@ export const RESOURCES = {
       { name: "estado", label: "Estado", type: "select", options: ESTADO_OPTS, required: true },
       { name: "subtipo", label: "Motivo (si es ausencia de jugador)", type: "select", options: SUBTIPO_OPTS },
       { name: "nota", label: "Nota", type: "text" },
+    ],
+  },
+
+  feedback: {
+    endpoint: "feedback",
+    title: "Feedback y peticiones",
+    singular: "feedback",
+    search: true,
+    help:
+      "Registra feedback y nuevas peticiones: quién lo pide, qué prioridad " +
+      "merece (alta / media / baja) y qué se solicita. Se ordenan por prioridad.",
+    columns: [
+      { key: "prioridad_display", label: "Prioridad" },
+      { key: "autor", label: "Solicita" },
+      { key: "titulo", label: "Título", render: (v) => v || "—" },
+      { key: "descripcion", label: "Petición", render: (v) => (v && v.length > 80 ? v.slice(0, 80) + "…" : v || "—") },
+      { key: "estado_display", label: "Estado" },
+      { key: "created_at", label: "Fecha", render: fmtFecha },
+    ],
+    fields: [
+      { name: "autor", label: "Quién lo solicita", type: "text", required: true },
+      { name: "prioridad", label: "Prioridad", type: "select", options: PRIORIDAD_OPTS, required: true, default: "MEDIA" },
+      { name: "titulo", label: "Título (breve, opcional)", type: "text" },
+      { name: "descripcion", label: "Qué se solicita", type: "textarea", required: true },
+      { name: "estado", label: "Estado", type: "select", options: FEEDBACK_ESTADO_OPTS, default: "NUEVO" },
     ],
   },
 };

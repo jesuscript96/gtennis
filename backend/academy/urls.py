@@ -11,5 +11,6 @@ router.register("entrenadores", views.EntrenadorViewSet)
 router.register("jugadores", views.JugadorViewSet)
 router.register("rencillas", views.RencillaViewSet)
 router.register("contratos", views.ContratoViewSet)
+router.register("feedback", views.FeedbackViewSet)
 
 urlpatterns = router.urls

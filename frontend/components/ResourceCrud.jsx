@@ -226,6 +226,19 @@ function Field({ field, value, options, onChange }) {
       </label>
     );
   }
+  if (field.type === "textarea") {
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <textarea
+          rows={4}
+          value={value ?? ""}
+          required={field.required}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+    );
+  }
   return (
     <label className="field">
       <span>{field.label}</span>

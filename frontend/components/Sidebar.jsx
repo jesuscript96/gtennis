@@ -13,6 +13,7 @@ const NAV = [
   ["/semanas", "Semanas"],
   ["/jugadores", "Jugadores"],
   ["/entrenadores", "Entrenadores"],
+  ["/feedback", "Feedback"],
 ];
 
 export default function Sidebar() {

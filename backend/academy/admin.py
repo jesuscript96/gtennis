@@ -4,6 +4,7 @@ from .models import (
     Contrato,
     Division,
     Entrenador,
+    Feedback,
     Jugador,
     Pista,
     Rencilla,
@@ -37,20 +38,26 @@ class DivisionAdmin(admin.ModelAdmin):
 
 @admin.register(Entrenador)
 class EntrenadorAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "activo", "disponible_semana", "disponibilidad_notas")
-    list_editable = ("activo", "disponible_semana")
+    list_display = (
+        "nombre", "activo", "disponible_semana", "gestiona_todos_jugadores",
+        "disponibilidad_notas",
+    )
+    list_editable = ("activo", "disponible_semana", "gestiona_todos_jugadores")
     search_fields = ("nombre",)
+    filter_horizontal = ("jugadores_gestionados",)
 
 
 @admin.register(Jugador)
 class JugadorAdmin(admin.ModelAdmin):
     list_display = (
-        "nombre", "edad", "es_menor", "division", "entrenador_responsable",
-        "consentimiento_rgpd", "activo",
+        "nombre", "codigo_cliente", "categoria", "edad", "es_menor", "division",
+        "entrenador_responsable", "consentimiento_rgpd", "activo",
     )
-    list_filter = ("division", "entrenador_responsable", "es_menor", "activo")
+    list_filter = (
+        "categoria", "division", "entrenador_responsable", "es_menor", "activo",
+    )
     list_editable = ("division", "entrenador_responsable", "consentimiento_rgpd")
-    search_fields = ("nombre",)
+    search_fields = ("nombre", "codigo_cliente", "email")
 
 
 @admin.register(Rencilla)
@@ -65,3 +72,12 @@ class ContratoAdmin(admin.ModelAdmin):
     list_display = ("jugador", "entrenador", "activo")
     list_filter = ("activo",)
     autocomplete_fields = ("jugador", "entrenador")
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = ("prioridad", "estado", "autor", "titulo", "created_at")
+    list_filter = ("prioridad", "estado")
+    list_editable = ("estado",)
+    search_fields = ("autor", "titulo", "descripcion")
+    readonly_fields = ("creado_por", "created_at")

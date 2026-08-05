@@ -296,6 +296,12 @@ table.grid th { text-align: left; color: var(--muted); font-weight: 500; font-si
   font-size: 13px; color: var(--text);
 }
 .bench-chip:hover { border-color: var(--accent); }
+/* Jugador no disponible en el banquillo: borde tenue + punto de estado. */
+.bench-chip.nd { border-style: dashed; opacity: 0.9; }
+.bench-state-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+}
 .bench-empty { color: var(--muted); font-size: 13px; }
 .bench-day {
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 7px;
