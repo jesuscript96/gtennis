@@ -6,6 +6,7 @@ from . import views
 router = DefaultRouter()
 router.register("semanas", views.SemanaViewSet)
 router.register("disponibilidades", views.DisponibilidadViewSet, basename="disponibilidad")
+router.register("disponibilidades-entrenador", views.DisponibilidadEntrenadorViewSet, basename="disponibilidad-entrenador")
 router.register("asignaciones", views.AsignacionViewSet)
 
 urlpatterns = router.urls + [

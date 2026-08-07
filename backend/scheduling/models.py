@@ -109,6 +109,52 @@ class Disponibilidad(models.Model):
         return f"{self.jugador} · D{self.dia} · {self.get_estado_display()}"
 
 
+class DisponibilidadEntrenador(models.Model):
+    """Disponibilidad de un entrenador para un día de la semana (#10). Lo puede
+    editar el propio entrenador desde su perfil. Sin fila = disponible todo el
+    día. Permite 'de torneo por la tarde pero entreno por la mañana' con una
+    ventana horaria [hora_desde, hora_hasta]."""
+
+    class EstadoCoach(models.TextChoices):
+        DISPONIBLE = "DISPONIBLE", "Disponible"
+        TORNEO = "TORNEO", "En torneo (parcial)"
+        AUSENTE = "AUSENTE", "No disponible"
+
+    semana = models.ForeignKey(
+        Semana, on_delete=models.CASCADE, related_name="disponibilidades_entrenador"
+    )
+    entrenador = models.ForeignKey(
+        Entrenador, on_delete=models.CASCADE, related_name="disponibilidades"
+    )
+    dia = models.PositiveSmallIntegerField(choices=DIAS)
+    estado = models.CharField(
+        max_length=12, choices=EstadoCoach.choices, default=EstadoCoach.DISPONIBLE
+    )
+    # Ventana en la que SÍ puede entrenar (vacío = todo el día). Con estado
+    # TORNEO se usa para acotar las horas realmente disponibles.
+    hora_desde = models.TimeField(null=True, blank=True)
+    hora_hasta = models.TimeField(null=True, blank=True)
+    nota = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        verbose_name = "Disponibilidad de entrenador"
+        verbose_name_plural = "Disponibilidades de entrenador"
+        unique_together = ("semana", "entrenador", "dia")
+
+    def disponible_en(self, hora_inicio, hora_fin):
+        """¿Está disponible durante todo el turno [hora_inicio, hora_fin]?"""
+        if self.estado == self.EstadoCoach.AUSENTE:
+            return False
+        if self.hora_desde and hora_inicio < self.hora_desde:
+            return False
+        if self.hora_hasta and hora_fin > self.hora_hasta:
+            return False
+        return True
+
+    def __str__(self):
+        return f"{self.entrenador} · D{self.dia} · {self.get_estado_display()}"
+
+
 class Asignacion(models.Model):
     """One engine-produced cell: a player on a court, in a shift, on a day.
     Two (or up to 4 in Sta. Bárbara) per (semana, dia, turno, pista)."""

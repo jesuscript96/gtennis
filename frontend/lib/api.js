@@ -119,3 +119,17 @@ export const setCoach = (body) =>
   req("/asignaciones/set_coach/", { method: "POST", body: JSON.stringify(body) });
 export const removeAsignacion = (id) =>
   req(`/asignaciones/${id}/`, { method: "DELETE" });
+
+// --- Avisos in-app (perfil) ---
+export const getAvisos = async () => rows(await req("/avisos/"));
+export const marcarAvisoLeido = (id) =>
+  req(`/avisos/${id}/leer/`, { method: "POST", body: "{}" });
+
+// --- Invitados (aprobación del Director Deportivo) ---
+export const getInvitados = async () => rows(await req("/invitados/"));
+export const crearInvitado = (body) =>
+  req("/invitados/", { method: "POST", body: JSON.stringify(body) });
+export const aprobarInvitado = (id) =>
+  req(`/invitados/${id}/aprobar/`, { method: "POST", body: "{}" });
+export const rechazarInvitado = (id, motivo = "") =>
+  req(`/invitados/${id}/rechazar/`, { method: "POST", body: JSON.stringify({ motivo }) });

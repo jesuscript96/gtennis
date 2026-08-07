@@ -1,6 +1,18 @@
 from django.contrib import admin
 
-from .models import Asignacion, ConfiguracionMotor, Disponibilidad, Semana
+from .models import (
+    Asignacion,
+    ConfiguracionMotor,
+    Disponibilidad,
+    DisponibilidadEntrenador,
+    Semana,
+)
+
+
+@admin.register(DisponibilidadEntrenador)
+class DisponibilidadEntrenadorAdmin(admin.ModelAdmin):
+    list_display = ("semana", "entrenador", "dia", "estado", "hora_desde", "hora_hasta")
+    list_filter = ("semana", "dia", "estado", "entrenador")
 
 
 @admin.register(ConfiguracionMotor)

@@ -6,6 +6,7 @@ import {
   manualAssign, setCoach, removeAsignacion,
 } from "../../../lib/api";
 import Avatar from "../../../components/Avatar";
+import { turnoHoras, SUPERFICIE_SHORT, SUPERFICIE_COLOR } from "../../../lib/format";
 
 function setDrag(e, payload) {
   e.dataTransfer.setData("application/json", JSON.stringify(payload));
@@ -41,6 +42,7 @@ function buildSessions(asignaciones) {
       key: `${a.dia}-${a.turno_codigo}-${a.pista}`,
       dia: a.dia, turno_id: a.turno, pista: a.pista,
       pista_numero: a.pista_numero, sede: a.sede, turno: a.turno_codigo,
+      superficie: a.pista_superficie,
       players: [], coach: null,
     });
     s.players.push({
@@ -125,6 +127,7 @@ export default function SemanaPage() {
   if (error && !data) return <p className="err">{error}</p>;
   if (!data) return <p className="msg">Cargando semana…</p>;
 
+  const sedeOrden = Object.fromEntries((data.sedes || []).map((s) => [s.nombre, s.orden ?? 99]));
   const ql = q.trim().toLowerCase();
   function pass(s) {
     if (sede && s.sede !== sede) return false;
@@ -216,8 +219,10 @@ export default function SemanaPage() {
                   {list.length === 0 ? <div className="wk-empty">—</div> : (
                     data.turnos.filter((t) => byTurno[t.codigo]).map((t) => (
                       <div className="week-turno" key={t.codigo}>
-                        <div className="wk-turno-label">{t.codigo}</div>
-                        {byTurno[t.codigo].sort((a, b) => a.sede.localeCompare(b.sede) || a.pista_numero - b.pista_numero).map((s) => (
+                        <div className="wk-turno-label">{t.codigo}
+                          <span className="wk-turno-horas">{turnoHoras(t, data.semana.fecha_inicio)}</span>
+                        </div>
+                        {byTurno[t.codigo].sort((a, b) => (sedeOrden[a.sede] ?? 99) - (sedeOrden[b.sede] ?? 99) || a.pista_numero - b.pista_numero).map((s) => (
                           <Session key={s.key} s={s} dropSession={dropSession} dropPlayer={dropPlayer} dropCoach={dropCoach} />
                         ))}
                       </div>
@@ -280,6 +285,10 @@ function Session({ s, dropSession, dropPlayer, dropCoach }) {
       <div className="wk-head">
         <span className="wk-pista">P{s.pista_numero}</span>
         <span className="wk-sede">{s.sede}</span>
+        {s.superficie && (
+          <span className="wk-superficie" title={SUPERFICIE_SHORT[s.superficie]}
+            style={{ background: SUPERFICIE_COLOR[s.superficie] }}>{SUPERFICIE_SHORT[s.superficie]}</span>
+        )}
       </div>
       <div className="wk-players">
         {s.players.map((p) => (

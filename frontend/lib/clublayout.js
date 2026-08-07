@@ -18,5 +18,8 @@ export function modeForSurface(surface) {
 }
 
 export function isCentral(nombre) {
-  return (nombre || "").toLowerCase().includes("central");
+  const n = (nombre || "").toLowerCase();
+  // El Resort es la antigua sede "Central": misma disposición física en 3
+  // columnas (Pista 3-2-1 · 6-5-4 · 8-7).
+  return n.includes("central") || n.includes("resort");
 }

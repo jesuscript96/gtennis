@@ -1,6 +1,12 @@
 from rest_framework import serializers
 
-from .models import Asignacion, ConfiguracionMotor, Disponibilidad, Semana
+from .models import (
+    Asignacion,
+    ConfiguracionMotor,
+    Disponibilidad,
+    DisponibilidadEntrenador,
+    Semana,
+)
 
 
 class SemanaSerializer(serializers.ModelSerializer):
@@ -25,6 +31,24 @@ class DisponibilidadSerializer(serializers.ModelSerializer):
             "ambito_display", "estado", "estado_display", "subtipo",
             "subtipo_display", "nota",
         ]
+
+
+class DisponibilidadEntrenadorSerializer(serializers.ModelSerializer):
+    entrenador_nombre = serializers.CharField(
+        source="entrenador.nombre", read_only=True
+    )
+    estado_display = serializers.CharField(
+        source="get_estado_display", read_only=True
+    )
+
+    class Meta:
+        model = DisponibilidadEntrenador
+        fields = [
+            "id", "semana", "entrenador", "entrenador_nombre", "dia", "estado",
+            "estado_display", "hora_desde", "hora_hasta", "nota",
+        ]
+        # El entrenador se fija según el usuario (coach) salvo Super Admin.
+        extra_kwargs = {"entrenador": {"required": False}}
 
 
 class ConfiguracionMotorSerializer(serializers.ModelSerializer):
@@ -54,12 +78,13 @@ class AsignacionSerializer(serializers.ModelSerializer):
     turno_codigo = serializers.CharField(source="turno.codigo", read_only=True)
     sede = serializers.CharField(source="pista.sede.nombre", read_only=True)
     pista_numero = serializers.IntegerField(source="pista.numero", read_only=True)
+    pista_superficie = serializers.CharField(source="pista.superficie", read_only=True)
 
     class Meta:
         model = Asignacion
         fields = [
             "id", "semana", "dia", "turno", "turno_codigo", "pista",
-            "pista_numero", "sede", "jugador", "jugador_nombre", "jugador_foto",
-            "division_nivel", "entrenador", "entrenador_nombre", "entrenador_foto",
-            "estado", "manual",
+            "pista_numero", "pista_superficie", "sede", "jugador", "jugador_nombre",
+            "jugador_foto", "division_nivel", "entrenador", "entrenador_nombre",
+            "entrenador_foto", "estado", "manual",
         ]

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getAhora, getCuadrante } from "../lib/api";
 import CourtCard from "./CourtCard";
 import { CENTRAL_COLS, isCentral, modeForSurface, surfaceOf } from "../lib/clublayout";
+import { turnoHoras } from "../lib/format";
 
 export default function NowView() {
   const [meta, setMeta] = useState(null);
@@ -33,6 +34,8 @@ export default function NowView() {
   if (!meta) return <p className="msg">Cargando…</p>;
 
   const shown = override || meta.turno_mostrado || meta.turnos[0]?.codigo;
+  const shownTurno = meta.turnos.find((t) => t.codigo === shown);
+  const shownHoras = turnoHoras(shownTurno, meta.semana?.fecha_inicio);
   const asig = (day?.asignaciones || []).filter((a) => a.turno_codigo === shown);
   const byPista = {};
   for (const a of asig) (byPista[a.pista] ||= []).push(a);
@@ -74,11 +77,15 @@ export default function NowView() {
         </div>
       </div>
 
+      {shownHoras && (
+        <div className="now-horas">Turno <b>{shown}</b> · {shownHoras}{(meta.semana && String(meta.semana.fecha_inicio).slice(5,7) === "07") || (meta.semana && String(meta.semana.fecha_inicio).slice(5,7) === "08") ? " (horario de verano)" : ""}</div>
+      )}
       <div className="turno-chips" style={{ marginBottom: 8 }}>
         {meta.turnos.map((t) => (
           <button
             key={t.id}
             className={t.codigo === shown ? "active" : ""}
+            title={turnoHoras(t, meta.semana?.fecha_inicio)}
             onClick={() => setOverride(t.codigo === meta.turno_mostrado ? null : t.codigo)}
           >
             {t.codigo}

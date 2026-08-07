@@ -11,10 +11,18 @@ from rest_framework.views import APIView
 from academy.models import Entrenador, Jugador, Sede, Turno
 from engine.service import _effective_state, _overrides, generate, regenerate_afternoon
 
-from .models import DIAS, Asignacion, ConfiguracionMotor, Disponibilidad, Semana
+from .models import (
+    DIAS,
+    Asignacion,
+    ConfiguracionMotor,
+    Disponibilidad,
+    DisponibilidadEntrenador,
+    Semana,
+)
 from .serializers import (
     AsignacionSerializer,
     ConfiguracionMotorSerializer,
+    DisponibilidadEntrenadorSerializer,
     DisponibilidadSerializer,
     SemanaSerializer,
 )
@@ -27,7 +35,11 @@ def _sedes_payload():
             "nombre": s.nombre,
             "es_satelite": s.es_satelite,
             "densidad_default": s.densidad_default,
-            "pistas": [{"id": p.id, "numero": p.numero} for p in s.pistas.all()],
+            "orden": s.orden_desbordamiento,
+            "pistas": [
+                {"id": p.id, "numero": p.numero, "superficie": p.superficie}
+                for p in s.pistas.filter(activa=True)
+            ],
         }
         for s in Sede.objects.filter(activa=True).prefetch_related("pistas")
     ]
@@ -36,7 +48,8 @@ def _sedes_payload():
 def _turnos_payload():
     return [
         {"id": t.id, "codigo": t.codigo, "bloque": t.bloque,
-         "hora_inicio": t.hora_inicio, "hora_fin": t.hora_fin}
+         "hora_inicio": t.hora_inicio, "hora_fin": t.hora_fin,
+         "hora_inicio_verano": t.hora_inicio_verano, "hora_fin_verano": t.hora_fin_verano}
         for t in Turno.objects.all()
     ]
 
@@ -89,11 +102,12 @@ class AhoraView(APIView):
         )
         es_semana_actual = semana.fecha_inicio == monday
 
-        # 1) ¿Hay un turno EN CURSO ahora mismo?
+        # 1) ¿Hay un turno EN CURSO ahora mismo? (horario según temporada)
         actual = None
         if es_semana_actual and hoy <= 5 and hoy in dias_con_datos:
             for tr in turnos:
-                if tr.hora_inicio <= t <= tr.hora_fin:
+                ini, fin = tr.horas(now.date())
+                if ini <= t <= fin:
                     actual = tr
                     break
 
@@ -106,7 +120,7 @@ class AhoraView(APIView):
             start = 0
             if es_semana_actual and hoy <= 5:
                 for i, (d, tr) in enumerate(slots):
-                    if d > hoy or (d == hoy and tr.hora_inicio > t):
+                    if d > hoy or (d == hoy and tr.horas(now.date())[0] > t):
                         start = i
                         break
             dia_sel = turno_sel = None
@@ -118,8 +132,9 @@ class AhoraView(APIView):
             if dia_sel is None:
                 dia_sel, turno_sel = hoy, turnos[0]
             status = "proximo"
-            if es_semana_actual and dia_sel == hoy and turno_sel.hora_inicio > t:
-                delta = (datetime.combine(now.date(), turno_sel.hora_inicio)
+            ini_sel = turno_sel.horas(now.date())[0]
+            if es_semana_actual and dia_sel == hoy and ini_sel > t:
+                delta = (datetime.combine(now.date(), ini_sel)
                          - datetime.combine(now.date(), t))
                 mins = int(delta.total_seconds() // 60)
 
@@ -198,25 +213,12 @@ class SemanaViewSet(viewsets.ModelViewSet):
             .select_related("jugador", "jugador__division", "entrenador",
                             "turno", "pista", "pista__sede")
         )
-        sedes = [
-            {
-                "id": s.id,
-                "nombre": s.nombre,
-                "es_satelite": s.es_satelite,
-                "pistas": [{"id": p.id, "numero": p.numero} for p in s.pistas.all()],
-            }
-            for s in Sede.objects.filter(activa=True).prefetch_related("pistas")
-        ]
-        turnos = [
-            {"id": t.id, "codigo": t.codigo, "bloque": t.bloque}
-            for t in Turno.objects.all()
-        ]
         return Response(
             {
                 "semana": SemanaSerializer(semana).data,
                 "dia": dia,
-                "turnos": turnos,
-                "sedes": sedes,
+                "turnos": _turnos_payload(),
+                "sedes": _sedes_payload(),
                 "asignaciones": AsignacionSerializer(asignaciones, many=True).data,
             }
         )
@@ -385,6 +387,44 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         self._assert_puede(instance.jugador)
         instance.delete()
+
+
+class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
+    """Disponibilidad del entrenador (torneo / franjas horarias, #10).
+
+    Un entrenador solo ve y edita SUS filas; el Super Admin, todas. Al crear,
+    si es un coach se fuerza `entrenador` = el suyo (ignora lo que envíe)."""
+
+    serializer_class = DisponibilidadEntrenadorSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _entrenador(self):
+        return getattr(self.request.user, "entrenador", None)
+
+    def get_queryset(self):
+        qs = DisponibilidadEntrenador.objects.select_related("entrenador", "semana")
+        user = self.request.user
+        if not user.is_superadmin:
+            ent = self._entrenador()
+            qs = qs.filter(entrenador=ent) if ent else qs.none()
+        semana = self.request.query_params.get("semana")
+        return qs.filter(semana=semana) if semana else qs
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.is_superadmin:
+            serializer.save()
+        else:
+            ent = self._entrenador()
+            if ent is None:
+                raise PermissionDenied("Tu usuario no está enlazado a un entrenador.")
+            serializer.save(entrenador=ent)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if not user.is_superadmin and serializer.instance.entrenador != self._entrenador():
+            raise PermissionDenied("Solo puedes editar tu propia disponibilidad.")
+        serializer.save()
 
 
 class AsignacionViewSet(viewsets.ModelViewSet):

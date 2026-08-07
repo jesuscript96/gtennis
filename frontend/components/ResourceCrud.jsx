@@ -3,9 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { resource } from "../lib/api";
 
+function emptyValue(fl) {
+  if (fl.type === "bool") return false;
+  if (fl.type === "mfk") return [];
+  return "";
+}
+
 function defaults(fields) {
   const f = {};
-  for (const fl of fields) f[fl.name] = fl.default ?? (fl.type === "bool" ? false : "");
+  for (const fl of fields) f[fl.name] = fl.default ?? emptyValue(fl);
   return f;
 }
 
@@ -15,7 +21,9 @@ function toBody(fields, form) {
     let v = form[fl.name];
     if (fl.type === "bool") v = !!v;
     else if (fl.type === "number" || fl.type === "fk") v = v === "" || v == null ? null : Number(v);
+    else if (fl.type === "mfk") v = Array.isArray(v) ? v.map(Number) : [];
     else if (fl.type === "select") v = v === "" || v == null ? null : fl.numeric ? Number(v) : v;
+    else if (fl.type === "time") v = v === "" || v == null ? null : v;
     body[fl.name] = v;
   }
   return body;
@@ -50,7 +58,7 @@ export default function ResourceCrud({ config }) {
   useEffect(() => {
     load();
     // load fk option lists
-    const fks = config.fields.filter((f) => f.type === "fk");
+    const fks = config.fields.filter((f) => f.type === "fk" || f.type === "mfk");
     Promise.all(
       fks.map((f) => resource(f.endpoint).list().then((rows) => [f.name, rows]).catch(() => [f.name, []]))
     ).then((pairs) => setFkOptions(Object.fromEntries(pairs)));
@@ -66,7 +74,7 @@ export default function ResourceCrud({ config }) {
   function openEdit(row) {
     setEditing(row);
     const f = {};
-    for (const fl of config.fields) f[fl.name] = row[fl.name] ?? (fl.type === "bool" ? false : "");
+    for (const fl of config.fields) f[fl.name] = row[fl.name] ?? emptyValue(fl);
     setForm(f);
     setFormError(null);
     setOpen(true);
@@ -127,6 +135,7 @@ export default function ResourceCrud({ config }) {
         <table className="data">
           <thead>
             <tr>
+              {config.numbered && <th style={{ width: 44, textAlign: "right", color: "var(--muted)" }}>#</th>}
               {config.columns.map((c) => (
                 <th key={c.key}>{c.label}</th>
               ))}
@@ -135,12 +144,13 @@ export default function ResourceCrud({ config }) {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={config.columns.length + 1} className="msg">Cargando…</td></tr>
+              <tr><td colSpan={config.columns.length + (config.numbered ? 2 : 1)} className="msg">Cargando…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={config.columns.length + 1} className="msg">Sin registros.</td></tr>
+              <tr><td colSpan={config.columns.length + (config.numbered ? 2 : 1)} className="msg">Sin registros.</td></tr>
             ) : (
-              items.map((row) => (
+              items.map((row, i) => (
                 <tr key={row.id}>
+                  {config.numbered && <td style={{ textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{i + 1}</td>}
                   {config.columns.map((c) => (
                     <td key={c.key}>{renderCell(c, row)}</td>
                   ))}
@@ -239,11 +249,35 @@ function Field({ field, value, options, onChange }) {
       </label>
     );
   }
+  if (field.type === "mfk") {
+    const sel = Array.isArray(value) ? value.map(Number) : [];
+    const toggle = (id) =>
+      onChange(sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]);
+    return (
+      <div className="field">
+        <span>{field.label}</span>
+        <div className="mfk">
+          {options.length === 0 ? <span className="msg">Sin opciones.</span> :
+            options.map((o) => (
+              <label key={o.id} className="mfk-opt">
+                <input type="checkbox" checked={sel.includes(Number(o.id))} onChange={() => toggle(Number(o.id))} />
+                {field.optionLabel(o)}
+              </label>
+            ))}
+        </div>
+        {field.help && <small className="mfk-help">{field.help}</small>}
+      </div>
+    );
+  }
+  const inputType =
+    field.type === "number" ? "number" :
+    field.type === "date" ? "date" :
+    field.type === "time" ? "time" : "text";
   return (
     <label className="field">
       <span>{field.label}</span>
       <input
-        type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+        type={inputType}
         value={value ?? ""}
         required={field.required}
         onChange={(e) => onChange(e.target.value)}

@@ -5,11 +5,18 @@ persists Asignacion rows.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from django.db import transaction
 
-from academy.models import Contrato, Entrenador, Pista, Rencilla, Turno
+from academy.models import (
+    Contrato,
+    Entrenador,
+    Pista,
+    Rencilla,
+    Turno,
+    VacacionesEntrenador,
+)
 from scheduling.models import (
     DIAS,
     ESTADOS_DEPRIORIZADOS,
@@ -17,6 +24,7 @@ from scheduling.models import (
     Asignacion,
     ConfiguracionMotor,
     Disponibilidad,
+    DisponibilidadEntrenador,
     Estado,
     Semana,
 )
@@ -35,6 +43,7 @@ def _build_courts() -> list[Court]:
                 venue_id=pista.sede_id,
                 capacity=pista.sede.densidad_default,
                 is_satellite=pista.sede.es_satelite,
+                fill_rank=pista.sede.orden_desbordamiento,
             )
         )
     return courts
@@ -121,38 +130,62 @@ def _recent_partners(semana, before_dia) -> dict[frozenset[int], int]:
     return dict(counts)
 
 
-def _assign_coaches(members, sponsors, semana, load: Counter):
-    """Pick one coach per court: sponsor of a player on it, else the player's
-    responsible coach, else the least-loaded available coach (rotation)."""
-    from academy.models import Jugador
+def _coach_capacita(coach, coach_niveles, court_niveles):
+    """¿El entrenador está capacitado para las divisiones de esta pista? (#3)"""
+    habil = coach_niveles.get(coach.id)
+    if habil is None:
+        return True
+    return all(n is None or n in habil for n in court_niveles)
 
-    available = list(
-        Entrenador.objects.filter(activo=True, disponible_semana=True)
-    )
-    avail_ids = {e.id for e in available}
-    responsible = dict(
-        Jugador.objects.filter(id__in=members).values_list(
-            "id", "entrenador_responsable_id"
-        )
-    )
+
+def _assign_coaches(
+    members, sponsors, elegibles, coach_niveles, player_div,
+    player_responsables, coach_share, player_sessions, load,
+):
+    """Pick one coach per court entre los `elegibles` (ya filtrados por
+    disponibilidad horaria y vacaciones):
+
+      0) capacitado para las divisiones de la pista (#3);
+      1) sponsor (contrato) de algún jugador de la pista;
+      2) responsable del jugador, respetando prioridad y acercándose al %
+         objetivo de entrenos deseado (#2/#12, best-effort);
+      3) el menos cargado (rotación equilibrada).
+    """
+    court_niveles = {player_div.get(jid) for jid in members}
+    capaces = [c for c in elegibles if _coach_capacita(c, coach_niveles, court_niveles)]
+    if not capaces:
+        return None
+    cap_ids = {c.id for c in capaces}
+
     # 1) sponsor on this court
     for jid in members:
         for cid in sponsors.get(jid, set()):
-            if cid in avail_ids:
+            if cid in cap_ids:
                 load[cid] += 1
                 return cid
-    # 2) responsible coach
+
+    # 2) responsables ponderados por prioridad y déficit respecto al % objetivo.
+    scores: dict[int, float] = {}
     for jid in members:
-        cid = responsible.get(jid)
-        if cid in avail_ids:
-            load[cid] += 1
-            return cid
-    # 3) least-loaded available coach (balanced rotation)
-    if available:
-        chosen = min(available, key=lambda e: load[e.id])
-        load[chosen.id] += 1
-        return chosen.id
-    return None
+        total = max(1, player_sessions.get(jid, 0))
+        for cid, prio, pct in player_responsables.get(jid, []):
+            if cid not in cap_ids:
+                continue
+            share = 100.0 * coach_share.get((jid, cid), 0) / total
+            # Déficit: cuánto le falta a este entrenador para su % objetivo.
+            deficit = (pct - share) if pct else 0.0
+            # El principal (prioridad 1) recibe un empujón base.
+            base = 6.0 if prio == 1 else max(0.0, 4.0 - prio)
+            scores[cid] = scores.get(cid, 0.0) + deficit + base
+    if scores:
+        best = max(scores.items(), key=lambda kv: (kv[1], -load[kv[0]]))[0]
+        load[best] += 1
+        return best
+
+    # 3) least-loaded capable coach (balanced rotation)
+    chosen = min(capaces, key=lambda e: load[e.id])
+    load[chosen.id] += 1
+    return chosen.id
 
 
 @transaction.atomic
@@ -176,6 +209,39 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     load: Counter = Counter()
     report = {"dias": {}, "overflow": [], "unassigned": []}
 
+    # --- Entrenadores: capacidad por división (#3) y disponibilidad (#10/#11) --
+    from academy.models import Jugador
+
+    all_coaches = list(
+        Entrenador.objects.filter(activo=True, disponible_semana=True)
+        .prefetch_related("divisiones_habilitadas")
+    )
+    coach_niveles = {c.id: c.niveles_habilitados() for c in all_coaches}
+    player_div = dict(
+        Jugador.objects.filter(activo=True).values_list("id", "division__nivel")
+    )
+
+    # Responsables ponderados por jugador (#2/#12): prioridad y % objetivo.
+    from academy.models import ResponsableJugador
+
+    player_responsables: dict[int, list] = defaultdict(list)
+    for rj in ResponsableJugador.objects.filter(activo=True).order_by(
+        "jugador_id", "prioridad"
+    ):
+        player_responsables[rj.jugador_id].append(
+            (rj.entrenador_id, rj.prioridad, rj.porcentaje_objetivo)
+        )
+    # Fallback: jugadores sin fila usan su entrenador_responsable como principal.
+    for jid, cid in Jugador.objects.filter(
+        activo=True, entrenador_responsable__isnull=False
+    ).values_list("id", "entrenador_responsable_id"):
+        if jid not in player_responsables:
+            player_responsables[jid].append((cid, 1, 0))
+
+    # Recuento de sesiones para acercarse a los % objetivo a lo largo de la semana.
+    coach_share: Counter = Counter()      # (jugador_id, coach_id) -> nº sesiones
+    player_sessions: Counter = Counter()  # jugador_id -> nº sesiones
+
     for dia in dias:
         overrides = _overrides(semana, dia)
         recent = _recent_partners(semana, dia)
@@ -184,7 +250,29 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             pair: count * (5 if count >= cfg.max_dias_misma_pista else 1)
             for pair, count in recent.items()
         }
+        # Entrenadores fuera por vacaciones ese día (#11) y overrides del día (#10).
+        fecha = semana.fecha_inicio + timedelta(days=dia)
+        vac_ids = set(
+            VacacionesEntrenador.objects.filter(
+                fecha_inicio__lte=fecha, fecha_fin__gte=fecha
+            ).values_list("entrenador_id", flat=True)
+        )
+        coach_ovr = {
+            d.entrenador_id: d
+            for d in DisponibilidadEntrenador.objects.filter(semana=semana, dia=dia)
+        }
         for turno in turnos:
+            # Entrenadores elegibles para este turno: no de vacaciones y cuya
+            # ventana horaria cubre el turno (según horario de temporada).
+            ini_t, fin_t = turno.horas(fecha)
+            elegibles = []
+            for c in all_coaches:
+                if c.id in vac_ids:
+                    continue
+                ovr = coach_ovr.get(c.id)
+                if ovr is not None and not ovr.disponible_en(ini_t, fin_t):
+                    continue
+                elegibles.append(c)
             players = _available_players(semana, dia, turno, sponsors)
             result = solve_pairing(
                 PairingInput(
@@ -206,7 +294,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 semana=semana, dia=dia, turno=turno
             ).delete()
             for court_id, member_ids in result.courts.items():
-                coach_id = _assign_coaches(member_ids, sponsors, semana, load)
+                coach_id = _assign_coaches(
+                    member_ids, sponsors, elegibles, coach_niveles, player_div,
+                    player_responsables, coach_share, player_sessions, load,
+                )
                 for jid in member_ids:
                     Asignacion.objects.create(
                         semana=semana,
@@ -217,6 +308,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                         entrenador_id=coach_id,
                         estado=_effective_state(overrides, jid, turno),
                     )
+                    # Historial para acercarse a los % objetivo (#12).
+                    player_sessions[jid] += 1
+                    if coach_id:
+                        coach_share[(jid, coach_id)] += 1
                 if courts_by_id[court_id].is_satellite:
                     report["overflow"].append(
                         {"dia": dia, "turno": turno.codigo, "pista": court_id}

@@ -35,6 +35,9 @@ class Court:
     venue_id: int
     capacity: int = 2
     is_satellite: bool = False
+    # Orden de desbordamiento de la sede (0 = base). Los satélites se llenan
+    # de menor a mayor: Sta. Bárbara antes que Bétera antes que Mas Camarena.
+    fill_rank: int = 0
 
 
 @dataclass
@@ -119,10 +122,11 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         for c in courts:
             bonus = data.w_central if not c.is_satellite else 0
             terms.append((data.w_assign * p.priority + bonus) * x[p.id, c.id])
-    # 2) Prefer the base venue: small penalty per used satellite court.
+    # 2) Prefer the base venue, and among satellites respect the overflow order
+    #    (fill_rank): a small penalty per used satellite, growing with its rank.
     for c in courts:
         if c.is_satellite:
-            terms.append(-data.w_satellite * used[c.id])
+            terms.append(-data.w_satellite * max(1, c.fill_rank) * used[c.id])
     # 3) Anti-repetition: penalise re-pairing recent partners.
     for pair, weight in data.recent_partners.items():
         a, b = tuple(pair)
