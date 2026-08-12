@@ -82,7 +82,27 @@ Entra como **ivan** salvo que se indique lo contrario.
 
 ## 5. Nota sobre producción
 
-Estos cambios están probados en local pero **no desplegados**. Al hacer `git push` a `main`, Fly aplica las migraciones (arregla los datos de #7/#8/#12 en prod) y Vercel redeploya. Después, para marcar el backlog como resuelto:
-```bash
-fly ssh console -a gtennis-api-jesus --command "python manage.py sync_feedback_estados"
-```
+Estos cambios están probados en local. El despliegue a producción es **en dos
+pasos** (Vercel y Fly NO se disparan del mismo sitio):
+
+1. **Frontend (Vercel)** — sí se auto-despliega al hacer `git push` a `main`.
+2. **Backend (Fly)** — NO se auto-despliega con el push. Hay que lanzarlo a mano
+   desde `backend/`:
+   ```bash
+   cd backend
+   fly deploy --app gtennis-api-jesus --strategy rolling
+   ```
+   El `release_command` de `fly.toml` ejecuta automáticamente
+   `python manage.py migrate --noinput && python manage.py seed_base`, así que
+   las migraciones (incluidas las de datos de #7/#8/#12) se aplican solas sobre
+   el Postgres de producción.
+
+> Hecho el deploy, para marcar el feedback como resuelto en la app:
+> ```bash
+> fly ssh console -a gtennis-api-jesus -C "python manage.py sync_feedback_estados"
+> ```
+
+URLs de producción:
+- App: <https://gtennis.vercel.app/>
+- API: <https://gtennis-api-jesus.fly.dev/api/>
+- Admin Django: <https://gtennis-api-jesus.fly.dev/admin/>
