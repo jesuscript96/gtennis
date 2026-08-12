@@ -418,6 +418,16 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     search_fields = ["autor", "titulo", "descripcion"]
     ordering_fields = ["created_at", "prioridad", "estado"]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Filtrado por estado: acepta lista separada por comas
+        # (?estado=NUEVO,EN_PROGRESO) para que el frontend pueda agrupar
+        # varios estados bajo una misma pestaña.
+        estados = self.request.query_params.get("estado")
+        if estados:
+            qs = qs.filter(estado__in=[e.strip() for e in estados.split(",") if e.strip()])
+        return qs
+
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
         serializer.save(creado_por=user)

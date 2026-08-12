@@ -634,7 +634,8 @@ class Feedback(models.Model):
     class EstadoFeedback(models.TextChoices):
         NUEVO = "NUEVO", "Nuevo"
         EN_PROGRESO = "EN_PROGRESO", "En progreso"
-        HECHO = "HECHO", "Hecho"
+        HECHO = "HECHO", "Implementado"
+        AJENO = "AJENO", "Ajeno a esta plataforma"
         DESCARTADO = "DESCARTADO", "Descartado"
 
     # Quién da el feedback / hace la petición (texto libre; puede ser alguien

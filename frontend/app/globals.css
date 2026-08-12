@@ -438,3 +438,32 @@ table.grid th { text-align: left; color: var(--muted); font-weight: 500; font-si
 .wk-av { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 42px; }
 .wk-av .nm { font-size: 9px; color: var(--muted); text-align: center; line-height: 1.05; max-width: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wk-av.coach .nm { color: var(--text); }
+
+/* ====== Feedback: 3 pestañas con CRUD ====== */
+.feedback-tabs { display: flex; gap: 8px; margin: 14px 0 6px; flex-wrap: wrap; }
+.feedback-tabs .tab {
+  padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); cursor: pointer;
+  font-size: 13px; font-weight: 600; transition: all 0.15s;
+}
+.feedback-tabs .tab:hover { border-color: var(--accent); }
+.feedback-tabs .tab.active { color: #fff; border-color: transparent; }
+.feedback-tabs .tab.tab-nuevo.active { background: #d97706; }
+.feedback-tabs .tab.tab-hecho.active { background: #16a34a; }
+.feedback-tabs .tab.tab-ajeno.active { background: #6b7280; }
+
+.feedback-toolbar { display: flex; gap: 10px; align-items: center; margin: 10px 0 14px; }
+.feedback-toolbar .search { flex: 1; }
+
+.fb-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.fb-form .fb-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.fb-form .fb-row .search, .fb-form .fb-row select { flex: 1; min-width: 140px; }
+.fb-form h3 { margin: 0 0 4px; font-size: 15px; }
+.fb-actions { display: flex; gap: 8px; }
+
+.fb-desc { max-width: 360px; color: var(--muted); font-size: 12px; }
+
+/* Pills de prioridad para feedback */
+.pill.prio-alta { background: #dc2626; color: #fff; }
+.pill.prio-media { background: #d97706; color: #fff; }
+.pill.prio-baja { background: #6b7280; color: #fff; }
