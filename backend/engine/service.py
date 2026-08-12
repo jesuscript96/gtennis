@@ -95,7 +95,8 @@ def _player_priority(division, state):
 
 
 def _available_players(
-    semana, dia, turno, sponsors, escuela_cfg=None, surface_prefs=None
+    semana, dia, turno, sponsors, escuela_cfg=None, surface_prefs=None,
+    exclusive_escuela_id=None,
 ) -> list[Player]:
     from academy.models import Jugador
 
@@ -107,9 +108,14 @@ def _available_players(
     qs = Jugador.objects.filter(activo=True).select_related("division")
     for j in qs:
         # #6: los jugadores de una escuela con turno único (p. ej. Junior
-        # Program → M2) solo entran en ese turno; en el resto se excluyen.
+        # Program → JP) solo entran en ese turno; en el resto se excluyen.
         turno_unico, solo_central = escuela_cfg.get(j.escuela_id, (None, False))
         if turno_unico is not None and turno_unico != turno.id:
+            continue
+        # Regla inversa: si ESTE turno es exclusivo de una escuela (alguien lo
+        # tiene como turno_unico), solo pueden entrar jugadores de esa escuela.
+        # Evita que Alto Rendimiento caiga en el turno JP.
+        if exclusive_escuela_id is not None and j.escuela_id != exclusive_escuela_id:
             continue
         state = _effective_state(overrides, j.id, turno)
         if state in ESTADOS_EXCLUYENTES:
@@ -220,13 +226,21 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     turnos = list(Turno.objects.all())
     if bloques:
         turnos = [t for t in turnos if t.bloque in bloques]
-    # Config por escuela (#6): turno único (p. ej. Junior Program solo M2) y si
+    # Config por escuela (#6): turno único (p. ej. Junior Program solo JP) y si
     # sus jugadores solo pueden ir al Resort (sin satélites).
     from academy.models import Escuela
 
     escuela_cfg = {
         e.id: (e.turno_unico_id, e.solo_central) for e in Escuela.objects.all()
     }
+    # Mapa inverso: para cada turno que alguna escuela tenga como exclusivo
+    # (turno_unico), anota qué escuela es. Es la regla "el turno JP solo admite
+    # jugadores de la escuela Junior Program" — complementaria de la clásica
+    # "los jugadores JP solo van al turno JP".
+    turnos_exclusivos: dict[int, int] = {}
+    for escuela_id, (turno_unico_id, _solo_central) in escuela_cfg.items():
+        if turno_unico_id and turno_unico_id not in turnos_exclusivos:
+            turnos_exclusivos[turno_unico_id] = escuela_id
 
     courts = _build_courts()
     courts_by_id = {c.id: c for c in courts}
@@ -319,7 +333,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     continue
                 elegibles.append(c)
             players = _available_players(
-                semana, dia, turno, sponsors, escuela_cfg, surface_prefs
+                semana, dia, turno, sponsors, escuela_cfg, surface_prefs,
+                exclusive_escuela_id=turnos_exclusivos.get(turno.id),
             )
             # #17: por la tarde nunca se usan los clubs satélite. Solo pistas de
             # sedes no satélite; el desbordamiento queda en banquillo, no spillea.

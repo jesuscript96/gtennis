@@ -316,14 +316,29 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         inv = self.get_object()
         if inv.estado != Invitado.Estado.PENDIENTE:
             return Response({"error": "El invitado ya está resuelto."}, status=409)
-        anfitrion = inv.grupo_anfitrion
+        # Asociación por entrenador solicitante (#5 feedback Sergio): el grupo
+        # del invitado se entiende por el entrenador que lo propone, no por un
+        # 'grupo_anfitrión'. Derivamos escuela y responsable de ahí.
+        solicitante = inv.entrenador_solicitante
+        escuela_default = (
+            Jugador.objects.filter(
+                entrenadores_gestores=solicitante, activo=True
+            ).values_list("escuela_id", flat=True).first()
+        )
+        if escuela_default is None:
+            # Si el entrenador no tiene jugadores activos,alto rendimiento por defecto.
+            from .models import Escuela
+            escuela_default = (
+                Escuela.objects.filter(nombre__icontains="alto rendimiento")
+                .values_list("id", flat=True).first()
+            )
         jugador = Jugador.objects.create(
             nombre=f"{inv.nombre} (invitado)",
             activo=True,
-            escuela=anfitrion.escuela if anfitrion else None,
-            entrenador_responsable=anfitrion.entrenador_responsable if anfitrion else None,
-            # Datos propios del invitado si se aportaron; si no, del anfitrión (#5).
-            division=inv.division or (anfitrion.division if anfitrion else None),
+            escuela_id=escuela_default,
+            entrenador_responsable=solicitante,
+            # Datos propios del invitado si se aportaron (#5).
+            division=inv.division,
             edad=inv.edad,
             notas="Invitado (pendiente de ubicar en el cuadrante)",
         )
