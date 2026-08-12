@@ -32,7 +32,7 @@ COL_COACH = {
     7: "BLAS",
     8: "MARIO/JORGE I./SALVA",
     10: "PATRICIO",
-    11: "SANTI/NACHO",
+    11: "NACHO",  # SANTI es el cabeza del bloque naranja, no sub-entrenador de div 7
     13: "ALVARO M.",
 }
 FILA_PRIMER_JUGADOR = 71
@@ -151,10 +151,17 @@ class Command(BaseCommand):
                 nombres.append(str(v).strip())
             por_div[div] = nombres
 
+        # Bloques de color: los secundarios son las OTRAS sub-columnas del mismo
+        # bloque, no las divisiones vecinas (que cruzarían de color).
+        bloques = [[1, 2, 3], [4, 5], [6, 7], [8]]
+        bloque_de = {d: b for b in bloques for d in b}
         n_resp = 0
         for div, nombres in sorted(por_div.items()):
             principal = coaches_por_div.get(div, [])
-            vecinos = coaches_por_div.get(div - 1, []) + coaches_por_div.get(div + 1, [])
+            vecinos = []
+            for d2 in bloque_de.get(div, [div]):
+                if d2 != div:
+                    vecinos += coaches_por_div.get(d2, [])
             for nombre in nombres:
                 j = self._match_jugador(nombre, jindex)
                 if j is None:

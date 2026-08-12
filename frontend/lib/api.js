@@ -89,6 +89,8 @@ export function resource(name) {
     update: (id, body) =>
       req(`/${name}/${id}/`, { method: "PATCH", body: JSON.stringify(body) }),
     remove: (id) => req(`/${name}/${id}/`, { method: "DELETE" }),
+    action: (id, verb, body) =>
+      req(`/${name}/${id}/${verb}/`, { method: "POST", body: JSON.stringify(body || {}) }),
   };
 }
 

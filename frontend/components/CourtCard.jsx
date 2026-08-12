@@ -1,6 +1,7 @@
 "use client";
 
 import Avatar from "./Avatar";
+import { SUPERFICIE_COLOR, SUPERFICIE_SHORT } from "../lib/format";
 
 const ESTADO_COLOR = {
   DISPONIBLE: "#1f9d57", AUSENCIA_JUGADOR: "#d33b3b", CALENTAMIENTO: "#c08a00",
@@ -38,12 +39,14 @@ function positions(n) {
   return out;
 }
 
-// Esquema cenital 4:3 con la red vertical en el centro.
-function CourtSvg() {
+// Esquema cenital 4:3 con la red vertical en el centro. El suelo se pinta según
+// la superficie (#1): arcilla para tierra batida, azul para pista rápida.
+function CourtSvg({ superficie }) {
+  const floor = SUPERFICIE_COLOR[superficie] || "#3f6f9e";
   return (
     <svg viewBox="0 0 240 180" preserveAspectRatio="none" aria-hidden="true">
       <rect width="240" height="180" fill="#46815a" />
-      <rect x="16" y="22" width="208" height="136" fill="#3f6f9e" />
+      <rect x="16" y="22" width="208" height="136" fill={floor} />
       <g stroke="#eef2f0" strokeWidth="2" fill="none">
         <rect x="16" y="22" width="208" height="136" />
         <line x1="16" y1="40" x2="224" y2="40" />
@@ -71,7 +74,14 @@ export default function CourtCard({ pista, players, coach, mode }) {
       style={{ borderTop: `3px solid ${empty ? "var(--border-strong)" : color}` }}
     >
       <div className="court-top">
-        <span className="court-name">{pista.label}</span>
+        <span className="court-name">
+          {pista.label}
+          {pista.superficie && (
+            <span className="court-surf" style={{ background: SUPERFICIE_COLOR[pista.superficie] }}>
+              {SUPERFICIE_SHORT[pista.superficie]}
+            </span>
+          )}
+        </span>
         {!empty && (
           <span className="court-state" style={{ background: color }}>
             {ESTADO_LABEL[estado]}
@@ -80,7 +90,7 @@ export default function CourtCard({ pista, players, coach, mode }) {
       </div>
 
       <div className="court-field">
-        {mode === "cancha" && <CourtSvg />}
+        {mode === "cancha" && <CourtSvg superficie={pista.superficie} />}
         {empty && <div className="court-free">Libre</div>}
 
         {players.map((p, i) => (

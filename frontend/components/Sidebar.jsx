@@ -21,7 +21,9 @@ const SECTIONS = [
   { title: "Datos", items: [
     ["/jugadores", "Jugadores"],
     ["/entrenadores", "Entrenadores"],
-    ["/responsables", "Responsables"],
+    ["/coaches", "Coaches", "direccion"],
+    ["/escuelas", "Escuelas"],
+    ["/preferencias-superficie", "Pref. superficie"],
   ] },
   { title: "Gestión", items: [
     ["/invitados", "Invitados"],
@@ -48,11 +50,13 @@ export default function Sidebar() {
         {SECTIONS.map((section, i) => (
           <div key={i} className="nav-section">
             {section.title && <div className="nav-section-title">{section.title}</div>}
-            {section.items.map(([href, label]) => (
-              <Link key={href} href={href} className={pathname === href ? "active" : ""}>
-                {label}
-              </Link>
-            ))}
+            {section.items
+              .filter(([, , role]) => !role || (role === "direccion" && user?.is_superadmin))
+              .map(([href, label]) => (
+                <Link key={href} href={href} className={pathname === href ? "active" : ""}>
+                  {label}
+                </Link>
+              ))}
           </div>
         ))}
       </nav>
@@ -60,7 +64,7 @@ export default function Sidebar() {
         <div className="user-row">
           <div className="user-id">
             <div className="name">{user?.nombre || user?.username || "—"}</div>
-            <div className="role">{user?.is_superadmin ? "Super Admin" : "Entrenador"}</div>
+            <div className="role">{user?.is_superadmin ? "Super Admin" : user?.is_coach ? "Coach" : "Entrenador"}</div>
           </div>
           <SettingsMenu align="left" up />
         </div>

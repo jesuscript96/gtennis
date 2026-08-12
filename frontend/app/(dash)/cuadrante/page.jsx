@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Avatar from "../../../components/Avatar";
+import { SUPERFICIE_LABEL, SUPERFICIE_COLOR } from "../../../lib/format";
 import {
   getCuadrante,
   getLatestSemana,
@@ -187,7 +188,13 @@ export default function CuadrantePage() {
                 const sede = data.sedes[si];
                 return [header, ...sede.pistas.map((p) => (
                   <tr key={p.id}>
-                    <td className="pista-label">P{p.numero}</td>
+                    <td className="pista-label">
+                      P{p.numero}
+                      {p.superficie && (
+                        <span className="surf-dot" title={SUPERFICIE_LABEL[p.superficie]}
+                          style={{ background: SUPERFICIE_COLOR[p.superficie] }} />
+                      )}
+                    </td>
                     {data.turnos.map((t) => (
                       <Cell
                         key={t.id}

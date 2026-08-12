@@ -353,6 +353,11 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_superadmin:
             return
+        if getattr(user, "coach", None) is not None:
+            from academy.scope import puede_ver_jugador
+            if puede_ver_jugador(user, jugador):
+                return
+            raise PermissionDenied("No tienes acceso para gestionar a este jugador.")
         entrenador = self._entrenador()
         if entrenador is None:
             raise PermissionDenied("Tu usuario no está enlazado a un entrenador.")
@@ -365,11 +370,15 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
         qs = Disponibilidad.objects.select_related("jugador", "semana")
         user = self.request.user
         if not user.is_superadmin:
-            entrenador = self._entrenador()
-            if entrenador is None:
-                return qs.none()
-            if not entrenador.gestiona_todos_jugadores:
-                qs = qs.filter(jugador__in=entrenador.jugadores_gestionados.all())
+            if getattr(user, "coach", None) is not None:
+                from academy.scope import jugadores_visibles
+                qs = qs.filter(jugador__in=jugadores_visibles(user))
+            else:
+                entrenador = self._entrenador()
+                if entrenador is None:
+                    return qs.none()
+                if not entrenador.gestiona_todos_jugadores:
+                    qs = qs.filter(jugador__in=entrenador.jugadores_gestionados.all())
         semana = self.request.query_params.get("semana")
         return qs.filter(semana=semana) if semana else qs
 
@@ -405,8 +414,12 @@ class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
         qs = DisponibilidadEntrenador.objects.select_related("entrenador", "semana")
         user = self.request.user
         if not user.is_superadmin:
-            ent = self._entrenador()
-            qs = qs.filter(entrenador=ent) if ent else qs.none()
+            coach = getattr(user, "coach", None)
+            if coach is not None:
+                qs = qs.filter(entrenador__in=coach.entrenadores.all())
+            else:
+                ent = self._entrenador()
+                qs = qs.filter(entrenador=ent) if ent else qs.none()
         semana = self.request.query_params.get("semana")
         return qs.filter(semana=semana) if semana else qs
 

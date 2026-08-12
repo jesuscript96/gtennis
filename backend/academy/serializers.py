@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from .models import (
     Aviso,
+    Coach,
     Contrato,
     Division,
     Entrenador,
@@ -10,6 +11,7 @@ from .models import (
     Invitado,
     Jugador,
     Pista,
+    PreferenciaSuperficie,
     Rencilla,
     ResponsableJugador,
     Sede,
@@ -67,6 +69,22 @@ class EntrenadorSerializer(serializers.ModelSerializer):
     def get_divisiones_habilitadas_display(self, obj):
         niveles = sorted(obj.divisiones_habilitadas.values_list("nivel", flat=True))
         return "Todas" if not niveles else ", ".join(f"D{n}" for n in niveles)
+
+
+class CoachSerializer(serializers.ModelSerializer):
+    entrenadores_display = serializers.SerializerMethodField()
+    usuario_username = serializers.CharField(source="user.username", read_only=True, default=None)
+
+    class Meta:
+        model = Coach
+        fields = [
+            "id", "nombre", "activo", "user", "usuario_username",
+            "entrenadores", "entrenadores_display",
+        ]
+
+    def get_entrenadores_display(self, obj):
+        nombres = list(obj.entrenadores.values_list("nombre", flat=True))
+        return ", ".join(nombres) if nombres else "—"
 
 
 class VacacionesEntrenadorSerializer(serializers.ModelSerializer):
@@ -131,9 +149,30 @@ class ResponsableJugadorSerializer(serializers.ModelSerializer):
 
 
 class EscuelaSerializer(serializers.ModelSerializer):
+    turno_unico_codigo = serializers.CharField(
+        source="turno_unico.codigo", read_only=True, default=None
+    )
+
     class Meta:
         model = Escuela
-        fields = ["id", "nombre", "activa", "orden"]
+        fields = [
+            "id", "nombre", "activa", "orden",
+            "turno_unico", "turno_unico_codigo", "solo_central",
+        ]
+
+
+class PreferenciaSuperficieSerializer(serializers.ModelSerializer):
+    jugador_nombre = serializers.CharField(source="jugador.nombre", read_only=True)
+    superficie_display = serializers.CharField(
+        source="get_superficie_display", read_only=True
+    )
+
+    class Meta:
+        model = PreferenciaSuperficie
+        fields = [
+            "id", "jugador", "jugador_nombre", "superficie", "superficie_display",
+            "fecha_desde", "fecha_hasta", "estricta",
+        ]
 
 
 class AvisoSerializer(serializers.ModelSerializer):
@@ -158,13 +197,18 @@ class InvitadoSerializer(serializers.ModelSerializer):
     estado_display = serializers.CharField(
         source="get_estado_display", read_only=True
     )
+    jugar_con_nombre = serializers.CharField(
+        source="jugar_con.nombre", read_only=True, default=None
+    )
 
     class Meta:
         model = Invitado
         fields = [
             "id", "nombre", "entrenador_solicitante", "entrenador_nombre",
             "grupo_anfitrion", "grupo_nombre", "estado", "estado_display",
-            "aprobado_por", "jugador_creado", "nota", "created_at",
+            "aprobado_por", "jugador_creado", "nota",
+            "division", "edad", "superficie_pref",
+            "jugar_con", "jugar_con_nombre", "pareja_estricta", "created_at",
         ]
         read_only_fields = ["estado", "aprobado_por", "jugador_creado", "created_at"]
         extra_kwargs = {"entrenador_solicitante": {"required": False}}

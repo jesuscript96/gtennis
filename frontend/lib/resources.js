@@ -1,3 +1,5 @@
+import { resource } from "./api";
+
 const divLabel = (o) => o.nombre || `División ${o.nivel}`;
 
 export const DIAS_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -73,6 +75,28 @@ export const RESOURCES = {
       { name: "notas", label: "Notas", type: "text" },
       { name: "activo", label: "Activo", type: "bool", default: true },
     ],
+    rowActions: [
+      {
+        label: "Entrenadores",
+        onClick: (row) => {
+          window.location.href = `/jugador-responsables?jugador=${row.id}&nombre=${encodeURIComponent(row.nombre)}`;
+        },
+      },
+      {
+        label: "Movimiento",
+        onClick: async (row) => {
+          const escuela = window.prompt(`#4 · ¿En qué escuela/grupo has visto a ${row.nombre}?`);
+          if (escuela === null) return;
+          const nota = window.prompt("Nota (opcional):") || "";
+          try {
+            const r = await resource("jugadores").action(row.id, "reportar_movimiento", { escuela_observada: escuela, nota });
+            window.alert(`Aviso de movimiento enviado a dirección (${r.avisos_creados} aviso/s).`);
+          } catch (e) {
+            window.alert(String(e.message || e));
+          }
+        },
+      },
+    ],
   },
 
   entrenadores: {
@@ -99,7 +123,7 @@ export const RESOURCES = {
     endpoint: "responsables",
     title: "Responsables de jugador",
     singular: "responsable",
-    help: "Asigna a cada jugador uno o varios entrenadores responsables, con prioridad (1 = principal) y el % de entrenos deseado con cada uno. El motor lo respeta al asignar entrenador.",
+    help: "Asigna a cada jugador uno o varios entrenadores responsables, con prioridad (1 = principal). El % de entrenos se reparte automáticamente al añadir o quitar responsables (1→100, 2→70/30, 3→70/15/15); puedes ajustarlo a mano si hace falta. El motor lo respeta al asignar entrenador.",
     columns: [
       { key: "jugador_nombre", label: "Jugador" },
       { key: "entrenador_nombre", label: "Entrenador" },
@@ -111,7 +135,7 @@ export const RESOURCES = {
       { name: "jugador", label: "Jugador", type: "fk", endpoint: "jugadores", optionLabel: (o) => o.nombre, required: true },
       { name: "entrenador", label: "Entrenador", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre, required: true },
       { name: "prioridad", label: "Prioridad (1 = principal)", type: "number", default: 1 },
-      { name: "porcentaje_objetivo", label: "% de entrenos con este entrenador (0-100)", type: "number", default: 0 },
+      { name: "porcentaje_objetivo", label: "% (se calcula solo; edítalo para forzar)", type: "number", default: 0 },
       { name: "activo", label: "Activo", type: "bool", default: true },
     ],
   },
@@ -317,6 +341,75 @@ export const RESOURCES = {
       { name: "titulo", label: "Título (breve, opcional)", type: "text" },
       { name: "descripcion", label: "Qué se solicita", type: "textarea", required: true },
       { name: "estado", label: "Estado", type: "select", options: FEEDBACK_ESTADO_OPTS, default: "NUEVO" },
+    ],
+  },
+
+  coaches: {
+    endpoint: "coaches",
+    title: "Coaches",
+    singular: "coach",
+    search: true,
+    help:
+      "Rol intermedio (#16): un coach ve a sus entrenadores y a todos los " +
+      "jugadores de esos entrenadores. Asígnale aquí sus entrenadores. Para " +
+      "darle acceso con usuario y contraseña, créalo desde el alta de usuario.",
+    columns: [
+      { key: "nombre", label: "Nombre" },
+      { key: "usuario_username", label: "Usuario", render: (v) => v || "— (sin login)" },
+      { key: "entrenadores_display", label: "Entrenadores a cargo" },
+      { key: "activo", label: "Activo", type: "bool" },
+    ],
+    fields: [
+      { name: "nombre", label: "Nombre", type: "text", required: true },
+      { name: "entrenadores", label: "Entrenadores a cargo", type: "mfk", endpoint: "entrenadores", optionLabel: (o) => o.nombre, help: "El coach verá a todos los jugadores de estos entrenadores." },
+      { name: "activo", label: "Activo", type: "bool", default: true },
+    ],
+  },
+
+  preferencias_superficie: {
+    endpoint: "preferencias-superficie",
+    title: "Preferencias de superficie",
+    singular: "preferencia",
+    help:
+      "Jugadores que deben entrenar en un tipo de pista (tierra o rápida), por " +
+      "un periodo o de forma indefinida. Si es estricta, el motor nunca los " +
+      "pone en otra superficie.",
+    columns: [
+      { key: "jugador_nombre", label: "Jugador" },
+      { key: "superficie_display", label: "Superficie" },
+      { key: "fecha_desde", label: "Desde", render: (v) => v || "Ya" },
+      { key: "fecha_hasta", label: "Hasta", render: (v) => v || "Indefinido" },
+      { key: "estricta", label: "Estricta", type: "bool" },
+    ],
+    fields: [
+      { name: "jugador", label: "Jugador", type: "fk", endpoint: "jugadores", optionLabel: (o) => o.nombre, required: true },
+      { name: "superficie", label: "Superficie", type: "select", options: [{ value: "TIERRA", label: "Tierra batida" }, { value: "RESINA", label: "Resina" }], required: true, default: "TIERRA" },
+      { name: "fecha_desde", label: "Desde (vacío = ya)", type: "date" },
+      { name: "fecha_hasta", label: "Hasta (vacío = indefinido)", type: "date" },
+      { name: "estricta", label: "Estricta (el motor nunca usa otra superficie)", type: "bool", default: true },
+    ],
+  },
+
+  escuelas: {
+    endpoint: "escuelas",
+    title: "Escuelas",
+    singular: "escuela",
+    help:
+      "Escuelas/programas del club. Si fijas un «turno único», los jugadores de " +
+      "esa escuela solo entrenan en ese turno (p. ej. Junior Program → M2). " +
+      "«Solo Resort» evita que se ubiquen en clubs satélite.",
+    columns: [
+      { key: "nombre", label: "Nombre" },
+      { key: "turno_unico_codigo", label: "Turno único", render: (v) => v || "Todos" },
+      { key: "solo_central", label: "Solo Resort", type: "bool" },
+      { key: "activa", label: "Activa", type: "bool" },
+    ],
+    fields: [
+      { name: "nombre", label: "Nombre", type: "text", required: true },
+      { name: "turno_unico", label: "Turno único (vacío = todos los turnos)", type: "fk", endpoint: "turnos", optionLabel: (o) => `${o.codigo} · ${(o.hora_inicio || "").slice(0, 5)}-${(o.hora_fin || "").slice(0, 5)}` },
+      { name: "solo_central", label: "Solo Resort (sin clubs satélite)", type: "bool" },
+      { name: "orden", label: "Orden", type: "number", default: 0 },
+      { name: "activa", label: "Activa", type: "bool", default: true },
     ],
   },
 };

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from .models import (
     Aviso,
+    Coach,
     Contrato,
     Division,
     Entrenador,
@@ -15,6 +16,8 @@ from .models import (
     Invitado,
     Jugador,
     Pista,
+    PreferenciaPareja,
+    PreferenciaSuperficie,
     Rencilla,
     ResponsableJugador,
     Sede,
@@ -22,8 +25,10 @@ from .models import (
     Turno,
     VacacionesEntrenador,
 )
+from .scope import coaches_del_entrenador, entrenadores_visibles, jugadores_visibles
 from .serializers import (
     AvisoSerializer,
+    CoachSerializer,
     ContratoSerializer,
     DivisionSerializer,
     EntrenadorSerializer,
@@ -32,6 +37,7 @@ from .serializers import (
     InvitadoSerializer,
     JugadorSerializer,
     PistaSerializer,
+    PreferenciaSuperficieSerializer,
     RencillaSerializer,
     ResponsableJugadorSerializer,
     SedeSerializer,
@@ -68,6 +74,49 @@ class EntrenadorViewSet(viewsets.ModelViewSet):
     search_fields = ["nombre"]
     ordering_fields = ["nombre", "activo"]
 
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return super().get_queryset()
+        return entrenadores_visibles(user)
+
+
+class CoachViewSet(viewsets.ModelViewSet):
+    """Gestión de coaches (#16). Solo la dirección deportiva los administra;
+    un coach puede consultar su propia ficha."""
+
+    queryset = Coach.objects.prefetch_related("entrenadores").all()
+    serializer_class = CoachSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        u = self.request.user
+        qs = Coach.objects.prefetch_related("entrenadores")
+        if u.is_superadmin:
+            return qs
+        coach = getattr(u, "coach", None)
+        return qs.filter(pk=coach.pk) if coach else qs.none()
+
+    def _assert_direccion(self):
+        if not self.request.user.is_superadmin:
+            raise PermissionDenied("Solo la dirección deportiva gestiona coaches.")
+
+    def perform_create(self, serializer):
+        self._assert_direccion()
+        serializer.save()
+
+    def perform_update(self, serializer):
+        u = self.request.user
+        if not u.is_superadmin:
+            coach = getattr(u, "coach", None)
+            if coach is None or serializer.instance.pk != coach.pk:
+                raise PermissionDenied("No puedes editar este coach.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._assert_direccion()
+        instance.delete()
+
 
 class JugadorViewSet(viewsets.ModelViewSet):
     queryset = Jugador.objects.filter(activo=True).select_related("division", "entrenador_responsable").all()
@@ -75,6 +124,62 @@ class JugadorViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["nombre"]
     ordering_fields = ["nombre", "edad"]
+
+    def get_queryset(self):
+        base = Jugador.objects.filter(activo=True).select_related(
+            "division", "entrenador_responsable"
+        )
+        user = self.request.user
+        if not user.is_authenticated:
+            return base
+        return jugadores_visibles(user, base=base)
+
+    def perform_update(self, serializer):
+        # #18: al dar de baja (activo True->False) se avisa a dirección in-app.
+        antes_activo = serializer.instance.activo
+        jugador = serializer.save()
+        if antes_activo and not jugador.activo:
+            Aviso.objects.create(
+                para_direccion=True,
+                tipo=Aviso.Tipo.GENERAL,
+                titulo=f"Baja de jugador: {jugador.nombre}",
+                mensaje=f"{jugador.nombre} se ha dado de baja (marcado como inactivo).",
+            )
+
+    @action(detail=True, methods=["post"])
+    def reportar_movimiento(self, request, pk=None):
+        """#4: un entrenador/coach avisa de que ve a un jugador (suyo o de otra
+        escuela) que parece haber cambiado de escuela. Crea avisos a dirección,
+        al entrenador responsable y a su coach. No cambia la escuela: es un aviso.
+        El scope de get_object() ya restringe a jugadores visibles por el usuario.
+        """
+        jugador = self.get_object()
+        escuela_obs = (request.data.get("escuela_observada") or "").strip()
+        nota = (request.data.get("nota") or "").strip()
+        titulo = f"Posible movimiento de escuela: {jugador.nombre}"
+        partes = []
+        if escuela_obs:
+            partes.append(f"Escuela observada: {escuela_obs}.")
+        if nota:
+            partes.append(nota)
+        actor = getattr(request.user, "entrenador", None) or getattr(request.user, "coach", None)
+        if actor is not None:
+            partes.append(f"Reportado por {actor.nombre}.")
+        mensaje = " ".join(partes)
+
+        Aviso.objects.create(
+            para_direccion=True, tipo=Aviso.Tipo.MOVIMIENTO, titulo=titulo, mensaje=mensaje,
+        )
+        ent = jugador.entrenador_responsable
+        destinatarios = []
+        if ent is not None and ent.user_id:
+            destinatarios.append(ent.user)
+        destinatarios.extend(coaches_del_entrenador(ent))
+        for user in destinatarios:
+            Aviso.objects.create(
+                usuario=user, tipo=Aviso.Tipo.MOVIMIENTO, titulo=titulo, mensaje=mensaje,
+            )
+        return Response({"ok": True, "avisos_creados": 1 + len(destinatarios)})
 
 
 class RencillaViewSet(viewsets.ModelViewSet):
@@ -98,6 +203,16 @@ class ResponsableJugadorViewSet(viewsets.ModelViewSet):
         jugador = self.request.query_params.get("jugador")
         return qs.filter(jugador=jugador) if jugador else qs
 
+    def perform_create(self, serializer):
+        # Al añadir un responsable se re-reparte el % (#12: 70/15/15 auto).
+        rj = serializer.save()
+        rj.jugador.repartir_porcentajes()
+
+    def perform_destroy(self, instance):
+        jugador = instance.jugador
+        instance.delete()
+        jugador.repartir_porcentajes()
+
 
 class VacacionesEntrenadorViewSet(viewsets.ModelViewSet):
     queryset = VacacionesEntrenador.objects.select_related("entrenador").all()
@@ -109,6 +224,18 @@ class VacacionesEntrenadorViewSet(viewsets.ModelViewSet):
 class EscuelaViewSet(viewsets.ModelViewSet):
     queryset = Escuela.objects.all()
     serializer_class = EscuelaSerializer
+
+
+class PreferenciaSuperficieViewSet(viewsets.ModelViewSet):
+    """Preferencias de superficie por jugador (#1)."""
+
+    serializer_class = PreferenciaSuperficieSerializer
+    queryset = PreferenciaSuperficie.objects.select_related("jugador").all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        jugador = self.request.query_params.get("jugador")
+        return qs.filter(jugador=jugador) if jugador else qs
 
 
 class AvisoViewSet(viewsets.ModelViewSet):
@@ -146,6 +273,9 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         )
         if u.is_superadmin:
             return qs
+        coach = getattr(u, "coach", None)
+        if coach is not None:
+            return qs.filter(entrenador_solicitante__in=coach.entrenadores.all())
         ent = getattr(u, "entrenador", None)
         return qs.filter(entrenador_solicitante=ent) if ent else qs.none()
 
@@ -162,6 +292,15 @@ class InvitadoViewSet(viewsets.ModelViewSet):
             titulo=f"Invitado pendiente: {inv.nombre}",
             mensaje=f"{solicitante.nombre} solicita añadir a «{inv.nombre}». Requiere tu aprobación.",
         )
+        # Notificar siempre al Coach del entrenador solicitante (#5).
+        from .scope import coaches_del_entrenador
+        for coach_user in coaches_del_entrenador(solicitante):
+            Aviso.objects.create(
+                usuario=coach_user,
+                tipo=Aviso.Tipo.INVITADO,
+                titulo=f"Invitado propuesto por {solicitante.nombre}",
+                mensaje=f"«{inv.nombre}» — pendiente de aprobación por dirección.",
+            )
 
     def _avisar_solicitante(self, inv, titulo, mensaje):
         user = getattr(inv.entrenador_solicitante, "user", None)
@@ -183,9 +322,27 @@ class InvitadoViewSet(viewsets.ModelViewSet):
             activo=True,
             escuela=anfitrion.escuela if anfitrion else None,
             entrenador_responsable=anfitrion.entrenador_responsable if anfitrion else None,
-            division=anfitrion.division if anfitrion else None,
+            # Datos propios del invitado si se aportaron; si no, del anfitrión (#5).
+            division=inv.division or (anfitrion.division if anfitrion else None),
+            edad=inv.edad,
             notas="Invitado (pendiente de ubicar en el cuadrante)",
         )
+        # Preferencia de superficie propia del invitado (#1/#5).
+        if inv.superficie_pref:
+            PreferenciaSuperficie.objects.create(
+                jugador=jugador, superficie=inv.superficie_pref, estricta=True,
+            )
+        # Pareja preferida: que el sistema lo ubique con ese jugador (#5).
+        if inv.jugar_con_id:
+            PreferenciaPareja.objects.create(
+                jugador=jugador,
+                jugador_objetivo=inv.jugar_con,
+                tipo=(
+                    PreferenciaPareja.Tipo.HARD
+                    if inv.pareja_estricta
+                    else PreferenciaPareja.Tipo.SOFT
+                ),
+            )
         inv.estado = Invitado.Estado.APROBADO
         inv.aprobado_por = request.user
         inv.jugador_creado = jugador

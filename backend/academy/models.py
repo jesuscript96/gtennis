@@ -182,6 +182,33 @@ class Entrenador(models.Model):
         return self.jugadores_gestionados.filter(pk=jugador.pk).exists()
 
 
+class Coach(models.Model):
+    """Rol intermedio (#16): por encima del entrenador y por debajo de la
+    dirección deportiva. Tiene un conjunto de entrenadores a su cargo y ve a
+    todos los jugadores de esos entrenadores."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="coach",
+    )
+    nombre = models.CharField(max_length=120)
+    activo = models.BooleanField(default=True)
+    entrenadores = models.ManyToManyField(
+        "Entrenador", blank=True, related_name="coaches",
+    )
+
+    class Meta:
+        verbose_name = "Coach"
+        verbose_name_plural = "Coaches"
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
 class Jugador(models.Model):
     """Passive data entity — never logs in (PRD §01)."""
 
@@ -248,6 +275,34 @@ class Jugador(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    def repartir_porcentajes(self):
+        """Reparte el % objetivo por rol (#12): el grupo PRINCIPAL (prioridad 1,
+        los entrenadores de la sub-columna del jugador) se lleva el 70% y los
+        SECUNDARIOS (prioridad ≥2, otras sub-columnas del bloque) el 30%; dentro
+        de cada grupo, a partes iguales. Si solo hay principales, se llevan 100%."""
+        resp = list(self.responsables.filter(activo=True).order_by("prioridad", "id"))
+        if not resp:
+            return
+        principales = [r for r in resp if r.prioridad <= 1]
+        secundarios = [r for r in resp if r.prioridad > 1]
+        if not principales:  # todos secundarios → se tratan como principales
+            principales, secundarios = secundarios, []
+        cuota_p = 100 if not secundarios else 70
+
+        def reparte(grupo, total):
+            n = len(grupo)
+            if n == 0:
+                return
+            base, resto = divmod(total, n)
+            for i, r in enumerate(grupo):
+                val = base + (1 if i < resto else 0)
+                if r.porcentaje_objetivo != val:
+                    r.porcentaje_objetivo = val
+                    r.save(update_fields=["porcentaje_objetivo"])
+
+        reparte(principales, cuota_p)
+        reparte(secundarios, 100 - cuota_p)
 
 
 class ResponsableJugador(models.Model):
@@ -365,6 +420,65 @@ class VacacionesEntrenador(models.Model):
         return f"{self.entrenador} · {self.fecha_inicio}–{self.fecha_fin}"
 
 
+class PreferenciaSuperficie(models.Model):
+    """Preferencia de superficie de un jugador (#1): tierra batida o pista
+    rápida, por un periodo (fecha_desde/hasta) o indefinida. Si es estricta, el
+    motor no lo asigna a pistas de otra superficie."""
+
+    jugador = models.ForeignKey(
+        Jugador, on_delete=models.CASCADE, related_name="preferencias_superficie"
+    )
+    superficie = models.CharField(max_length=10, choices=Pista.Superficie.choices)
+    fecha_desde = models.DateField(null=True, blank=True)
+    fecha_hasta = models.DateField(null=True, blank=True)
+    estricta = models.BooleanField(
+        default=True,
+        help_text="Si está marcada, el motor nunca lo pone en otra superficie.",
+    )
+
+    class Meta:
+        verbose_name = "Preferencia de superficie"
+        verbose_name_plural = "Preferencias de superficie"
+        ordering = ["jugador", "-fecha_desde"]
+
+    def activa_en(self, fecha):
+        if self.fecha_desde and fecha < self.fecha_desde:
+            return False
+        if self.fecha_hasta and fecha > self.fecha_hasta:
+            return False
+        return True
+
+    def __str__(self):
+        return f"{self.jugador} → {self.get_superficie_display()}"
+
+
+class PreferenciaPareja(models.Model):
+    """Pareja preferida (#5): dos jugadores que deben (HARD, misma pista) o
+    preferentemente (SOFT, bonus) entrenar juntos. Nace de invitados o de
+    peticiones manuales."""
+
+    class Tipo(models.TextChoices):
+        HARD = "HARD", "Obligatoria (misma pista)"
+        SOFT = "SOFT", "Preferente (bonus)"
+
+    jugador = models.ForeignKey(
+        Jugador, on_delete=models.CASCADE, related_name="parejas_pref"
+    )
+    jugador_objetivo = models.ForeignKey(
+        Jugador, on_delete=models.CASCADE, related_name="parejas_pref_objetivo"
+    )
+    tipo = models.CharField(max_length=4, choices=Tipo.choices, default=Tipo.HARD)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Preferencia de pareja"
+        verbose_name_plural = "Preferencias de pareja"
+        unique_together = ("jugador", "jugador_objetivo")
+
+    def __str__(self):
+        return f"{self.jugador} + {self.jugador_objetivo} ({self.tipo})"
+
+
 class Escuela(models.Model):
     """Escuela/programa dentro del club (#6): p. ej. Alto Rendimiento y Junior
     Program, que en verano comparten pistas en horarios distintos."""
@@ -372,6 +486,14 @@ class Escuela(models.Model):
     nombre = models.CharField(max_length=80, unique=True)
     activa = models.BooleanField(default=True)
     orden = models.PositiveSmallIntegerField(default=0)
+    # #6: si se fija, los jugadores de esta escuela SOLO entrenan en ese turno
+    # (p. ej. Junior Program solo en M2) y no salen en el resto de turnos.
+    turno_unico = models.ForeignKey(
+        "Turno", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="escuelas_exclusivas",
+    )
+    # #6: sus jugadores solo se ubican en el Resort (nunca en clubs satélite).
+    solo_central = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Escuela"
@@ -448,6 +570,20 @@ class Invitado(models.Model):
         related_name="invitado_origen",
     )
     nota = models.CharField(max_length=200, blank=True)
+    # Datos propios del invitado (#5): al aprobar, el jugador temporal se crea
+    # con estos datos y no hereda ciegamente los del grupo anfitrión.
+    division = models.ForeignKey(
+        "Division", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    edad = models.PositiveSmallIntegerField(null=True, blank=True)
+    superficie_pref = models.CharField(
+        max_length=10, choices=Pista.Superficie.choices, blank=True
+    )
+    # Pareja preferida: con qué jugador quiere entrenar (#5).
+    jugar_con = models.ForeignKey(
+        Jugador, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    pareja_estricta = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

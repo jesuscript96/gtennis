@@ -8,7 +8,8 @@ export default function InvitadosPage() {
   const [items, setItems] = useState(null);
   const [jugadores, setJugadores] = useState([]);
   const [error, setError] = useState(null);
-  const [form, setForm] = useState({ nombre: "", grupo_anfitrion: "", nota: "" });
+  const EMPTY = { nombre: "", grupo_anfitrion: "", nota: "", edad: "", superficie_pref: "", jugar_con: "", pareja_estricta: true };
+  const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const user = getUser();
   const esAdmin = !!user?.is_superadmin;
@@ -29,8 +30,12 @@ export default function InvitadosPage() {
         nombre: form.nombre,
         grupo_anfitrion: form.grupo_anfitrion ? Number(form.grupo_anfitrion) : null,
         nota: form.nota,
+        edad: form.edad ? Number(form.edad) : null,
+        superficie_pref: form.superficie_pref || "",
+        jugar_con: form.jugar_con ? Number(form.jugar_con) : null,
+        pareja_estricta: form.pareja_estricta,
       });
-      setForm({ nombre: "", grupo_anfitrion: "", nota: "" });
+      setForm(EMPTY);
       await load();
     } catch (e) { setError(String(e.message || e)); } finally { setSaving(false); }
   }
@@ -60,6 +65,24 @@ export default function InvitadosPage() {
           <input className="search" placeholder="Nota (opcional)" value={form.nota}
             onChange={(e) => setForm((f) => ({ ...f, nota: e.target.value }))} />
           <button className="btn" disabled={saving}>{saving ? "Enviando…" : "Solicitar"}</button>
+        </div>
+        <div className="inv-row">
+          <input className="search" type="number" min="3" max="99" placeholder="Edad (opcional)" value={form.edad}
+            onChange={(e) => setForm((f) => ({ ...f, edad: e.target.value }))} />
+          <select value={form.superficie_pref} onChange={(e) => setForm((f) => ({ ...f, superficie_pref: e.target.value }))}>
+            <option value="">Superficie indiferente</option>
+            <option value="TIERRA">Tierra batida</option>
+            <option value="RESINA">Resina (rápida)</option>
+          </select>
+          <select value={form.jugar_con} onChange={(e) => setForm((f) => ({ ...f, jugar_con: e.target.value }))}>
+            <option value="">Jugar con… (pareja preferida)</option>
+            {jugadores.map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+          </select>
+          <label className="inv-check">
+            <input type="checkbox" checked={form.pareja_estricta}
+              onChange={(e) => setForm((f) => ({ ...f, pareja_estricta: e.target.checked }))} />
+            Misma pista obligatoria
+          </label>
         </div>
         {error && <p className="err">{error}</p>}
       </form>

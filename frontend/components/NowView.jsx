@@ -50,7 +50,7 @@ export default function NowView() {
     const coach = c ? { nombre: c.entrenador_nombre, foto: c.entrenador_foto } : null;
     const cardMode = mode === "club" ? defaultSurfaceMode : mode;
     return (
-      <CourtCard key={p.id} pista={{ label: `Pista ${p.numero}` }} players={players} coach={coach} mode={cardMode} />
+      <CourtCard key={p.id} pista={{ label: `Pista ${p.numero}`, superficie: p.superficie }} players={players} coach={coach} mode={cardMode} />
     );
   };
 

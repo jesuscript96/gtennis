@@ -27,6 +27,10 @@ class Player:
     division: int | None = None          # None = not yet classified (wildcard)
     sponsor_coach_id: int | None = None
     priority: int = 1                    # higher = more likely to be assigned
+    # Superficie preferida estricta (#1): "TIERRA"/"RESINA"; None = indiferente.
+    surface_pref: str | None = None
+    # #6: si True, solo puede jugar en el Resort (nunca en sedes satélite).
+    solo_central: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,8 @@ class Court:
     # Orden de desbordamiento de la sede (0 = base). Los satélites se llenan
     # de menor a mayor: Sta. Bárbara antes que Bétera antes que Mas Camarena.
     fill_rank: int = 0
+    # Superficie de la pista (#1): "TIERRA" / "RESINA".
+    surface: str | None = None
 
 
 @dataclass
@@ -53,6 +59,10 @@ class PairingInput:
     w_central: int = 100
     w_repeat: int = 10
     apply_neighbor: bool = True
+    # Parejas preferidas (#5): HARD = misma pista obligatoria; SOFT = bonus.
+    pairs_hard: set[frozenset[int]] = field(default_factory=set)
+    pairs_soft: set[frozenset[int]] = field(default_factory=set)
+    w_pair: int = 300
 
 
 @dataclass
@@ -101,6 +111,22 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         model.Add(occ <= c.capacity * used[c.id])
         model.Add(occ >= 2 * used[c.id])
 
+    # Preferencia de superficie estricta (#1): un jugador con superficie
+    # preferida no puede jugar en una pista de otra superficie.
+    for p in players:
+        if p.surface_pref:
+            for c in courts:
+                if c.surface and c.surface != p.surface_pref:
+                    model.Add(x[p.id, c.id] == 0)
+
+    # #6: jugadores restringidos al Resort (p. ej. Junior Program) nunca en
+    # una pista de sede satélite.
+    for p in players:
+        if p.solo_central:
+            for c in courts:
+                if c.is_satellite:
+                    model.Add(x[p.id, c.id] == 0)
+
     # Incompatible pairs may never share a court.
     incompatible: list[tuple[int, int]] = []
     for i in range(len(players)):
@@ -112,6 +138,14 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     for a, b in incompatible:
         for c in courts:
             model.Add(x[a, c.id] + x[b, c.id] <= 1)
+
+    # Parejas obligatorias (#5, HARD): si ambos están disponibles este turno,
+    # comparten pista (o ambos quedan sin asignar).
+    for pair in data.pairs_hard:
+        a, b = tuple(pair)
+        if a in pidx and b in pidx:
+            for c in courts:
+                model.Add(x[a, c.id] == x[b, c.id])
 
     # --- Objective ---------------------------------------------------------
     terms = []
@@ -137,6 +171,16 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             # together >= x[a,c] + x[b,c] - 1
             model.Add(together >= x[a, c.id] + x[b, c.id] - 1)
         terms.append(-(data.w_repeat * weight) * together)
+    # 4) Parejas preferentes (#5, SOFT): bonus si ambos coinciden en una pista.
+    for pair in data.pairs_soft:
+        a, b = tuple(pair)
+        if a not in pidx or b not in pidx:
+            continue
+        for c in courts:
+            both = model.NewBoolVar(f"soft_{a}_{b}_{c.id}")
+            model.Add(both <= x[a, c.id])
+            model.Add(both <= x[b, c.id])
+            terms.append(data.w_pair * both)
 
     model.Maximize(sum(terms))
 

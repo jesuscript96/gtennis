@@ -44,6 +44,7 @@ def _build_courts() -> list[Court]:
                 capacity=pista.sede.densidad_default,
                 is_satellite=pista.sede.es_satelite,
                 fill_rank=pista.sede.orden_desbordamiento,
+                surface=pista.superficie,
             )
         )
     return courts
@@ -93,23 +94,42 @@ def _player_priority(division, state):
     return base
 
 
-def _available_players(semana, dia, turno, sponsors) -> list[Player]:
+def _available_players(
+    semana, dia, turno, sponsors, escuela_cfg=None, surface_prefs=None
+) -> list[Player]:
     from academy.models import Jugador
 
+    escuela_cfg = escuela_cfg or {}
+    surface_prefs = surface_prefs or {}
+    fecha = semana.fecha_inicio + timedelta(days=dia)
     overrides = _overrides(semana, dia)
     players = []
-    for j in Jugador.objects.filter(activo=True).select_related("division"):
+    qs = Jugador.objects.filter(activo=True).select_related("division")
+    for j in qs:
+        # #6: los jugadores de una escuela con turno único (p. ej. Junior
+        # Program → M2) solo entran en ese turno; en el resto se excluyen.
+        turno_unico, solo_central = escuela_cfg.get(j.escuela_id, (None, False))
+        if turno_unico is not None and turno_unico != turno.id:
+            continue
         state = _effective_state(overrides, j.id, turno)
         if state in ESTADOS_EXCLUYENTES:
             continue
         division = j.division.nivel if j.division else None
         coach = next(iter(sponsors.get(j.id, set())), None)
+        # Superficie preferida activa en la fecha (#1).
+        pref = None
+        for sup, desde, hasta in surface_prefs.get(j.id, ()):
+            if (desde is None or fecha >= desde) and (hasta is None or fecha <= hasta):
+                pref = sup
+                break
         players.append(
             Player(
                 id=j.id,
                 division=division,
                 sponsor_coach_id=coach,
                 priority=_player_priority(division, state),
+                surface_pref=pref,
+                solo_central=solo_central,
             )
         )
     players.sort(key=lambda p: p.priority, reverse=True)
@@ -200,6 +220,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     turnos = list(Turno.objects.all())
     if bloques:
         turnos = [t for t in turnos if t.bloque in bloques]
+    # Config por escuela (#6): turno único (p. ej. Junior Program solo M2) y si
+    # sus jugadores solo pueden ir al Resort (sin satélites).
+    from academy.models import Escuela
+
+    escuela_cfg = {
+        e.id: (e.turno_unico_id, e.solo_central) for e in Escuela.objects.all()
+    }
 
     courts = _build_courts()
     courts_by_id = {c.id: c for c in courts}
@@ -238,6 +265,24 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         if jid not in player_responsables:
             player_responsables[jid].append((cid, 1, 0))
 
+    # Preferencias de superficie estrictas por jugador (#1).
+    from academy.models import PreferenciaSuperficie
+
+    surface_prefs: dict[int, list] = defaultdict(list)
+    for ps in PreferenciaSuperficie.objects.filter(estricta=True):
+        surface_prefs[ps.jugador_id].append(
+            (ps.superficie, ps.fecha_desde, ps.fecha_hasta)
+        )
+
+    # Parejas preferidas (#5): HARD misma pista, SOFT bonus.
+    from academy.models import PreferenciaPareja
+
+    pairs_hard: set = set()
+    pairs_soft: set = set()
+    for pp in PreferenciaPareja.objects.filter(activa=True):
+        key = frozenset((pp.jugador_id, pp.jugador_objetivo_id))
+        (pairs_hard if pp.tipo == "HARD" else pairs_soft).add(key)
+
     # Recuento de sesiones para acercarse a los % objetivo a lo largo de la semana.
     coach_share: Counter = Counter()      # (jugador_id, coach_id) -> nº sesiones
     player_sessions: Counter = Counter()  # jugador_id -> nº sesiones
@@ -273,11 +318,20 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 if ovr is not None and not ovr.disponible_en(ini_t, fin_t):
                     continue
                 elegibles.append(c)
-            players = _available_players(semana, dia, turno, sponsors)
+            players = _available_players(
+                semana, dia, turno, sponsors, escuela_cfg, surface_prefs
+            )
+            # #17: por la tarde nunca se usan los clubs satélite. Solo pistas de
+            # sedes no satélite; el desbordamiento queda en banquillo, no spillea.
+            turno_courts = (
+                [c for c in courts if not c.is_satellite]
+                if turno.bloque == Turno.Bloque.TARDE
+                else courts
+            )
             result = solve_pairing(
                 PairingInput(
                     players=players,
-                    courts=courts,
+                    courts=turno_courts,
                     vetoes=vetoes,
                     recent_partners=recent,
                     time_limit_s=cfg.time_limit_s,
@@ -286,6 +340,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     w_central=cfg.peso_central,
                     w_repeat=cfg.peso_repeticion,
                     apply_neighbor=cfg.aplicar_vecindad,
+                    pairs_hard=pairs_hard,
+                    pairs_soft=pairs_soft,
                 )
             )
             # Regenerar = rehacer el turno desde cero (incluye celdas editadas a

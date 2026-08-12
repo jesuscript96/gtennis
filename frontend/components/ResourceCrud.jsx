@@ -156,6 +156,9 @@ export default function ResourceCrud({ config }) {
                   ))}
                   <td>
                     <div className="row-actions">
+                      {(config.rowActions || []).map((ra) => (
+                        <button key={ra.label} className="btn ghost sm" onClick={() => ra.onClick(row, load)}>{ra.label}</button>
+                      ))}
                       <button className="btn ghost sm" onClick={() => openEdit(row)}>Editar</button>
                       <button className="btn danger sm" onClick={() => remove(row)}>Borrar</button>
                     </div>
