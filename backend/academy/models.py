@@ -169,17 +169,23 @@ class Entrenador(models.Model):
         return all(n is None or n in habil for n in niveles)
 
     def jugadores_permitidos(self):
-        """Queryset de jugadores activos que este entrenador puede gestionar."""
+        """Queryset de jugadores activos que este entrenador puede gestionar.
+        Fuente única: ResponsableJugador (cualquier prioridad). Se mantiene la
+        unión con `jugadores_gestionados` por compatibilidad."""
+        from django.db.models import Q
+
         activos = Jugador.objects.filter(activo=True)
         if self.gestiona_todos_jugadores:
             return activos
-        return activos.filter(entrenadores_gestores=self)
+        return activos.filter(
+            Q(responsables__entrenador=self) | Q(entrenadores_gestores=self)
+        ).distinct()
 
     def puede_gestionar(self, jugador):
         """¿Puede este entrenador declarar ausencias de `jugador`?"""
         if self.gestiona_todos_jugadores:
             return True
-        return self.jugadores_gestionados.filter(pk=jugador.pk).exists()
+        return self.jugadores_permitidos().filter(pk=jugador.pk).exists()
 
 
 class Coach(models.Model):

@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academy.models import Entrenador, Jugador, Sede, Turno
+from academy.permissions import ReadOnlyOrDireccion
 from engine.service import _effective_state, _overrides, generate, regenerate_afternoon
 
 from .models import (
@@ -55,7 +56,10 @@ def _turnos_payload():
 
 
 class ConfiguracionView(APIView):
-    """Singleton config of the engine criteria. GET public, PATCH needs auth."""
+    """Singleton config of the engine criteria. Lectura para cualquier
+    autenticado; PATCH (criterios del motor) solo dirección."""
+
+    permission_classes = [ReadOnlyOrDireccion]
 
     def get(self, request):
         return Response(
@@ -162,6 +166,9 @@ class AhoraView(APIView):
 class SemanaViewSet(viewsets.ModelViewSet):
     queryset = Semana.objects.all()
     serializer_class = SemanaSerializer
+    # Todos consultan el cuadrante; crear semanas y generar/publicar (POST) es
+    # de dirección (la generación es global de club).
+    permission_classes = [ReadOnlyOrDireccion]
 
     @action(detail=True, methods=["get"])
     def tabla(self, request, pk=None):
@@ -369,16 +376,13 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Disponibilidad.objects.select_related("jugador", "semana")
         user = self.request.user
+        # Fuente única de alcance para coach y entrenador (academy.scope).
         if not user.is_superadmin:
-            if getattr(user, "coach", None) is not None:
-                from academy.scope import jugadores_visibles
-                qs = qs.filter(jugador__in=jugadores_visibles(user))
-            else:
-                entrenador = self._entrenador()
-                if entrenador is None:
-                    return qs.none()
-                if not entrenador.gestiona_todos_jugadores:
-                    qs = qs.filter(jugador__in=entrenador.jugadores_gestionados.all())
+            from academy.scope import jugadores_visibles
+
+            if getattr(user, "coach", None) is None and self._entrenador() is None:
+                return qs.none()
+            qs = qs.filter(jugador__in=jugadores_visibles(user))
         semana = self.request.query_params.get("semana")
         return qs.filter(semana=semana) if semana else qs
 
@@ -441,9 +445,11 @@ class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
 
 
 class AsignacionViewSet(viewsets.ModelViewSet):
-    """Read + manual override by Super Admin (sets manual=True)."""
+    """Read para cualquier autenticado; overrides manuales del cuadrante
+    (swap, manual_assign, set_coach, PATCH) solo dirección."""
 
     serializer_class = AsignacionSerializer
+    permission_classes = [ReadOnlyOrDireccion]
     queryset = Asignacion.objects.select_related(
         "jugador", "jugador__division", "entrenador", "turno", "pista", "pista__sede"
     ).all()

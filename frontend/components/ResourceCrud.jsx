@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { resource } from "../lib/api";
+import { canWrite } from "../lib/perms";
 
 function emptyValue(fl) {
   if (fl.type === "bool") return false;
@@ -31,6 +32,7 @@ function toBody(fields, form) {
 
 export default function ResourceCrud({ config }) {
   const api = useMemo(() => resource(config.endpoint), [config.endpoint]);
+  const writable = useMemo(() => canWrite(config.endpoint), [config.endpoint]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -111,7 +113,9 @@ export default function ResourceCrud({ config }) {
     <div>
       <div className="page-head">
         <h1>{config.title}</h1>
-        <button className="btn" onClick={openNew}>+ Nuevo</button>
+        {writable
+          ? <button className="btn" onClick={openNew}>+ Nuevo</button>
+          : <span className="pill no" title="Tu rol solo puede consultar este recurso">Solo lectura</span>}
       </div>
 
       {config.help && <p className="help">{config.help}</p>}
@@ -159,8 +163,9 @@ export default function ResourceCrud({ config }) {
                       {(config.rowActions || []).map((ra) => (
                         <button key={ra.label} className="btn ghost sm" onClick={() => ra.onClick(row, load)}>{ra.label}</button>
                       ))}
-                      <button className="btn ghost sm" onClick={() => openEdit(row)}>Editar</button>
-                      <button className="btn danger sm" onClick={() => remove(row)}>Borrar</button>
+                      {writable && <button className="btn ghost sm" onClick={() => openEdit(row)}>Editar</button>}
+                      {writable && <button className="btn danger sm" onClick={() => remove(row)}>Borrar</button>}
+                      {!writable && (config.rowActions || []).length === 0 && <span className="muted">—</span>}
                     </div>
                   </td>
                 </tr>

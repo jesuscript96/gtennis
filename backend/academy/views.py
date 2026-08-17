@@ -25,6 +25,7 @@ from .models import (
     Turno,
     VacacionesEntrenador,
 )
+from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion
 from .scope import coaches_del_entrenador, entrenadores_visibles, jugadores_visibles
 from .serializers import (
     AvisoSerializer,
@@ -50,26 +51,31 @@ from .serializers import (
 class SedeViewSet(viewsets.ModelViewSet):
     queryset = Sede.objects.prefetch_related("pistas").all()
     serializer_class = SedeSerializer
+    permission_classes = [ReadOnlyOrDireccion]
 
 
 class PistaViewSet(viewsets.ModelViewSet):
     queryset = Pista.objects.select_related("sede").all()
     serializer_class = PistaSerializer
+    permission_classes = [ReadOnlyOrDireccion]
 
 
 class TurnoViewSet(viewsets.ModelViewSet):
     queryset = Turno.objects.all()
     serializer_class = TurnoSerializer
+    permission_classes = [ReadOnlyOrDireccion]
 
 
 class DivisionViewSet(viewsets.ModelViewSet):
     queryset = Division.objects.all()
     serializer_class = DivisionSerializer
+    permission_classes = [ReadOnlyOrDireccion]
 
 
 class EntrenadorViewSet(viewsets.ModelViewSet):
     queryset = Entrenador.objects.all()
     serializer_class = EntrenadorSerializer
+    permission_classes = [DireccionOrCoachWrite]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["nombre"]
     ordering_fields = ["nombre", "activo"]
@@ -79,6 +85,13 @@ class EntrenadorViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return super().get_queryset()
         return entrenadores_visibles(user)
+
+    def perform_create(self, serializer):
+        # Un coach que da de alta un entrenador lo añade a su propio equipo.
+        ent = serializer.save()
+        coach = getattr(self.request.user, "coach", None)
+        if coach is not None:
+            coach.entrenadores.add(ent)
 
 
 class CoachViewSet(viewsets.ModelViewSet):
@@ -185,21 +198,28 @@ class JugadorViewSet(viewsets.ModelViewSet):
 class RencillaViewSet(viewsets.ModelViewSet):
     queryset = Rencilla.objects.all()
     serializer_class = RencillaSerializer
+    permission_classes = [DireccionOrCoachWrite]
 
 
 class ContratoViewSet(viewsets.ModelViewSet):
     queryset = Contrato.objects.all()
     serializer_class = ContratoSerializer
+    permission_classes = [DireccionOrCoachWrite]
 
 
 class ResponsableJugadorViewSet(viewsets.ModelViewSet):
     serializer_class = ResponsableJugadorSerializer
+    permission_classes = [DireccionOrCoachWrite]
     queryset = ResponsableJugador.objects.select_related(
         "jugador", "entrenador"
     ).all()
 
     def get_queryset(self):
         qs = super().get_queryset()
+        user = self.request.user
+        # Fuera de dirección, solo responsables de jugadores dentro del alcance.
+        if user.is_authenticated and not user.is_superadmin:
+            qs = qs.filter(jugador__in=jugadores_visibles(user))
         jugador = self.request.query_params.get("jugador")
         return qs.filter(jugador=jugador) if jugador else qs
 
@@ -217,13 +237,26 @@ class ResponsableJugadorViewSet(viewsets.ModelViewSet):
 class VacacionesEntrenadorViewSet(viewsets.ModelViewSet):
     queryset = VacacionesEntrenador.objects.select_related("entrenador").all()
     serializer_class = VacacionesEntrenadorSerializer
+    permission_classes = [DireccionOrCoachWrite]
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ["fecha_inicio", "fecha_fin"]
+
+    def get_queryset(self):
+        qs = VacacionesEntrenador.objects.select_related("entrenador")
+        user = self.request.user
+        if user.is_authenticated and not user.is_superadmin:
+            coach = getattr(user, "coach", None)
+            if coach is not None:
+                return qs.filter(entrenador__in=coach.entrenadores.all())
+            ent = getattr(user, "entrenador", None)
+            return qs.filter(entrenador=ent) if ent else qs.none()
+        return qs
 
 
 class EscuelaViewSet(viewsets.ModelViewSet):
     queryset = Escuela.objects.all()
     serializer_class = EscuelaSerializer
+    permission_classes = [ReadOnlyOrDireccion]
 
 
 class PreferenciaSuperficieViewSet(viewsets.ModelViewSet):

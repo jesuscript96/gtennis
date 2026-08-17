@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getUser, logout } from "../lib/api";
+import { roleRank } from "../lib/perms";
 import SettingsMenu from "./SettingsMenu";
 
-// Menú por secciones para reducir el ruido de tantas entradas.
+// Menú por secciones. El 3er elemento de cada item es el rol mínimo para verlo
+// ("direccion" o "coach"); sin él, lo ve cualquiera.
 const SECTIONS = [
   { items: [
     ["/", "Inicio"],
@@ -20,9 +22,9 @@ const SECTIONS = [
   ] },
   { title: "Datos", items: [
     ["/jugadores", "Jugadores"],
-    ["/entrenadores", "Entrenadores"],
+    ["/entrenadores", "Entrenadores", "coach"],
     ["/coaches", "Coaches", "direccion"],
-    ["/escuelas", "Escuelas"],
+    ["/escuelas", "Escuelas", "direccion"],
     ["/preferencias-superficie", "Pref. superficie"],
   ] },
   { title: "Gestión", items: [
@@ -32,6 +34,8 @@ const SECTIONS = [
     ["/feedback", "Feedback"],
   ] },
 ];
+
+const NEED = { direccion: 3, coach: 2 };
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -51,7 +55,7 @@ export default function Sidebar() {
           <div key={i} className="nav-section">
             {section.title && <div className="nav-section-title">{section.title}</div>}
             {section.items
-              .filter(([, , role]) => !role || (role === "direccion" && user?.is_superadmin))
+              .filter(([, , role]) => !role || roleRank(user) >= NEED[role])
               .map(([href, label]) => (
                 <Link key={href} href={href} className={pathname === href ? "active" : ""}>
                   {label}
