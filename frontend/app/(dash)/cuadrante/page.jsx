@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Avatar from "../../../components/Avatar";
+import { useIsMobile } from "../../../lib/useIsMobile";
 import { SUPERFICIE_LABEL, SUPERFICIE_COLOR } from "../../../lib/format";
 import {
   getCuadrante,
@@ -66,6 +67,9 @@ export default function CuadrantePage() {
   const [panel, setPanel] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+  const isMobile = useIsMobile();
+  const [turnoIdx, setTurnoIdx] = useState(0);
+  const [sel, setSel] = useState(null); // selección táctil (móvil): {k, jugador?, entrenador?, asignacion?, label}
 
   async function load(id, d) {
     setError(null);
@@ -138,6 +142,31 @@ export default function CuadrantePage() {
     if (s && s.k === "cj") op(() => removeAsignacion(s.asignacion));
   }
 
+  // ----- Interacción táctil (móvil): tocar origen → tocar destino -----
+  function pick(next) {
+    setSel((cur) =>
+      cur && cur.k === next.k && cur.jugador === next.jugador &&
+      cur.entrenador === next.entrenador && cur.asignacion === next.asignacion
+        ? null : next
+    );
+  }
+  // Coloca la selección actual en una pista (ctx) según lo que ya haya en ella.
+  function placeOnCell(ctx, items) {
+    if (!sel) return;
+    const s = sel;
+    const firstPlayer = (items || []).find((a) => a.jugador_nombre);
+    const coachAsig = items && items[0] && items[0].entrenador_nombre ? items[0].id : null;
+    if (s.k === "bj") op(() => manualAssign({ jugador_id: s.jugador, ...ctx }));
+    else if (s.k === "cj") { if (firstPlayer && firstPlayer.id !== s.asignacion) op(() => swapAsignacion(s.asignacion, firstPlayer.id, "jugador")); }
+    else if (s.k === "be") op(() => setCoach({ ...ctx, entrenador_id: s.entrenador }));
+    else if (s.k === "cc") { if (coachAsig && coachAsig !== s.asignacion) op(() => swapAsignacion(s.asignacion, coachAsig, "entrenador")); }
+    setSel(null);
+  }
+  function placeOnBench() {
+    if (sel && sel.k === "cj") op(() => removeAsignacion(sel.asignacion));
+    setSel(null);
+  }
+
   if (error && !data) return <div><p className="err">{error}</p></div>;
   if (!data) return <p className="msg">Cargando cuadrante…</p>;
 
@@ -146,6 +175,140 @@ export default function CuadrantePage() {
   const publicado = data.semana.estado === "PUBLICADO";
   const bench = benchPlayers(panel);
   const benchCoaches = panel?.entrenadores_libres || [];
+
+  // ---------------- Vista móvil: lista por pista + tocar-para-mover ----------------
+  if (isMobile) {
+    const turnos = data.turnos;
+    const tIdx = Math.min(turnoIdx, Math.max(0, turnos.length - 1));
+    const turno = turnos[tIdx];
+
+    return (
+      <div className="mcuadrante">
+        <div className="page-head">
+          <h1>Cuadrante</h1>
+          <span className={`badge ${publicado ? "pub" : ""}`}>{publicado ? "Publicado" : "Borrador"}</span>
+        </div>
+        <p className="now-horas">{data.semana.fecha_inicio}</p>
+
+        <div className="controls mscroll">
+          {DIAS.map((d, i) => (
+            <button key={i} className={i === dia ? "active" : ""} onClick={() => setDia(i)}>{d.slice(0, 3)}</button>
+          ))}
+        </div>
+        <div className="controls mscroll">
+          {turnos.map((t, i) => (
+            <button key={t.id} className={i === tIdx ? "active" : ""} onClick={() => setTurnoIdx(i)}>{t.codigo}</button>
+          ))}
+        </div>
+        <div className="controls">
+          <button className="btn ghost sm" disabled={busy} onClick={() => run("gen", () => generarSemana(semanaId))}>
+            {busy === "gen" ? "Generando…" : "Generar"}
+          </button>
+          <button className="btn ghost sm" disabled={busy} onClick={() => run("tarde", () => regenerarTarde(semanaId, dia))}>
+            {busy === "tarde" ? "…" : "Regen. tarde"}
+          </button>
+          <button className="btn sm" disabled={busy || publicado} onClick={() => run("pub", () => publicarSemana(semanaId))}>
+            {publicado ? "Publicado" : "Publicar"}
+          </button>
+        </div>
+
+        {error && <p className="err">{error}</p>}
+
+        {sel && (
+          <div className="tap-hint">
+            <span>Movimiento: <b>{sel.label}</b> · toca una pista{sel.k === "cj" ? " o el banquillo" : ""}</span>
+            <button className="btn ghost sm" onClick={() => setSel(null)}>Cancelar</button>
+          </div>
+        )}
+
+        {data.sedes.map((sede) => (
+          <div key={sede.id} className="msede">
+            <div className="msede-title">{sede.nombre}{sede.es_satelite ? " · satélite" : ""}</div>
+            {sede.pistas.map((p) => {
+              const items = cellMap[`${p.id}_${turno.id}`];
+              const ctx = { semana: semanaId, dia, turno: turno.id, pista: p.id };
+              const empty = !items || items.length === 0;
+              const color = empty ? "var(--border-strong)" : (ESTADO_COLOR[items[0].estado] || "var(--border-strong)");
+              return (
+                <div
+                  key={p.id}
+                  className={`mcell${empty ? " empty" : ""}${sel ? " targetable" : ""}`}
+                  style={{ borderLeftColor: color }}
+                  onClick={() => sel && placeOnCell(ctx, items)}
+                >
+                  <div className="mcell-head">
+                    <span className="mcell-pista">P{p.numero}</span>
+                    {p.superficie && (
+                      <span className="surf-dot" title={SUPERFICIE_LABEL[p.superficie]}
+                        style={{ background: SUPERFICIE_COLOR[p.superficie] }} />
+                    )}
+                    {sel && <span className="mcell-place">Colocar aquí →</span>}
+                  </div>
+                  {(items || []).map((a) => {
+                    const selected = sel && sel.k === "cj" && sel.asignacion === a.id;
+                    return (
+                      <div key={a.id} className={`mchip${selected ? " sel" : ""}`}
+                        onClick={(e) => { e.stopPropagation(); pick({ k: "cj", asignacion: a.id, label: a.jugador_nombre }); }}>
+                        <Avatar nombre={a.jugador_nombre} fotoUrl={a.jugador_foto} kind="player" />
+                        <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
+                        <span>{a.jugador_nombre}{a.division_nivel ? ` · D${a.division_nivel}` : ""}</span>
+                      </div>
+                    );
+                  })}
+                  {!empty && items[0].entrenador_nombre ? (
+                    <div className={`mchip coach${sel && sel.k === "cc" && sel.asignacion === items[0].id ? " sel" : ""}`}
+                      onClick={(e) => { e.stopPropagation(); pick({ k: "cc", asignacion: items[0].id, label: items[0].entrenador_nombre }); }}>
+                      <Avatar nombre={items[0].entrenador_nombre} fotoUrl={items[0].entrenador_foto} kind="coach" />
+                      <span>{items[0].entrenador_nombre}</span>
+                    </div>
+                  ) : null}
+                  {empty && <span className="cell-empty-hint">Libre</span>}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+
+        <div className={`bench mbench${sel && sel.k === "cj" ? " droppable" : ""}`} onClick={() => sel && sel.k === "cj" && placeOnBench()}>
+          <div className="bench-title">Banquillo · sin pista <span className="bench-count">{bench.length}</span></div>
+          {sel && sel.k === "cj" && <div className="bench-side-hint">Toca aquí para quitar de la pista</div>}
+          <div className="bench-items">
+            {bench.length === 0 ? <span className="bench-empty">Todos tienen pista.</span> :
+              bench.map((p) => {
+                const selected = sel && sel.k === "bj" && sel.jugador === p.id;
+                return (
+                  <div key={p.id} className={`bench-chip${noDisponible(p.estado) ? " nd" : ""}${selected ? " sel" : ""}`}
+                    onClick={(e) => { e.stopPropagation(); pick({ k: "bj", jugador: p.id, label: p.nombre }); }}>
+                    {noDisponible(p.estado) && (
+                      <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
+                    )}
+                    <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
+                    <span>{p.nombre}{p.division ? ` · D${p.division}` : ""}</span>
+                  </div>
+                );
+              })}
+          </div>
+          {benchCoaches.length > 0 && (
+            <>
+              <div className="bench-title sm">Entrenadores libres</div>
+              <div className="bench-items">
+                {benchCoaches.map((e2) => {
+                  const selected = sel && sel.k === "be" && sel.entrenador === e2.id;
+                  return (
+                    <div key={e2.id} className={`bench-chip${selected ? " sel" : ""}`}
+                      onClick={(e) => { e.stopPropagation(); pick({ k: "be", entrenador: e2.id, label: e2.nombre }); }}>
+                      <Avatar nombre={e2.nombre} fotoUrl={e2.foto_url} kind="coach" />
+                      <span>{e2.nombre}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

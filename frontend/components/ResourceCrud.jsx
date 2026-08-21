@@ -154,9 +154,9 @@ export default function ResourceCrud({ config }) {
             ) : (
               items.map((row, i) => (
                 <tr key={row.id}>
-                  {config.numbered && <td style={{ textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{i + 1}</td>}
+                  {config.numbered && <td data-label="#" style={{ textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{i + 1}</td>}
                   {config.columns.map((c) => (
-                    <td key={c.key}>{renderCell(c, row)}</td>
+                    <td key={c.key} data-label={c.label}>{renderCell(c, row)}</td>
                   ))}
                   <td>
                     <div className="row-actions">

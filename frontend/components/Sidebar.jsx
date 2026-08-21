@@ -37,7 +37,7 @@ const SECTIONS = [
 
 const NEED = { direccion: 3, coach: 2 };
 
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }) {
   const pathname = usePathname();
   const router = useRouter();
   const user = getUser();
@@ -57,7 +57,7 @@ export default function Sidebar() {
             {section.items
               .filter(([, , role]) => !role || roleRank(user) >= NEED[role])
               .map(([href, label]) => (
-                <Link key={href} href={href} className={pathname === href ? "active" : ""}>
+                <Link key={href} href={href} className={pathname === href ? "active" : ""} onClick={onNavigate}>
                   {label}
                 </Link>
               ))}

@@ -467,3 +467,178 @@ table.grid th { text-align: left; color: var(--muted); font-weight: 500; font-si
 .pill.prio-alta { background: #dc2626; color: #fff; }
 .pill.prio-media { background: #d97706; color: #fff; }
 .pill.prio-baja { background: #6b7280; color: #fff; }
+
+/* ============================================================= */
+/* ============  RESPONSIVE / MÓVIL (PWA)  ====================== */
+/* ============================================================= */
+
+/* Elementos que solo existen en móvil (ocultos en escritorio). */
+.mobile-topbar { display: none; }
+.nav-scrim { display: none; }
+body.nav-locked { overflow: hidden; }
+
+/* --- Tablet / móvil: sidebar pasa a drawer deslizante --- */
+@media (max-width: 860px) {
+  .shell { display: block; height: auto; grid-template-columns: none; }
+
+  .mobile-topbar {
+    display: flex; align-items: center; gap: 10px;
+    position: sticky; top: 0; z-index: 40;
+    height: calc(56px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 12px 0;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-brand { flex: 1; font-family: var(--font-serif); font-size: 20px; font-weight: 500; }
+  .mobile-brand span { color: var(--accent); }
+
+  .hamburger {
+    display: inline-flex; flex-direction: column; justify-content: center; gap: 5px;
+    width: 42px; height: 42px; padding: 0 10px; border-radius: 10px; cursor: pointer;
+    background: var(--surface); border: 1px solid var(--border-strong); flex: none;
+  }
+  .hamburger span { display: block; height: 2px; background: var(--text); border-radius: 2px;
+    transition: transform .22s ease, opacity .22s ease; }
+  .shell.nav-open .hamburger span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .shell.nav-open .hamburger span:nth-child(2) { opacity: 0; }
+  .shell.nav-open .hamburger span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  /* Sidebar como panel lateral que entra desde la izquierda. */
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 60;
+    width: 82vw; max-width: 300px; height: 100dvh;
+    padding-top: calc(22px + env(safe-area-inset-top));
+    transform: translateX(-100%);
+    transition: transform .24s ease;
+    box-shadow: 0 0 44px rgba(0,0,0,0.20);
+  }
+  .shell.nav-open .sidebar { transform: translateX(0); }
+
+  .nav-scrim {
+    display: block; position: fixed; inset: 0; z-index: 50;
+    background: rgba(12,16,20,0.42);
+    opacity: 0; pointer-events: none; transition: opacity .24s ease;
+  }
+  .shell.nav-open .nav-scrim { opacity: 1; pointer-events: auto; }
+
+  .content {
+    height: auto; overflow: visible;
+    padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .content > .topbar { display: none; }   /* la tuerca vive en la barra móvil */
+}
+
+/* --- Teléfono: ajustes finos --- */
+@media (max-width: 640px) {
+  .content { padding: 16px 14px calc(22px + env(safe-area-inset-bottom)); }
+  .page-head { margin-bottom: 18px; }
+  .page-head h1 { font-size: 22px; }
+  .help { font-size: 12.5px; padding: 11px 13px; }
+
+  /* Objetivos táctiles más cómodos. */
+  .btn { padding: 11px 18px; }
+  .btn.sm { padding: 9px 13px; font-size: 12.5px; }
+
+  .toolbar { flex-wrap: wrap; }
+  .toolbar input.search { max-width: none; width: 100%; }
+  .controls { gap: 6px; }
+
+  /* Métricas: 2 por fila en el móvil. */
+  .metrics { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .metric { padding: 14px 15px; }
+  .metric .value { font-size: 24px; }
+
+  /* ---- Tablas de datos como tarjetas apiladas ---- */
+  .card { overflow: visible; border: none; background: transparent; border-radius: 0; }
+  table.data, table.data tbody, table.data tr, table.data td { display: block; width: 100%; }
+  table.data thead { display: none; }
+  table.data tr {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 12px; padding: 4px 2px; overflow: hidden;
+  }
+  table.data td {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: right;
+  }
+  table.data tr td:last-child { border-bottom: none; }
+  table.data td::before {
+    content: attr(data-label);
+    flex: 0 0 auto; text-align: left;
+    color: var(--muted); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  table.data td[data-label=""]::before,
+  table.data td:not([data-label])::before { content: none; }
+  /* Fila de mensaje (Cargando / Sin registros) ocupa la tarjeta entera. */
+  table.data td.msg { justify-content: center; text-align: center; padding: 22px 14px; }
+  table.data td.msg::before { content: none; }
+  /* Celda de acciones: botones a ancho completo. */
+  .row-actions { justify-content: flex-start; flex-wrap: wrap; width: 100%; }
+
+  /* ---- Modales como hoja inferior (bottom sheet) ---- */
+  .overlay { align-items: flex-end; }
+  .modal {
+    width: 100%; max-width: 100%;
+    border-radius: 16px 16px 0 0; border-bottom: none;
+    max-height: 92dvh;
+    padding: 20px 18px calc(18px + env(safe-area-inset-bottom));
+  }
+  .modal .actions {
+    position: sticky; bottom: 0; margin: 0 -18px -18px; padding: 12px 18px;
+    background: var(--surface); border-top: 1px solid var(--border);
+  }
+  .modal .actions .btn { flex: 1; }
+
+  /* Cabeceras de sección apiladas. */
+  .now-head, .feedback-toolbar { flex-wrap: wrap; }
+  .week-col { flex-basis: 78vw; min-width: 78vw; }
+}
+
+/* Nada de zoom accidental al enfocar inputs en iOS: 16px mínimo. */
+@media (max-width: 640px) {
+  input, select, textarea, .mac-field { font-size: 16px; }
+}
+
+/* ---- Cuadrante en móvil: lista por pista + tocar-para-mover ---- */
+.mcuadrante .controls { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px; scrollbar-width: none; }
+.mcuadrante .controls.mscroll::-webkit-scrollbar { display: none; }
+.mcuadrante .controls button { flex: none; }
+
+.tap-hint {
+  position: sticky; top: calc(56px + env(safe-area-inset-top)); z-index: 30;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: #fbf2e3; border: 1px solid var(--st-calentamiento); color: var(--text);
+  border-radius: 10px; padding: 9px 12px; margin: 6px 0 14px; font-size: 13px;
+}
+.tap-hint b { font-weight: 600; }
+
+.msede-title { font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--muted); margin: 18px 0 8px; }
+
+.mcell {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong); border-radius: 12px;
+  padding: 11px 13px; margin-bottom: 10px;
+}
+.mcell.empty { background: var(--surface-2); border-style: dashed; }
+.mcell.targetable { cursor: pointer; }
+.mcell.targetable:active { background: rgba(201,100,66,0.06); border-color: var(--accent); }
+.mcell-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mcell-pista { font-size: 13px; font-weight: 600; }
+.mcell-place { margin-left: auto; font-size: 11px; color: var(--accent); font-weight: 600; }
+.mcell .mchip {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 999px; margin-bottom: 6px;
+  font-size: 14px; background: var(--surface-2);
+}
+.mcell .mchip:last-child { margin-bottom: 0; }
+.mcell .mchip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.mcell .mchip.coach { color: var(--muted); font-size: 13px; }
+.mchip.sel, .bench-chip.sel {
+  border-color: var(--accent); background: rgba(201,100,66,0.10);
+  box-shadow: 0 0 0 2px rgba(201,100,66,0.18);
+}
+.mbench { margin-top: 20px; }
+.mbench.droppable { border-color: var(--accent); border-style: solid; background: rgba(201,100,66,0.06); cursor: pointer; }
+.mbench .bench-chip { cursor: pointer; }
