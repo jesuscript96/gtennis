@@ -277,6 +277,7 @@ def _coach_capacita(coach, coach_niveles, court_niveles):
 
 def _assign_coaches(
     members, sponsors, elegibles, coach_niveles, player_div, load,
+    ocupados=None, aviso=None,
 ):
     """Elige el entrenador de una pista.
 
@@ -292,35 +293,136 @@ def _assign_coaches(
     si no, el menos cargado. El reparto por porcentajes que había antes
     concentraba el trabajo en tres o cuatro entrenadores, porque devolvía al
     primero con déficit y nunca llegaba a equilibrar.
+
+    Y nadie cubre dos pistas a la vez: en el cuadrante real de Iván, de 189
+    asignaciones en las bandas de alto rendimiento (8:30, 10:30, JP y 14:15) no
+    hay una sola repetida. `ocupados` son los que ya tienen pista en este turno.
+    Si no queda ninguno libre y capacitado se repite —mejor eso que dejar la
+    pista sin entrenador— y queda anotado en el informe.
     """
+    ocupados = ocupados if ocupados is not None else set()
     court_niveles = {player_div.get(jid) for jid in members}
     capaces = [c for c in elegibles if _coach_capacita(c, coach_niveles, court_niveles)]
     if not capaces:
         return None
-    cap_ids = {c.id: c for c in capaces}
+    libres = [c for c in capaces if c.id not in ocupados]
 
-    # 1) Contrato de patrocinio: el jugador tiene entrenador fijo.
+    # 1) Contrato de patrocinio: el jugador tiene entrenador fijo. Manda salvo
+    #    que ese entrenador ya esté en otra pista de este mismo turno.
+    libre_ids = {c.id for c in libres}
     for jid in members:
         for cid in sponsors.get(jid, set()):
-            if cid in cap_ids:
+            if cid in libre_ids:
                 load[cid] += 1
                 return cid
 
-    # 2) El menos cargado de los capacitados (rotación equilibrada).
+    # 2) El menos cargado de los que quedan libres (rotación equilibrada).
+    if libres:
+        elegido = min(libres, key=lambda e: (load[e.id], e.id))
+        load[elegido.id] += 1
+        return elegido.id
+
+    # 3) No queda nadie libre: se repite, pero se avisa.
     elegido = min(capaces, key=lambda e: (load[e.id], e.id))
     load[elegido.id] += 1
+    if aviso is not None:
+        aviso.append(elegido.id)
     return elegido.id
+
+
+def _emparejar_entrenadores(
+    courts, sponsors, elegibles, coach_niveles, player_div, load,
+):
+    """Reparte los entrenadores de un turno: uno por pista, sin repetir.
+
+    Devuelve `({pista: entrenador}, [entrenadores repetidos])`.
+
+    Asignar pista a pista se atasca: las divisiones bajas tienen tres o cuatro
+    entrenadores capacitados y las altas el doble, así que una pista fácil se
+    lleva al único que servía para una difícil y esa se queda sin nadie libre.
+    Es un emparejamiento bipartito, y se resuelve con caminos aumentantes
+    (Kuhn): cuando una pista no encuentra hueco, se le pide a quien ocupa a su
+    candidato que se mueva a otro suyo. Así se llega al máximo de pistas con
+    entrenador propio; solo si de verdad no hay bastantes capacitados a esa
+    hora se repite a alguien, y eso queda anotado.
+    """
+    # Candidatos por pista, en orden de preferencia: primero el contrato de
+    # patrocinio, luego el menos cargado.
+    candidatos = {}
+    for pista, miembros in courts.items():
+        niveles = {player_div.get(j) for j in miembros}
+        capaces = [c for c in elegibles
+                   if _coach_capacita(c, coach_niveles, niveles)]
+        con_contrato = {cid for j in miembros for cid in sponsors.get(j, set())}
+        candidatos[pista] = [
+            c.id for c in sorted(
+                capaces,
+                key=lambda e: (e.id not in con_contrato, load[e.id], e.id),
+            )
+        ]
+
+    # El contrato de patrocinio se ata antes de emparejar. Si no, el
+    # emparejamiento le da ese entrenador a otra pista —un entrenador sin
+    # divisiones sirve para todas y es justo el que las pistas difíciles se
+    # rifan— y el contrato se rompe siempre.
+    de_entrenador = {}          # entrenador -> pista
+    for pista, miembros in courts.items():
+        contratados = {cid for j in miembros for cid in sponsors.get(j, set())}
+        for cid in candidatos[pista]:
+            if cid in contratados and cid not in de_entrenador:
+                de_entrenador[cid] = pista
+                break
+
+    # Las pistas con menos candidatos, primero: sufren antes la escasez.
+    pendientes = [p for p in courts if p not in set(de_entrenador.values())]
+    orden = sorted(pendientes, key=lambda p: (len(candidatos[p]), p))
+
+    atados = set(de_entrenador)
+
+    def acomodar(pista, vistos):
+        for cid in candidatos[pista]:
+            if cid in vistos or cid in atados:
+                continue
+            vistos.add(cid)
+            ocupada = de_entrenador.get(cid)
+            if ocupada is None or acomodar(ocupada, vistos):
+                de_entrenador[cid] = pista
+                return True
+        return False
+
+    for pista in orden:
+        acomodar(pista, set())
+
+    asignado = {pista: cid for cid, pista in de_entrenador.items()}
+    repetidos = []
+    for pista in sorted(courts, key=lambda p: (len(candidatos[p]), p)):
+        if pista in asignado or not candidatos[pista]:
+            continue
+        # No hay ningún capacitado libre a esta hora: se repite al menos
+        # cargado, que es preferible a dejar la pista sin entrenador.
+        cid = min(candidatos[pista], key=lambda c: (load[c], c))
+        asignado[pista] = cid
+        repetidos.append(cid)
+    for cid in asignado.values():
+        load[cid] += 1
+    return asignado, repetidos
 
 
 @transaction.atomic
 def generate(semana: Semana, dias=None, bloques=None) -> dict:
     """Generate (or regenerate) the cuadrante.
 
-    dias: iterable of day indices (default Mon-Sat).
+    dias: iterable of day indices (por defecto de lunes a viernes).
+
+    El sábado queda fuera: en el cuadrante real tiene su propio horario —dos
+    bandas de mañana, 8:30-10:00 y 10:00-11:30— que no son los turnos del
+    curso, y solo se usa algunas semanas. Generarlo con M1/M2/JP/T1/T2 inventa
+    sesiones que nadie da. Los modelos siguen admitiéndolo, así que basta con
+    pasar `dias` para incluirlo.
     bloques: restrict to {'MANANA','TARDE'} shifts — used by the afternoon
              regeneration so the morning history stays untouched.
     """
-    dias = list(dias) if dias is not None else [d for d, _ in DIAS]
+    dias = list(dias) if dias is not None else [d for d, _ in DIAS if d < 5]
     turnos = list(Turno.objects.filter(activo=True))
     if bloques:
         turnos = [t for t in turnos if t.bloque in bloques]
@@ -536,11 +638,15 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             Asignacion.objects.filter(
                 semana=semana, dia=dia, turno=turno
             ).delete()
+            # Un entrenador, una pista. Repartir pista a pista no basta: una
+            # pista fácil se lleva al único capacitado para una difícil y esa
+            # se queda sin nadie. Es un emparejamiento, y se resuelve como tal.
+            entrenador_de, repetidos = _emparejar_entrenadores(
+                result.courts, sponsors, elegibles, coach_niveles, player_div,
+                load,
+            )
             for court_id, member_ids in result.courts.items():
-                coach_id = _assign_coaches(
-                    member_ids, sponsors, elegibles, coach_niveles, player_div,
-                    load,
-                )
+                coach_id = entrenador_de.get(court_id)
                 for jid in member_ids:
                     Asignacion.objects.create(
                         semana=semana,
@@ -564,6 +670,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     report["overflow"].append(
                         {"dia": dia, "turno": turno.codigo, "pista": court_id}
                     )
+            for cid in repetidos:
+                report.setdefault("coach_repetido", []).append(
+                    {"dia": dia, "turno": turno.codigo, "entrenador": cid}
+                )
             if result.unassigned:
                 report["unassigned"].append(
                     {

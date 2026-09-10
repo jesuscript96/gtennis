@@ -87,3 +87,68 @@ class PairingTests(SimpleTestCase):
         res = solve_pairing(PairingInput(players=players, courts=courts))
         self.assertEqual(res.unassigned, [])
         self.assertIn(2, res.courts)  # satellite used
+
+
+class _Ent:
+    """Entrenador mínimo: al emparejador solo le hace falta el id."""
+
+    def __init__(self, id):
+        self.id = id
+
+
+class EmparejarEntrenadoresTests(SimpleTestCase):
+    """Nadie cubre dos pistas a la vez.
+
+    En el cuadrante real de Iván, de 189 asignaciones en las bandas de alto
+    rendimiento no hay una sola repetida, así que el motor tampoco repite
+    mientras queden entrenadores capacitados libres.
+    """
+
+    def _emparejar(self, courts, niveles, divisiones, sponsors=None):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        elegibles = [_Ent(i) for i in sorted(niveles)]
+        return _emparejar_entrenadores(
+            courts, sponsors or {}, elegibles, niveles, divisiones, Counter()
+        )
+
+    def test_no_repite_cuando_hay_de_sobra(self):
+        courts = {10: [1, 2], 11: [3, 4], 12: [5, 6]}
+        divisiones = {1: 2, 2: 2, 3: 5, 4: 5, 5: 7, 6: 7}
+        niveles = {100: None, 101: None, 102: None}   # None = todas
+        asignado, repetidos = self._emparejar(courts, niveles, divisiones)
+        self.assertEqual(len(set(asignado.values())), 3)
+        self.assertEqual(repetidos, [])
+
+    def test_encuentra_el_reparto_aunque_el_avido_falle(self):
+        # La pista fácil (div 2) la puede llevar cualquiera; la difícil (div 7)
+        # solo el 101. Repartiendo por orden, la fácil se llevaría al 101 y la
+        # difícil se quedaría sin nadie.
+        courts = {10: [1, 2], 11: [3, 4]}
+        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
+        niveles = {100: {2}, 101: {2, 7}}
+        asignado, repetidos = self._emparejar(courts, niveles, divisiones)
+        self.assertEqual(asignado, {10: 100, 11: 101})
+        self.assertEqual(repetidos, [])
+
+    def test_repite_solo_si_no_queda_nadie(self):
+        courts = {10: [1], 11: [2]}
+        divisiones = {1: 7, 2: 7}
+        niveles = {100: {7}}                          # un solo capacitado
+        asignado, repetidos = self._emparejar(courts, niveles, divisiones)
+        self.assertEqual(set(asignado.values()), {100})
+        self.assertEqual(len(repetidos), 1)
+
+    def test_el_contrato_manda_sobre_el_emparejamiento(self):
+        # El 101 sirve para todo y es el que la pista difícil se rifaría, pero
+        # tiene contrato con el jugador 1, que está en la pista fácil.
+        courts = {10: [1, 2], 11: [3, 4]}
+        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
+        niveles = {100: {2, 7}, 101: None}
+        asignado, _ = self._emparejar(
+            courts, niveles, divisiones, sponsors={1: {101}}
+        )
+        self.assertEqual(asignado[10], 101)
+        self.assertEqual(asignado[11], 100)
