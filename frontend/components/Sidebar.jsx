@@ -17,6 +17,8 @@ const SECTIONS = [
   ] },
   { title: "Disponibilidad", items: [
     ["/ausencias", "Ausencias y estados"],
+    ["/ausencias-fechas", "Bajas por fechas"],
+    ["/mi-agenda", "Agenda de entrenadores"],
     ["/disponibilidad-entrenador", "Disp. entrenadores"],
     ["/vacaciones", "Vacaciones"],
   ] },
@@ -37,10 +39,24 @@ const SECTIONS = [
 
 const NEED = { direccion: 3, coach: 2 };
 
+// El entrenador no necesita el panel general del club: solo lo suyo — su
+// jornada y sus ausencias — y lo que declara de sus jugadores.
+const SECTIONS_ENTRENADOR = [
+  { items: [
+    ["/mi-agenda", "Mi agenda"],
+  ] },
+  { title: "Mis jugadores", items: [
+    ["/jugadores", "Turnos"],
+    ["/ausencias", "Ausencias de la semana"],
+    ["/ausencias-fechas", "Bajas por fechas"],
+  ] },
+];
+
 export default function Sidebar({ onNavigate }) {
   const pathname = usePathname();
   const router = useRouter();
   const user = getUser();
+  const secciones = roleRank(user) === 1 ? SECTIONS_ENTRENADOR : SECTIONS;
 
   function onLogout() {
     logout();
@@ -51,7 +67,7 @@ export default function Sidebar({ onNavigate }) {
     <aside className="sidebar">
       <div className="brand">G<span>Tennis</span></div>
       <nav>
-        {SECTIONS.map((section, i) => (
+        {secciones.map((section, i) => (
           <div key={i} className="nav-section">
             {section.title && <div className="nav-section-title">{section.title}</div>}
             {section.items

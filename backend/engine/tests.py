@@ -34,6 +34,49 @@ class PairingTests(SimpleTestCase):
         for members in res.courts.values():
             self.assertGreaterEqual(len(members), 2)
 
+    def test_individual_court_when_nobody_pairs(self):
+        # Div 1 y Div 8 no pueden emparejarse: con individuales permitidos
+        # cada uno entrena en su pista en vez de quedarse fuera.
+        players = [Player(1, division=1), Player(2, division=8)]
+        res = solve_pairing(
+            PairingInput(players=players, courts=central(4), min_occupancy=1)
+        )
+        self.assertEqual(res.unassigned, [])
+        self.assertTrue(all(len(m) == 1 for m in res.courts.values()))
+
+    def test_density_penalty_keeps_courts_at_two(self):
+        # 4 jugadores compatibles y 2 pistas de capacidad 4 pero densidad
+        # normal 2: se reparten 2 y 2 en vez de apretar 4 en una.
+        players = [Player(i, division=2) for i in range(1, 5)]
+        courts = [
+            Court(id=i, venue_id=1, capacity=4, normal_density=2)
+            for i in (1, 2)
+        ]
+        res = solve_pairing(
+            PairingInput(players=players, courts=courts, w_density=50_000)
+        )
+        self.assertEqual(sorted(len(m) for m in res.courts.values()), [2, 2])
+
+    def test_density_yields_when_the_marginal_player_is_worth_it(self):
+        # Una sola pista para 3 jugadores. Lo que compite con la penalización
+        # de densidad es el jugador MARGINAL (el 3º), no el mejor de la pista.
+        courts = [Court(id=1, venue_id=1, capacity=4, normal_density=2)]
+
+        # Prioridad alta (déficit de cupo): compensa apretar a 3.
+        altos = [Player(i, division=2, priority=40) for i in (1, 2, 3)]
+        res = solve_pairing(
+            PairingInput(players=altos, courts=courts, w_density=15_000)
+        )
+        self.assertEqual(len(res.courts[1]), 3)
+
+        # Prioridad baja: el tercero se queda fuera y la pista sigue a 2.
+        bajos = [Player(i, division=2, priority=1) for i in (1, 2, 3)]
+        res = solve_pairing(
+            PairingInput(players=bajos, courts=courts, w_density=15_000)
+        )
+        self.assertEqual(len(res.courts[1]), 2)
+        self.assertEqual(len(res.unassigned), 1)
+
     def test_overflow_to_satellite(self):
         # 4 compatible players, only 1 central court (cap 2) -> spill to satellite.
         players = [Player(i, division=2) for i in range(1, 5)]

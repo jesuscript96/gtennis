@@ -1,7 +1,7 @@
 from django.db.models import Case, IntegerField, Q, Value, When
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -14,6 +14,7 @@ from .models import (
     Escuela,
     Feedback,
     Invitado,
+    HorarioEntrenador,
     Jugador,
     Pista,
     PreferenciaPareja,
@@ -37,6 +38,7 @@ from .serializers import (
     FeedbackSerializer,
     InvitadoSerializer,
     JugadorSerializer,
+    JugadorTurnosSerializer,
     PistaSerializer,
     PreferenciaSuperficieSerializer,
     RencillaSerializer,
@@ -64,6 +66,19 @@ class TurnoViewSet(viewsets.ModelViewSet):
     queryset = Turno.objects.all()
     serializer_class = TurnoSerializer
     permission_classes = [ReadOnlyOrDireccion]
+
+    def get_queryset(self):
+        """Por defecto solo los turnos en uso.
+
+        Las franjas de escuela de noche existen en la base pero están fuera
+        del reparto; si la API las devuelve, acaban en los desplegables y
+        alguien acaba eligiendo un turno que no se monta. Dirección puede
+        verlas todas con `?todos=1`.
+        """
+        qs = Turno.objects.all()
+        if self.request.query_params.get("todos"):
+            return qs
+        return qs.filter(activo=True)
 
 
 class DivisionViewSet(viewsets.ModelViewSet):
@@ -134,6 +149,21 @@ class CoachViewSet(viewsets.ModelViewSet):
 class JugadorViewSet(viewsets.ModelViewSet):
     queryset = Jugador.objects.filter(activo=True).select_related("division", "entrenador_responsable").all()
     serializer_class = JugadorSerializer
+
+    def get_serializer_class(self):
+        """El entrenador no gestiona la ficha del alumno.
+
+        Lo único que declara es cuándo entrena: su franja de mañana, la de
+        tarde y los cambios por día. Datos personales, división, escuela,
+        contactos y notas quedan fuera de su serializer — no los ve ni los
+        puede escribir. Dirección y coaches siguen con la ficha completa.
+        """
+        user = self.request.user
+        if (user.is_authenticated and not user.is_superadmin
+                and not getattr(user, "is_coach", False)
+                and getattr(user, "entrenador", None) is not None):
+            return JugadorTurnosSerializer
+        return JugadorSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["nombre"]
     ordering_fields = ["nombre", "edad"]
@@ -146,6 +176,21 @@ class JugadorViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return base
         return jugadores_visibles(user, base=base)
+
+    def perform_destroy(self, instance):
+        self._assert_direccion()
+        instance.delete()
+
+    def perform_create(self, serializer):
+        self._assert_direccion()
+        serializer.save()
+
+    def _assert_direccion(self):
+        user = self.request.user
+        if not (user.is_authenticated and user.is_superadmin):
+            raise PermissionDenied(
+                "Solo la dirección deportiva da de alta o de baja jugadores."
+            )
 
     def perform_update(self, serializer):
         # #18: al dar de baja (activo True->False) se avisa a dirección in-app.
@@ -464,3 +509,159 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
         serializer.save(creado_por=user)
+
+
+def _coach_activo(user):
+    """El Coach del usuario, si lo tiene y está activo."""
+    coach = getattr(user, "coach", None)
+    return coach if (coach is not None and coach.activo) else None
+
+
+class MiAgendaViewSet(viewsets.ViewSet):
+    """Lo que el entrenador ve de SÍ MISMO: su jornada semanal y sus ausencias
+    largas. Nada del resto de la app.
+
+    Tres vistas, que son las tres cosas que necesita:
+      * `dia`      — hoy, si trabaja de mañana, de tarde o ambas;
+      * `semana`   — los cinco días de un vistazo, editable;
+      * `ausencias`— periodos con fecha de ida y de vuelta, a meses vista.
+    """
+
+    DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
+
+    def _puede_mirar_a_otros(self):
+        """Dirección, y el coach sobre su propio bloque. Nadie más."""
+        user = self.request.user
+        return bool(user.is_superadmin or _coach_activo(user))
+
+    def _agendas_visibles(self):
+        """Entrenadores cuya agenda puede abrir este usuario."""
+        user = self.request.user
+        if user.is_superadmin:
+            qs = Entrenador.objects.all()
+        else:
+            coach = _coach_activo(user)
+            qs = coach.entrenadores.all() if coach else Entrenador.objects.none()
+        return qs.filter(activo=True).order_by("nombre")
+
+    def _entrenador(self):
+        """El entrenador cuya agenda se está viendo.
+
+        Normalmente el del propio usuario. Dirección puede mirar la de
+        cualquiera, y un coach la de los de su bloque, pasando
+        `?entrenador=<id>`: hace falta para rellenarle la jornada a quien no
+        entre nunca a la app. Sin elegir a nadie se abre el primero de la
+        lista, para que la pantalla cargue en vez de dar un error.
+        """
+        user = self.request.user
+        pedido = self.request.query_params.get("entrenador") or \
+            self.request.data.get("entrenador")
+        propio = getattr(user, "entrenador", None)
+
+        if pedido:
+            if propio is not None and str(propio.pk) == str(pedido):
+                return propio
+            if not self._puede_mirar_a_otros():
+                raise PermissionDenied(
+                    "Solo dirección, o el coach de su bloque, puede ver la "
+                    "agenda de otro."
+                )
+            ent = self._agendas_visibles().filter(pk=pedido).first()
+            if ent is None:
+                raise NotFound("Ese entrenador no está en tu equipo.")
+            return ent
+
+        if propio is not None:
+            return propio
+        ent = self._agendas_visibles().first()
+        if ent is None:
+            raise PermissionDenied(
+                "Tu usuario no tiene ficha de entrenador ni entrenadores a "
+                "cargo."
+            )
+        return ent
+
+    @action(detail=False, methods=["get"])
+    def entrenadores(self, request):
+        """Para el selector: a quién se le puede mirar la agenda."""
+        if not self._puede_mirar_a_otros():
+            raise PermissionDenied("Solo dirección o coach.")
+        return Response([
+            {"id": e.id, "nombre": e.nombre} for e in self._agendas_visibles()
+        ])
+
+    def _semana(self, ent):
+        filas = {h.dia: h for h in ent.horario.all()}
+        out = []
+        for d in range(6):
+            h = filas.get(d)
+            out.append({
+                "dia": d, "nombre": self.DIAS[d],
+                # Sin fila guardada, jornada completa: es el caso normal y no
+                # obliga a nadie a rellenar nada para empezar.
+                "manana": h.manana if h else True,
+                "tarde": h.tarde if h else True,
+            })
+        return out
+
+    def list(self, request):
+        ent = self._entrenador()
+        return Response({"entrenador": ent.nombre, "semana": self._semana(ent)})
+
+    @action(detail=False, methods=["get"])
+    def dia(self, request):
+        """Hoy: si trabaja de mañana, de tarde, o está fuera."""
+        from datetime import date
+
+        ent = self._entrenador()
+        hoy = date.today()
+        fila = next((d for d in self._semana(ent) if d["dia"] == hoy.weekday()), None)
+        vac = VacacionesEntrenador.objects.filter(
+            entrenador=ent, fecha_inicio__lte=hoy, fecha_fin__gte=hoy
+        ).first()
+        return Response({
+            "fecha": hoy,
+            "dia": fila["nombre"] if fila else None,
+            "manana": bool(fila and fila["manana"]) and not vac,
+            "tarde": bool(fila and fila["tarde"]) and not vac,
+            "ausente": bool(vac),
+            "motivo": vac.motivo if vac else "",
+        })
+
+    @action(detail=False, methods=["put", "patch"])
+    def semana(self, request):
+        """Guarda la jornada de la semana entera de una vez."""
+        ent = self._entrenador()
+        for fila in request.data.get("semana", []):
+            d = int(fila["dia"])
+            manana, tarde = bool(fila.get("manana")), bool(fila.get("tarde"))
+            if manana and tarde:
+                # Jornada completa es el valor por defecto: no se guarda fila,
+                # así la tabla solo contiene excepciones.
+                HorarioEntrenador.objects.filter(entrenador=ent, dia=d).delete()
+            else:
+                HorarioEntrenador.objects.update_or_create(
+                    entrenador=ent, dia=d,
+                    defaults={"manana": manana, "tarde": tarde},
+                )
+        return Response({"semana": self._semana(ent)})
+
+    @action(detail=False, methods=["get", "post"])
+    def ausencias(self, request):
+        """Periodos largos con fecha de ida y de vuelta (el calendario anual)."""
+        ent = self._entrenador()
+        if request.method == "POST":
+            VacacionesEntrenador.objects.create(
+                entrenador=ent,
+                fecha_inicio=request.data["fecha_inicio"],
+                fecha_fin=request.data["fecha_fin"],
+                motivo=request.data.get("motivo", ""),
+            )
+        return Response(VacacionesEntrenadorSerializer(
+            ent.vacaciones.order_by("fecha_inicio"), many=True).data)
+
+    @action(detail=False, methods=["delete"], url_path=r"ausencias/(?P<pk>\d+)")
+    def borrar_ausencia(self, request, pk=None):
+        ent = self._entrenador()
+        ent.vacaciones.filter(pk=pk).delete()
+        return Response(status=204)

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import (
+    AusenciaJugador,
     Asignacion,
     ConfiguracionMotor,
     Disponibilidad,
@@ -88,3 +89,35 @@ class AsignacionSerializer(serializers.ModelSerializer):
             "jugador_foto", "division_nivel", "entrenador", "entrenador_nombre",
             "entrenador_foto", "estado", "manual",
         ]
+
+
+class AusenciaJugadorSerializer(serializers.ModelSerializer):
+    jugador_nombre = serializers.CharField(source="jugador.nombre", read_only=True)
+
+    class Meta:
+        model = AusenciaJugador
+        fields = [
+            "id", "jugador", "jugador_nombre", "fecha_inicio", "fecha_fin",
+            "ambito", "hora_desde", "hora_hasta", "estado", "subtipo", "nota",
+            "declarada_por", "created_at",
+        ]
+        read_only_fields = ["declarada_por", "created_at"]
+
+    def validate(self, data):
+        ini = data.get("fecha_inicio") or getattr(self.instance, "fecha_inicio", None)
+        fin = data.get("fecha_fin") or getattr(self.instance, "fecha_fin", None)
+        if ini and fin and fin < ini:
+            raise serializers.ValidationError(
+                {"fecha_fin": "La vuelta no puede ser anterior a la ida."}
+            )
+        hd = data.get("hora_desde"); hh = data.get("hora_hasta")
+        if (hd or hh) and ini != fin:
+            raise serializers.ValidationError(
+                {"hora_desde": "Las horas solo valen para una ausencia de un "
+                               "único día. Para un rango, usa el ámbito."}
+            )
+        if hd and hh and hh <= hd:
+            raise serializers.ValidationError(
+                {"hora_hasta": "La hora de fin debe ser posterior a la de inicio."}
+            )
+        return data

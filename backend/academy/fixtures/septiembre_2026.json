@@ -1,0 +1,2554 @@
+{
+ "divisiones": [
+  {
+   "nivel": 1,
+   "nombre": "División 1"
+  },
+  {
+   "nivel": 2,
+   "nombre": "División 2"
+  },
+  {
+   "nivel": 3,
+   "nombre": "División 3"
+  },
+  {
+   "nivel": 4,
+   "nombre": "División 4"
+  },
+  {
+   "nivel": 5,
+   "nombre": "División 5"
+  },
+  {
+   "nivel": 6,
+   "nombre": "División 6"
+  },
+  {
+   "nivel": 7,
+   "nombre": "División 7"
+  },
+  {
+   "nivel": 8,
+   "nombre": "División 8"
+  }
+ ],
+ "escuelas": [
+  {
+   "nombre": "Alto Rendimiento",
+   "turno": null,
+   "solo_central": false,
+   "orden": 0
+  },
+  {
+   "nombre": "Escuela",
+   "turno": null,
+   "solo_central": true,
+   "orden": 0
+  },
+  {
+   "nombre": "Junior Program",
+   "turno": "JP",
+   "solo_central": true,
+   "orden": 1
+  }
+ ],
+ "entrenadores": [
+  {
+   "nombre": "ALBERTO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    8
+   ]
+  },
+  {
+   "nombre": "ALVARO MANTOAN",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    8
+   ]
+  },
+  {
+   "nombre": "ANNA",
+   "activo": true,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "BLAS GALLEGO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "nombre": "CARLOS GIMENO",
+   "activo": false,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "DANI GIMENO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "nombre": "EMILIO SORIO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "nombre": "IVAN GALLEGO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "JAVI GIMENEZ",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "nombre": "JORGE GARCIA",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "JORGE IBAÑEZ",
+   "activo": true,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": [
+    4,
+    5
+   ]
+  },
+  {
+   "nombre": "JORGE MILLA",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    8
+   ]
+  },
+  {
+   "nombre": "MARIO MUNIESA",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    4,
+    5
+   ]
+  },
+  {
+   "nombre": "MIGUEL GURREA",
+   "activo": false,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "MIKEL ROMERO",
+   "activo": false,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "NACHO CALVO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    6,
+    7
+   ]
+  },
+  {
+   "nombre": "PABLO GIL",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    4,
+    5
+   ]
+  },
+  {
+   "nombre": "PATRICIO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    6,
+    7
+   ]
+  },
+  {
+   "nombre": "RICARDO",
+   "activo": false,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "SALVA BARCALA",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    4,
+    5
+   ]
+  },
+  {
+   "nombre": "SAMU",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "SANTI PANZARASA",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    6,
+    7
+   ]
+  },
+  {
+   "nombre": "SERGIO GALLEGO",
+   "activo": false,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "Sergio",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": true,
+   "divisiones": []
+  },
+  {
+   "nombre": "VICTOR M",
+   "activo": true,
+   "disponible_semana": false,
+   "gestiona_todos": false,
+   "divisiones": []
+  },
+  {
+   "nombre": "VICTOR REDONDO",
+   "activo": true,
+   "disponible_semana": true,
+   "gestiona_todos": false,
+   "divisiones": [
+    1,
+    2,
+    3
+   ]
+  }
+ ],
+ "coaches": [
+  {
+   "nombre": "ALVARO MANTOAN",
+   "activo": true,
+   "entrenadores": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Coach Demo",
+   "activo": false,
+   "entrenadores": []
+  },
+  {
+   "nombre": "DANI GIMENO",
+   "activo": true,
+   "entrenadores": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "PABLO",
+   "activo": true,
+   "entrenadores": [
+    "BLAS GALLEGO",
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "PABLO GIL",
+   "activo": true,
+   "entrenadores": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "SANTI",
+   "activo": true,
+   "entrenadores": [
+    "NACHO CALVO",
+    "PATRICIO"
+   ]
+  },
+  {
+   "nombre": "SANTI PANZARASA",
+   "activo": true,
+   "entrenadores": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  }
+ ],
+ "jugadores": [
+  {
+   "nombre": "Alejandro Garcia Carbajal",
+   "codigo_cliente": 12119,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": 24,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Alejandro Mora",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Alex Pardo Pardo",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Alvaro Alario Blasco 11",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 11,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Amparo Gil Pitarque",
+   "codigo_cliente": 9759,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 15,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Andres Santamarta",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 1,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (21 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Andrés Vivancos Vila 11",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 11,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Anjali Vasanthan",
+   "codigo_cliente": 11614,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Antonio Badal García",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Arjun Malhotra",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Arrow 12",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 7,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Bai Runkai (Yu)",
+   "codigo_cliente": 11308,
+   "activo": false,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 19,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Bernardo Peñaranda Kaptsionak",
+   "codigo_cliente": 11483,
+   "activo": true,
+   "division": 7,
+   "escuela": "Alto Rendimiento",
+   "edad": 13,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO"
+   ]
+  },
+  {
+   "nombre": "Bárbara Peñaranda Kaptsionak",
+   "codigo_cliente": 11482,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 16,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Carla Chisvert Andujar10",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 10,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Carla Guerrero Blanco",
+   "codigo_cliente": 481,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Carles Cordoba Martinez",
+   "codigo_cliente": 11301,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": 20,
+   "categoria": "PROFESIONAL",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Carlos López Montagud",
+   "codigo_cliente": 11582,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": 1,
+   "categoria": "PROFESIONAL",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Carlos Sanchez Jover",
+   "codigo_cliente": 10264,
+   "activo": true,
+   "division": 1,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "PROFESIONAL",
+   "notas": "PAGA 1500+IVA AL MES",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Carlos Taberner Segarra",
+   "codigo_cliente": 473,
+   "activo": true,
+   "division": 1,
+   "escuela": "Alto Rendimiento",
+   "edad": 30,
+   "categoria": "PROFESIONAL",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Carlota Souto",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (48 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Carol Grao",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Cayetana Garibo Diego 13",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 13,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Ciaran Kanani",
+   "codigo_cliente": 11974,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": 21,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Dani Martins",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "David Castillo Leonardo",
+   "codigo_cliente": 11892,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 18,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división estimada del histórico (214 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "David Mas Masia",
+   "codigo_cliente": 8448,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 18,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Diego Vilches Revuelta",
+   "codigo_cliente": 11103,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": 18,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Edgar Rouget Luchaire 15",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 15,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Elina Avanesian",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Enma Italiana",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Enzo Helguera Casado",
+   "codigo_cliente": 10433,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Eric Badenes Giner",
+   "codigo_cliente": 11353,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 16,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Eric López López",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Eugenia Alvarez Santiago",
+   "codigo_cliente": 12095,
+   "activo": true,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Eugenia Zozaya",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (12 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Fermin Barcala López",
+   "codigo_cliente": 10799,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Fernando Ballester",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Gavin Dai",
+   "codigo_cliente": 12241,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": 12,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Guennouini Abdelaziz",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (52 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Hanyu Lin (Yu) 9",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 9,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Haode",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (74 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Hector Cebrian",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (44 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Huaqi Li (Yu)",
+   "codigo_cliente": 10352,
+   "activo": true,
+   "division": 7,
+   "escuela": "Alto Rendimiento",
+   "edad": 14,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Hugo Montalban (medio día)",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (14 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Ian Yao (12)",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": 5,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Ignacio Parisca",
+   "codigo_cliente": 276,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": 21,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Iker Andreu Izquierdo 15",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 15,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Iker Izquierdo Gutierrez 14",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 14,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Izan Mullor Durá",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Javier Ballester Galarza",
+   "codigo_cliente": 8444,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 16,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Jennie Zhangyi Ji (Yu)",
+   "codigo_cliente": 10926,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": 12,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Jinxuan Liao (Yu) Bonnie",
+   "codigo_cliente": 10894,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 15,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Juan Esteban Inostroza",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (192 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Julian Finol",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Kandi Xu 15años (YU)",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Kevin (zunwen wang)",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Lan Yao 12",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 12,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Lluis Domenech 2015",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 11,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Louis Thomas",
+   "codigo_cliente": 11499,
+   "activo": false,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división provisional inferida del cuadrante",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Lucas Reig Ramirez",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Lucca Helguera",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (93 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Lucía Valero Fernandez 13",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 13,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Manuel Méndez Domínguez",
+   "codigo_cliente": 12245,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 15,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Marc Marin",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Marc Martin Roca",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 3,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Marco Pérez",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Marcos Puig Almenar",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Marcos Romero Ramos",
+   "codigo_cliente": 10191,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Maria Adrienko",
+   "codigo_cliente": 12220,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": 22,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "1800 mes o 500 por semana",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Maria Ruiz",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 7,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (165 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Mario Veselinov",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Marta Crespo de Olano",
+   "codigo_cliente": 11622,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Martina Alario Blasco 15",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 15,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Marío Gallego",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45 · 10.30",
+   "sesiones_semana": 3,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Mateo Álvarez Sarmiento",
+   "codigo_cliente": 11475,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": 21,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Mathias Bourassa",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": 7,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (11 coincidencias)",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Miguel Uriarte Cortón",
+   "codigo_cliente": 10979,
+   "activo": false,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": 5,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Miguel Vidal Sanchez 14",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 14,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Nacho Martínez Prego",
+   "codigo_cliente": 8724,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división estimada del histórico (116 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Natalia Ioana Botea",
+   "codigo_cliente": 11801,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 15,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "solo fisico",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Nazim Malikov",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Nico Lairón López 13",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 13,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Noa Ribera Brisa",
+   "codigo_cliente": 10777,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 18,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división estimada del histórico (83 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Noha Bourassa 8",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Octavio Alcaraz",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Ojas Malhotra",
+   "codigo_cliente": 10180,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Pablo Castelló 13",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Pablo Llamas Ruiz",
+   "codigo_cliente": 12078,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": 23,
+   "categoria": "PROFESIONAL",
+   "notas": "división estimada del histórico (32 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Pablo Palomares Polanco 8",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": 7,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (10 coincidencias)",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Pablo Pérez Fajardo",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (72 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Pau Marin",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 6,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Paula Mora Díez",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Raul Brancaccio",
+   "codigo_cliente": 10006,
+   "activo": true,
+   "division": 1,
+   "escuela": "Alto Rendimiento",
+   "edad": 29,
+   "categoria": "PROFESIONAL",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Rodrigo Lopez Salinas",
+   "codigo_cliente": 10123,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": 16,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Rohin",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": null,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Ruohan Xu (Yu)",
+   "codigo_cliente": 10899,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": 13,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "solo por la mañana",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Ruth Moscardo",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Selena Yunshi Qi",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Sergio Planella Hernández",
+   "codigo_cliente": 11434,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": 19,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Shiying Xia 14 Silvia",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": null,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 10:30-12:30",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Sofia Rodrigo",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 5,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (42 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Sohan Malhotra",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Junior Program",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "TOM KIM",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 7,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Tal or",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (32 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Tomas Lázaro 8.30",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (56 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Tomkin Deng Mai 12 AÑOS",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Toprak",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 2,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Valentina Andrea 13",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 7,
+   "escuela": null,
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el organigrama de septiembre",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Valeriia Bokova",
+   "codigo_cliente": 10370,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 14,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Vicent Baixauli Sospedra",
+   "codigo_cliente": 10276,
+   "activo": true,
+   "division": 4,
+   "escuela": "Alto Rendimiento",
+   "edad": 17,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "JORGE IBAÑEZ",
+    "MARIO MUNIESA",
+    "PABLO GIL",
+    "SALVA BARCALA"
+   ]
+  },
+  {
+   "nombre": "Victor Peralta Saixó 10",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 10,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Victoria Schneider De Mello",
+   "codigo_cliente": 10138,
+   "activo": true,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": 14,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "Julio no paga porq en julio pago los 3500 y ya no esta trabajando privado con Jorge Ibañlez en 2026.",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Ximo Minguez",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 3,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (67 coincidencias) · 8.30",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Xiyue Zhang Luna",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 17:30-19:15",
+   "sesiones_semana": 2,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Xu Guilin (Yu) Nik",
+   "codigo_cliente": 10733,
+   "activo": true,
+   "division": 7,
+   "escuela": "Alto Rendimiento",
+   "edad": 13,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Xuancheng kairi 12",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división estimada del histórico (17 coincidencias)",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Yanaki Milev",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 2,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "BLAS GALLEGO",
+    "DANI GIMENO",
+    "EMILIO SORIO",
+    "JAVI GIMENEZ",
+    "VICTOR REDONDO"
+   ]
+  },
+  {
+   "nombre": "Yanqiedeng Wang 13",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Yashvardhan Singh",
+   "codigo_cliente": 11647,
+   "activo": true,
+   "division": 6,
+   "escuela": "Alto Rendimiento",
+   "edad": 14,
+   "categoria": "ALTO_RENDIMIENTO",
+   "notas": "",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "NACHO CALVO",
+    "PATRICIO",
+    "SANTI PANZARASA"
+   ]
+  },
+  {
+   "nombre": "Yuantian Gao",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  },
+  {
+   "nombre": "Yuhan Wang16",
+   "codigo_cliente": null,
+   "activo": false,
+   "division": null,
+   "escuela": "Escuela",
+   "edad": 16,
+   "categoria": "",
+   "notas": "alta del cuadrante de septiembre · 15:30-16:45",
+   "sesiones_semana": 1,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": []
+  },
+  {
+   "nombre": "Yushuo Li 14 (chico)",
+   "codigo_cliente": null,
+   "activo": true,
+   "division": 8,
+   "escuela": "Alto Rendimiento",
+   "edad": null,
+   "categoria": "",
+   "notas": "alta desde el cuadrante · sin codigo_cliente · división provisional inferida del cuadrante",
+   "sesiones_semana": null,
+   "sesiones_dia_max": null,
+   "turno_manana": null,
+   "turno_tarde": null,
+   "responsables": [
+    "ALBERTO",
+    "ALVARO MANTOAN",
+    "JORGE MILLA"
+   ]
+  }
+ ],
+ "contratos": [
+  {
+   "jugador": "Elina Avanesian",
+   "entrenador": "JORGE GARCIA"
+  }
+ ],
+ "turnos": [
+  {
+   "codigo": "M1",
+   "nombre": "Mañana 1",
+   "activo": true
+  },
+  {
+   "codigo": "M2",
+   "nombre": "Mañana 2",
+   "activo": true
+  },
+  {
+   "codigo": "JP",
+   "nombre": "Junior Program",
+   "activo": true
+  },
+  {
+   "codigo": "T1",
+   "nombre": "Tarde 1",
+   "activo": true
+  },
+  {
+   "codigo": "T2",
+   "nombre": "Tarde corta",
+   "activo": false
+  },
+  {
+   "codigo": "T3",
+   "nombre": "Tarde 2",
+   "activo": true
+  },
+  {
+   "codigo": "T4",
+   "nombre": "Escuela noche",
+   "activo": false
+  },
+  {
+   "codigo": "T5",
+   "nombre": "Adultos",
+   "activo": false
+  }
+ ],
+ "motor": {
+  "peso_asignacion": 1000,
+  "peso_satelite": 5,
+  "peso_central": 100,
+  "peso_repeticion": 300,
+  "max_dias_misma_pista": 2,
+  "aplicar_vecindad": true,
+  "vecindad_max": 2,
+  "time_limit_s": 10,
+  "sesiones_semana_default": 4,
+  "sesiones_dia_max_default": 2,
+  "sesiones_bloque_max": 1,
+  "peso_densidad": 15000,
+  "peso_pareja": 5000,
+  "peso_pista_abierta": 500,
+  "peso_carga_entrenador": 4,
+  "permitir_individuales": true,
+  "usar_satelites": false
+ }
+}

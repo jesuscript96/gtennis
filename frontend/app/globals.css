@@ -642,3 +642,71 @@ body.nav-locked { overflow: hidden; }
 .mbench { margin-top: 20px; }
 .mbench.droppable { border-color: var(--accent); border-style: solid; background: rgba(201,100,66,0.06); cursor: pointer; }
 .mbench .bench-chip { cursor: pointer; }
+
+/* ── Agenda del entrenador ──────────────────────────────────────────── */
+.hoy h2 { margin-bottom: .5rem; }
+.hoy-bloques { display: flex; gap: .75rem; flex-wrap: wrap; }
+.hoy .bloque {
+  padding: .55rem 1rem; border-radius: 6px; font-weight: 600; font-size: .95rem;
+}
+.hoy .bloque.on  { background: #e2efe6; color: #23694a; border: 1px solid #9ec9b1; }
+.hoy .bloque.off { background: #f1f0ed; color: #7a7a75; border: 1px solid #dcdad4; }
+.hoy-fuera { color: #b4553c; font-weight: 600; }
+
+.semana-tabla { width: 100%; border-collapse: collapse; max-width: 26rem; }
+.semana-tabla th, .semana-tabla td {
+  padding: .5rem .75rem; text-align: left; border-bottom: 1px solid #e6e6e2;
+}
+.semana-tabla th { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #6b6b66; }
+.semana-tabla tr.es-hoy td { background: #fbf7e8; font-weight: 600; }
+.toggle {
+  min-width: 3.2rem; padding: .35rem .8rem; border-radius: 5px; cursor: pointer;
+  font-weight: 600; border: 1px solid transparent;
+}
+.toggle.on  { background: #2f7d55; color: #fff; }
+.toggle.off { background: #efeeea; color: #86867f; border-color: #dcdad4; }
+
+.fila-form { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; margin: .75rem 0 1rem; }
+.fila-form label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: #6b6b66; }
+.fila-form .crece { flex: 1; min-width: 12rem; }
+.lista-ausencias { list-style: none; padding: 0; margin: 0 0 1rem; }
+.lista-ausencias li {
+  display: flex; gap: 1rem; align-items: center; padding: .45rem 0;
+  border-bottom: 1px solid #efeeea; font-size: .9rem;
+}
+.lista-ausencias .motivo { color: #6b6b66; flex: 1; }
+.link-danger { background: none; border: 0; color: #b4553c; cursor: pointer; font-size: .85rem; }
+
+.anio-nav { display: flex; gap: .75rem; align-items: center; margin: 1rem 0 .5rem; }
+.anio { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 1rem; }
+.mes-nombre { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: #6b6b66; margin-bottom: .35rem; }
+.mes-dias { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.mes-dias .dia {
+  aspect-ratio: 1; display: grid; place-items: center; font-size: .7rem;
+  border-radius: 3px; background: #f5f4f1; color: #55554f;
+}
+.mes-dias .dia.fuera { background: #b4553c; color: #fff; font-weight: 600; }
+.hint { color: #6b6b66; font-size: .875rem; margin: 0 0 .75rem; }
+.ok-msg { color: #2f7d55; font-weight: 600; }
+
+/* ── Ausencias por fechas ───────────────────────────────────────────── */
+.form-ausencia .fila-form { margin-bottom: .5rem; }
+.badge-dias {
+  align-self: center; background: #eef3ee; color: #3d5c49; border-radius: 999px;
+  padding: .2rem .7rem; font-size: .78rem; font-weight: 600; white-space: nowrap;
+}
+.franja-horas {
+  background: #fbf7e8; border: 1px solid #ece2c4; border-radius: 6px;
+  padding: .6rem .8rem; align-items: center;
+}
+.etiqueta-bloque { font-size: .78rem; font-weight: 600; color: #7a6524; }
+.hint.sin-margen { margin: 0; }
+.tabla-ausencias { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.tabla-ausencias th, .tabla-ausencias td {
+  padding: .45rem .6rem; text-align: left; border-bottom: 1px solid #eeede9;
+}
+.tabla-ausencias th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: #6b6b66; }
+.tabla-ausencias .horas { color: #7a6524; font-weight: 600; }
+.tabla-ausencias .nota-celda { color: #6b6b66; }
+.selector-entrenador { margin: .5rem 0 1rem; }
+.selector-entrenador label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: #6b6b66; max-width: 20rem; }

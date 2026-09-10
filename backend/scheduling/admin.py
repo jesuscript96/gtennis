@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    AusenciaJugador,
     Asignacion,
     ConfiguracionMotor,
     Disponibilidad,
@@ -49,4 +50,14 @@ class AsignacionAdmin(admin.ModelAdmin):
         "estado", "manual",
     )
     list_filter = ("semana", "dia", "turno", "pista__sede", "estado", "manual")
+    autocomplete_fields = ("jugador",)
+
+
+@admin.register(AusenciaJugador)
+class AusenciaJugadorAdmin(admin.ModelAdmin):
+    list_display = ("jugador", "fecha_inicio", "fecha_fin", "ambito", "estado",
+                    "subtipo", "declarada_por")
+    list_filter = ("estado", "subtipo", "ambito")
+    search_fields = ("jugador__nombre", "nota")
+    date_hierarchy = "fecha_inicio"
     autocomplete_fields = ("jugador",)

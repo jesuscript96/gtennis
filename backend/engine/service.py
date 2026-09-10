@@ -32,16 +32,23 @@ from scheduling.models import (
 from .pairing import Court, PairingInput, Player, solve_pairing
 
 
-def _build_courts() -> list[Court]:
+def _build_courts(usar_satelites: bool = True) -> list[Court]:
     courts = []
     for pista in Pista.objects.filter(activa=True).select_related("sede"):
         if not pista.sede.activa:
+            continue
+        # En verano el club no desborda a los clubs satélite (#17): lo que no
+        # cabe en el Resort se queda en el banquillo, no se reparte fuera.
+        if pista.sede.es_satelite and not usar_satelites:
             continue
         courts.append(
             Court(
                 id=pista.id,
                 venue_id=pista.sede_id,
-                capacity=pista.sede.densidad_default,
+                capacity=max(
+                    pista.sede.densidad_max or 0, pista.sede.densidad_default
+                ),
+                normal_density=pista.sede.densidad_default,
                 is_satellite=pista.sede.es_satelite,
                 fill_rank=pista.sede.orden_desbordamiento,
                 surface=pista.superficie,
@@ -66,42 +73,92 @@ def _sponsor_map() -> dict[int, set[int]]:
     return m
 
 
-def _overrides(semana: Semana, dia: int) -> dict[tuple[int, str], Disponibilidad]:
-    """(jugador_id, ambito) -> Disponibilidad for the day. ambito is one of
-    DIA / MANANA / TARDE / M1 / M2 / T1 / T2."""
+def _overrides(semana: Semana, dia: int) -> dict[tuple[int, str], object]:
+    """(jugador_id, ambito) -> la ausencia que aplica ese día.
+
+    Se juntan dos fuentes que el motor trata igual: el parte de la semana
+    (`Disponibilidad`, una fila por día) y las ausencias declaradas por rango
+    de fechas (`AusenciaJugador`, una sola fila para toda una lesión). Las de
+    rango se expanden aquí, así que quien declaró "del 2 de noviembre al 15 de
+    diciembre" no tiene que repetirlo cada semana.
+
+    Si ambas hablan del mismo jugador y ámbito, manda el parte de la semana:
+    es más reciente y más específico.
+    """
+    from scheduling.models import AusenciaJugador
+
+    fecha = semana.fecha_inicio + timedelta(days=dia)
     out = {}
+    for a in AusenciaJugador.objects.filter(
+        fecha_inicio__lte=fecha, fecha_fin__gte=fecha
+    ):
+        out[(a.jugador_id, a.ambito)] = a
     for d in Disponibilidad.objects.filter(semana=semana, dia=dia):
         out[(d.jugador_id, d.ambito)] = d
     return out
 
 
-def _effective_state(overrides, jugador_id, turno):
-    """Resolución por prioridad: turno concreto > bloque (mañana/tarde) > día."""
+def _effective_state(overrides, jugador_id, turno, fecha=None):
+    """Resolución por prioridad: turno concreto > bloque (mañana/tarde) > día.
+
+    Una ausencia con horas solo cuenta si se solapa con este turno: quien
+    "llega a las 10:30" está ausente en la franja de 8:30 pero no en la suya.
+    """
+    ini, fin = turno.horas(fecha)
     for key in (turno.codigo, turno.bloque, "DIA"):
         d = overrides.get((jugador_id, key))
-        if d:
-            return d.estado
+        if d is None:
+            continue
+        if hasattr(d, "afecta") and not d.afecta(ini, fin):
+            continue
+        return d.estado
     return Estado.DISPONIBLE
 
 
-def _player_priority(division, state):
-    """Higher-division players get higher priority (8 → 1).
-    Players with molestias/torneo are deprioritised so they fill spots
-    only after fully-available players."""
-    base = division if division else 4
+# Nivel más bajo posible de división. La división 1 es la élite, así que la
+# prioridad de colocación se invierte respecto al nivel.
+NIVEL_MAX = 8
+
+
+def _player_priority(division, state, deficit=0):
+    """Prioridad de colocación en el turno, en dos niveles.
+
+    Manda el DÉFICIT de cupo semanal: mientras a alguien le falten sesiones,
+    va por delante de cualquiera que ya tenga las suyas, sea del nivel que
+    sea. Es lo que hace Iván — todo el mundo entrena lo suyo antes de que
+    nadie repita. A igualdad de déficit desempata el nivel, donde la división
+    1 es la élite (nivel 1 → 8, nivel 8 → 1).
+
+    Molestias/torneo bajan la prioridad: llenan hueco solo tras los
+    plenamente disponibles.
+    """
+    nivel = (NIVEL_MAX + 1 - division) if division else 4
     if state in ESTADOS_DEPRIORIZADOS:
-        base = max(1, base // 2)
-    return base
+        nivel = max(1, nivel // 2)
+    # El déficit escala por encima del rango de niveles para que domine.
+    return max(0, deficit) * (NIVEL_MAX + 1) + nivel
 
 
 def _available_players(
     semana, dia, turno, sponsors, escuela_cfg=None, surface_prefs=None,
-    exclusive_escuela_id=None,
+    exclusive_escuela_id=None, cfg=None, hechas_dia=None, hechas_semana=None,
+    idx_dia=0, n_dias=5, hechas_bloque=None, dias_presente=None, orden_dia=None,
+    horario=None, cupo_horario=None,
 ) -> list[Player]:
     from academy.models import Jugador
 
     escuela_cfg = escuela_cfg or {}
     surface_prefs = surface_prefs or {}
+    hechas_dia = hechas_dia or {}
+    hechas_semana = hechas_semana or {}
+    hechas_bloque = hechas_bloque or {}
+    dias_presente = dias_presente or {}
+    orden_dia = orden_dia or {}
+    horario = horario or {}
+    cupo_horario = cupo_horario or {}
+    tope_bloque = cfg.sesiones_bloque_max if cfg else 1
+    tope_dia_def = cfg.sesiones_dia_max_default if cfg else 2
+    cupo_sem_def = cfg.sesiones_semana_default if cfg else 4
     fecha = semana.fecha_inicio + timedelta(days=dia)
     overrides = _overrides(semana, dia)
     players = []
@@ -117,9 +174,63 @@ def _available_players(
         # Evita que Alto Rendimiento caiga en el turno JP.
         if exclusive_escuela_id is not None and j.escuela_id != exclusive_escuela_id:
             continue
-        state = _effective_state(overrides, j.id, turno)
+        state = _effective_state(overrides, j.id, turno, fecha)
         if state in ESTADOS_EXCLUYENTES:
             continue
+        # Franja del jugador para este bloque. Manda el horario del día si lo
+        # tiene (puede entrar a primera hora los lunes y a segunda los
+        # miércoles); si no, el turno fijo de su ficha; y si tampoco, el motor
+        # elige. Una fila de horario con el turno a nulo significa que ese día
+        # no entrena en ese bloque.
+        fila = horario.get((j.id, dia))
+        if fila is not None:
+            elegido = fila[0] if turno.bloque == "MANANA" else fila[1]
+            if elegido != turno.id:
+                continue
+        else:
+            elegido = (j.turno_manana_id if turno.bloque == "MANANA"
+                       else j.turno_tarde_id)
+            if elegido is not None and elegido != turno.id:
+                continue
+        # Tope de sesiones el mismo día (#18): quien ya ha cubierto su dosis
+        # de hoy no entra en los turnos que quedan.
+        tope_dia = j.sesiones_dia_max if j.sesiones_dia_max is not None else tope_dia_def
+        if hechas_dia.get(j.id, 0) >= tope_dia:
+            continue
+        # Y como mucho una por bloque: quien ya ha entrenado por la mañana
+        # repite por la tarde, no a la hora siguiente. Es lo que hace la
+        # academia — de 249 dobles sesiones en agosto, 248 son mañana+tarde.
+        if hechas_bloque.get((j.id, turno.bloque), 0) >= tope_bloque:
+            continue
+        cupo = (cupo_horario.get(j.id)
+                or j.sesiones_semana
+                or cupo_sem_def)
+        hechas = hechas_semana.get(j.id, 0)
+        # Quien ya lleva su dosis semanal no entra en el sorteo: es lo que deja
+        # pistas a 2 y con hueco, en vez de apretar a 4 para colocar a todos.
+        if hechas >= cupo:
+            continue
+        # Ritmo semanal. A día `i` de `n`, a este jugador le tocan como mucho
+        # la parte proporcional de su cupo. El solver va turno a turno y llena
+        # con avidez, así que sin este freno la cuota entera se gasta lunes y
+        # martes y el viernes queda vacío.
+        #
+        # La `fase` (estable, derivada del id) desplaza el escalón de cada
+        # jugador: sin ella todos suben de cupo el mismo día y se alternan
+        # jornadas llenas con jornadas muertas. Con ella, cada día entra un
+        # subconjunto distinto — que es justo lo que hace Iván, donde no viene
+        # todo el mundo todos los días. Es un reparto, NO el horario real de
+        # cada alumno: eso son las Disponibilidades, hoy sin cargar.
+        # El ritmo se mide sobre los días en que ESTE jugador está, no sobre
+        # los de la semana: quien solo viene tres días y tiene cupo 6 hace dos
+        # sesiones cada uno de esos tres, no una diaria de lunes a viernes.
+        mis_dias = dias_presente.get(j.id, n_dias) or n_dias
+        mi_idx = orden_dia.get(j.id, idx_dia)
+        fase = j.id % max(1, mis_dias)
+        permitidas_hoy = (cupo * (mi_idx + 1) + fase) // max(1, mis_dias)
+        if hechas >= permitidas_hoy:
+            continue
+        deficit = permitidas_hoy - hechas
         division = j.division.nivel if j.division else None
         coach = next(iter(sponsors.get(j.id, set())), None)
         # Superficie preferida activa en la fecha (#1).
@@ -133,7 +244,7 @@ def _available_players(
                 id=j.id,
                 division=division,
                 sponsor_coach_id=coach,
-                priority=_player_priority(division, state),
+                priority=_player_priority(division, state, deficit),
                 surface_pref=pref,
                 solo_central=solo_central,
             )
@@ -165,53 +276,40 @@ def _coach_capacita(coach, coach_niveles, court_niveles):
 
 
 def _assign_coaches(
-    members, sponsors, elegibles, coach_niveles, player_div,
-    player_responsables, coach_share, player_sessions, load,
+    members, sponsors, elegibles, coach_niveles, player_div, load,
 ):
-    """Pick one coach per court entre los `elegibles` (ya filtrados por
-    disponibilidad horaria y vacaciones):
+    """Elige el entrenador de una pista.
 
-      0) capacitado para las divisiones de la pista (#3);
-      1) sponsor (contrato) de algún jugador de la pista;
-      2) responsable del jugador, respetando prioridad y acercándose al %
-         objetivo de entrenos deseado (#2/#12, best-effort);
-      3) el menos cargado (rotación equilibrada).
+    Dos ejes que NO son el mismo, y antes estaban mezclados:
+
+      * quién PUEDE entrenar a esta pista lo marca la división — cualquier
+        entrenador del bloque que cubra las divisiones de los jugadores;
+      * quién ADMINISTRA a un jugador en la app (`ResponsableJugador`) es otra
+        cosa y no entra aquí.
+
+    Por eso ya no se puntúa por responsable ni por porcentaje objetivo: entre
+    los capacitados y disponibles, manda el contrato de patrocinio si lo hay y,
+    si no, el menos cargado. El reparto por porcentajes que había antes
+    concentraba el trabajo en tres o cuatro entrenadores, porque devolvía al
+    primero con déficit y nunca llegaba a equilibrar.
     """
     court_niveles = {player_div.get(jid) for jid in members}
     capaces = [c for c in elegibles if _coach_capacita(c, coach_niveles, court_niveles)]
     if not capaces:
         return None
-    cap_ids = {c.id for c in capaces}
+    cap_ids = {c.id: c for c in capaces}
 
-    # 1) sponsor on this court
+    # 1) Contrato de patrocinio: el jugador tiene entrenador fijo.
     for jid in members:
         for cid in sponsors.get(jid, set()):
             if cid in cap_ids:
                 load[cid] += 1
                 return cid
 
-    # 2) responsables ponderados por prioridad y déficit respecto al % objetivo.
-    scores: dict[int, float] = {}
-    for jid in members:
-        total = max(1, player_sessions.get(jid, 0))
-        for cid, prio, pct in player_responsables.get(jid, []):
-            if cid not in cap_ids:
-                continue
-            share = 100.0 * coach_share.get((jid, cid), 0) / total
-            # Déficit: cuánto le falta a este entrenador para su % objetivo.
-            deficit = (pct - share) if pct else 0.0
-            # El principal (prioridad 1) recibe un empujón base.
-            base = 6.0 if prio == 1 else max(0.0, 4.0 - prio)
-            scores[cid] = scores.get(cid, 0.0) + deficit + base
-    if scores:
-        best = max(scores.items(), key=lambda kv: (kv[1], -load[kv[0]]))[0]
-        load[best] += 1
-        return best
-
-    # 3) least-loaded capable coach (balanced rotation)
-    chosen = min(capaces, key=lambda e: load[e.id])
-    load[chosen.id] += 1
-    return chosen.id
+    # 2) El menos cargado de los capacitados (rotación equilibrada).
+    elegido = min(capaces, key=lambda e: (load[e.id], e.id))
+    load[elegido.id] += 1
+    return elegido.id
 
 
 @transaction.atomic
@@ -223,7 +321,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
              regeneration so the morning history stays untouched.
     """
     dias = list(dias) if dias is not None else [d for d, _ in DIAS]
-    turnos = list(Turno.objects.all())
+    turnos = list(Turno.objects.filter(activo=True))
     if bloques:
         turnos = [t for t in turnos if t.bloque in bloques]
     # Config por escuela (#6): turno único (p. ej. Junior Program solo JP) y si
@@ -242,11 +340,11 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         if turno_unico_id and turno_unico_id not in turnos_exclusivos:
             turnos_exclusivos[turno_unico_id] = escuela_id
 
-    courts = _build_courts()
+    cfg = ConfiguracionMotor.get_solo()
+    courts = _build_courts(cfg.usar_satelites)
     courts_by_id = {c.id: c for c in courts}
     vetoes = _vetoes()
     sponsors = _sponsor_map()
-    cfg = ConfiguracionMotor.get_solo()
     load: Counter = Counter()
     report = {"dias": {}, "overflow": [], "unassigned": []}
 
@@ -301,7 +399,61 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     coach_share: Counter = Counter()      # (jugador_id, coach_id) -> nº sesiones
     player_sessions: Counter = Counter()  # jugador_id -> nº sesiones
 
+    # Días de la semana en que cada jugador NO está excluido por una ausencia
+    # declarada. Es lo que permite repartirle su cupo solo entre los días que
+    # de verdad viene.
+    from academy.models import Jugador as _J
+
+    todos_ids = list(_J.objects.filter(activo=True).values_list("id", flat=True))
+
+    # Horario semanal de cada jugador: (jugador, día) -> (turno mañana, tarde).
+    from academy.models import HorarioJugador
+
+    horario = {
+        (h.jugador_id, h.dia): (h.turno_manana_id, h.turno_tarde_id)
+        for h in HorarioJugador.objects.all()
+    }
+    # Quien tiene horario declarado ya está diciendo cuántas sesiones hace:
+    # su cupo semanal es el número de franjas que ha marcado, no el valor por
+    # defecto del club. Sin esto el cupo genérico le cortaba antes de llegar a
+    # las tardes y el horario quedaba a medio cumplir.
+    # Jornada semanal de cada entrenador: (entrenador, día) -> (mañana, tarde).
+    from academy.models import HorarioEntrenador
+
+    jornada = {
+        (h.entrenador_id, h.dia): (h.manana, h.tarde)
+        for h in HorarioEntrenador.objects.all()
+    }
+    cupo_horario: Counter = Counter()
+    for (jid, _d), (m, t) in horario.items():
+        cupo_horario[jid] += bool(m) + bool(t)
+    dias_presente: Counter = Counter()
+    dias_del_jugador: dict[int, list[int]] = defaultdict(list)
+    for d in dias:
+        ovr_d = _overrides(semana, d)
+        for jid in todos_ids:
+            fuera = any(
+                ovr_d.get((jid, key)) is not None
+                and ovr_d[(jid, key)].estado in ESTADOS_EXCLUYENTES
+                for key in ("DIA", "MANANA", "TARDE")
+            )
+            if not fuera:
+                dias_presente[jid] += 1
+                dias_del_jugador[jid].append(d)
+    orden_por_dia = {
+        d: {jid: ds.index(d) for jid, ds in dias_del_jugador.items() if d in ds}
+        for d in dias
+    }
+
     for dia in dias:
+        # Sesiones ya dadas hoy a cada jugador: alimenta el tope diario (#18)
+        # y se reinicia cada jornada.
+        sesiones_hoy: Counter = Counter()
+        sesiones_bloque: Counter = Counter()   # (jugador, bloque) -> sesiones
+        # Franjas que ya ocupa cada entrenador hoy. JP (12:30-14:30) y T1
+        # (14:15-15:30) se pisan quince minutos, así que sin esto el mismo
+        # entrenador acaba en los dos a la vez.
+        ocupacion_coach: dict[int, list] = defaultdict(list)
         overrides = _overrides(semana, dia)
         recent = _recent_partners(semana, dia)
         # Strongly penalise pairs that already hit the per-week repeat limit.
@@ -328,13 +480,28 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             for c in all_coaches:
                 if c.id in vac_ids:
                     continue
+                # Jornada estable: quien no trabaja ese bloque ese día no
+                # entra. Sin fila se entiende jornada completa.
+                jor = jornada.get((c.id, dia))
+                if jor is not None and not (
+                    jor[0] if turno.bloque == Turno.Bloque.MANANA else jor[1]
+                ):
+                    continue
                 ovr = coach_ovr.get(c.id)
                 if ovr is not None and not ovr.disponible_en(ini_t, fin_t):
+                    continue
+                # No puede estar en dos pistas a la vez.
+                if any(i < fin_t and f > ini_t for i, f in ocupacion_coach[c.id]):
                     continue
                 elegibles.append(c)
             players = _available_players(
                 semana, dia, turno, sponsors, escuela_cfg, surface_prefs,
                 exclusive_escuela_id=turnos_exclusivos.get(turno.id),
+                cfg=cfg, hechas_dia=sesiones_hoy, hechas_semana=player_sessions,
+                idx_dia=dias.index(dia), n_dias=len(dias),
+                hechas_bloque=sesiones_bloque,
+                dias_presente=dias_presente, orden_dia=orden_por_dia.get(dia, {}),
+                horario=horario, cupo_horario=cupo_horario,
             )
             # #17: por la tarde nunca se usan los clubs satélite. Solo pistas de
             # sedes no satélite; el desbordamiento queda en banquillo, no spillea.
@@ -355,8 +522,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     w_central=cfg.peso_central,
                     w_repeat=cfg.peso_repeticion,
                     apply_neighbor=cfg.aplicar_vecindad,
+                    neighbor_span=cfg.vecindad_max,
+                    min_occupancy=1 if cfg.permitir_individuales else 2,
+                    w_density=cfg.peso_densidad,
+                    w_court=cfg.peso_pista_abierta,
                     pairs_hard=pairs_hard,
                     pairs_soft=pairs_soft,
+                    w_pair=cfg.peso_pareja,
                 )
             )
             # Regenerar = rehacer el turno desde cero (incluye celdas editadas a
@@ -367,7 +539,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             for court_id, member_ids in result.courts.items():
                 coach_id = _assign_coaches(
                     member_ids, sponsors, elegibles, coach_niveles, player_div,
-                    player_responsables, coach_share, player_sessions, load,
+                    load,
                 )
                 for jid in member_ids:
                     Asignacion.objects.create(
@@ -379,10 +551,15 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                         entrenador_id=coach_id,
                         estado=_effective_state(overrides, jid, turno),
                     )
-                    # Historial para acercarse a los % objetivo (#12).
+                    # Historial para acercarse a los % objetivo (#12) y para
+                    # el reparto de dosis semanal/diaria (#18).
                     player_sessions[jid] += 1
+                    sesiones_hoy[jid] += 1
+                    sesiones_bloque[(jid, turno.bloque)] += 1
                     if coach_id:
                         coach_share[(jid, coach_id)] += 1
+                if coach_id:
+                    ocupacion_coach[coach_id].append((ini_t, fin_t))
                 if courts_by_id[court_id].is_satellite:
                     report["overflow"].append(
                         {"dia": dia, "turno": turno.codigo, "pista": court_id}

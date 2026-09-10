@@ -5,14 +5,20 @@ No Django imports — fully unit-testable. Given the available players, the cour
 pairings.
 
 Hard constraints:
-  * Neighbour rule: two players on the same court differ by <=1 division.
+  * Neighbour rule: two players on the same court differ by <= `neighbor_span`
+    divisions (1 por defecto).
   * Rencillas: vetoed pairs are never on the same court.
-  * Capacity: <= court.capacity players per court (2 normal, up to 4 Sta. Bárbara).
-  * No half-courts: a used court holds >= 2 players.
+  * Capacity: <= court.capacity players per court.
+  * Occupancy: a used court holds >= `min_occupancy` players (1 si se permiten
+    clases particulares, 2 si no).
 
 Soft (minimised):
   * Anti-repetition: penalise pairs that already played together this week.
   * Prefer filling fewer courts at the base venue before spilling to satellites.
+  * Density: penalise every player above the court's normal density, so el
+    motor sube a 3-4 solo cuando hace falta para colocar a alguien.
+  * Court opening: cada pista abierta cuesta un poco, así se agrupa en pistas
+    de 2 en vez de repartir individuales.
 """
 from __future__ import annotations
 
@@ -38,6 +44,8 @@ class Court:
     id: int
     venue_id: int
     capacity: int = 2
+    # Densidad "de crucero": por encima de ella cada jugador extra penaliza.
+    normal_density: int = 2
     is_satellite: bool = False
     # Orden de desbordamiento de la sede (0 = base). Los satélites se llenan
     # de menor a mayor: Sta. Bárbara antes que Bétera antes que Mas Camarena.
@@ -59,6 +67,15 @@ class PairingInput:
     w_central: int = 100
     w_repeat: int = 10
     apply_neighbor: bool = True
+    # Diferencia máxima de división admitida dentro de una pista.
+    neighbor_span: int = 1
+    # Ocupación mínima de una pista usada: 1 permite la clase particular.
+    min_occupancy: int = 2
+    # Penalización por jugador por encima de `Court.normal_density`.
+    w_density: int = 400
+    # Coste de abrir una pista. Hace que el motor prefiera una pista de 2
+    # antes que dos individuales, sin llegar a impedir la clase particular.
+    w_court: int = 500
     # Parejas preferidas (#5): HARD = misma pista obligatoria; SOFT = bonus.
     pairs_hard: set[frozenset[int]] = field(default_factory=set)
     pairs_soft: set[frozenset[int]] = field(default_factory=set)
@@ -79,12 +96,13 @@ def _normalise(a: int, b: int) -> tuple[int, int]:
 
 
 def _incompatible(
-    p: Player, q: Player, vetoes: set[tuple[int, int]], apply_neighbor: bool = True
+    p: Player, q: Player, vetoes: set[tuple[int, int]],
+    apply_neighbor: bool = True, span: int = 1,
 ) -> bool:
     if _normalise(p.id, q.id) in vetoes:
         return True
     if apply_neighbor and p.division is not None and q.division is not None:
-        return abs(p.division - q.division) > 1
+        return abs(p.division - q.division) > max(1, span)
     return False
 
 
@@ -105,11 +123,18 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     for p in players:
         model.Add(sum(x[p.id, c.id] for c in courts) <= 1)
 
-    # Occupancy: a used court holds between 2 and capacity players; 0 otherwise.
+    # Occupancy: a used court holds between `min_occupancy` and capacity
+    # players; 0 otherwise. Además se mide el exceso sobre la densidad normal
+    # para penalizarlo en el objetivo (pistas de 3-4 solo si hacen falta).
+    min_occ = max(1, data.min_occupancy)
+    excess = {}
     for c in courts:
         occ = sum(x[p.id, c.id] for p in players)
         model.Add(occ <= c.capacity * used[c.id])
-        model.Add(occ >= 2 * used[c.id])
+        model.Add(occ >= min_occ * used[c.id])
+        e = model.NewIntVar(0, max(0, c.capacity - c.normal_density), f"exc_{c.id}")
+        model.Add(e >= occ - c.normal_density)
+        excess[c.id] = e
 
     # Preferencia de superficie estricta (#1): un jugador con superficie
     # preferida no puede jugar en una pista de otra superficie.
@@ -132,7 +157,8 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     for i in range(len(players)):
         for j in range(i + 1, len(players)):
             if _incompatible(
-                players[i], players[j], data.vetoes, data.apply_neighbor
+                players[i], players[j], data.vetoes, data.apply_neighbor,
+                data.neighbor_span,
             ):
                 incompatible.append((players[i].id, players[j].id))
     for a, b in incompatible:
@@ -161,7 +187,14 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     for c in courts:
         if c.is_satellite:
             terms.append(-data.w_satellite * max(1, c.fill_rank) * used[c.id])
-    # 3) Anti-repetition: penalise re-pairing recent partners.
+    # 3) Densidad: cada jugador por encima de la densidad normal de la pista
+    #    penaliza, así el motor prefiere abrir otra pista antes que apretar.
+    #    Y abrir pista también cuesta, para que no reparta individuales
+    #    pudiendo agrupar de dos en dos.
+    for c in courts:
+        terms.append(-data.w_density * excess[c.id])
+        terms.append(-data.w_court * used[c.id])
+    # 4) Anti-repetition: penalise re-pairing recent partners.
     for pair, weight in data.recent_partners.items():
         a, b = tuple(pair)
         if a not in pidx or b not in pidx:
@@ -171,7 +204,7 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             # together >= x[a,c] + x[b,c] - 1
             model.Add(together >= x[a, c.id] + x[b, c.id] - 1)
         terms.append(-(data.w_repeat * weight) * together)
-    # 4) Parejas preferentes (#5, SOFT): bonus si ambos coinciden en una pista.
+    # 5) Parejas preferentes (#5, SOFT): bonus si ambos coinciden en una pista.
     for pair in data.pairs_soft:
         a, b = tuple(pair)
         if a not in pidx or b not in pidx:

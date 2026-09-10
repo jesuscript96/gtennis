@@ -135,3 +135,26 @@ export const aprobarInvitado = (id) =>
   req(`/invitados/${id}/aprobar/`, { method: "POST", body: "{}" });
 export const rechazarInvitado = (id, motivo = "") =>
   req(`/invitados/${id}/rechazar/`, { method: "POST", body: JSON.stringify({ motivo }) });
+
+// --- Agenda del entrenador (lo suyo, no el general de la app) -------------
+// `de` = id de entrenador; solo dirección puede pasarlo, para mirar la agenda
+// de otro desde el selector.
+const q = (de) => (de ? `?entrenador=${de}` : "");
+export const getMiAgenda = (de) => req(`/mi-agenda/${q(de)}`);
+export const getMiDia = (de) => req(`/mi-agenda/dia/${q(de)}`);
+export const saveMiSemana = (semana, de) =>
+  req(`/mi-agenda/semana/${q(de)}`, { method: "PATCH", body: JSON.stringify({ semana }) });
+export const getMisAusencias = (de) => req(`/mi-agenda/ausencias/${q(de)}`);
+export const addMiAusencia = (body, de) =>
+  req(`/mi-agenda/ausencias/${q(de)}`, { method: "POST", body: JSON.stringify(body) });
+export const delMiAusencia = (id, de) =>
+  req(`/mi-agenda/ausencias/${id}/${q(de)}`, { method: "DELETE" });
+export const getEntrenadoresAgenda = () => req("/mi-agenda/entrenadores/");
+
+// --- Ausencias de jugador por rango de fechas ------------------------------
+export const getAusenciasFechas = (jugador) =>
+  req(`/ausencias-fechas/${jugador ? `?jugador=${jugador}` : ""}`);
+export const addAusenciaFechas = (body) =>
+  req("/ausencias-fechas/", { method: "POST", body: JSON.stringify(body) });
+export const delAusenciaFechas = (id) =>
+  req(`/ausencias-fechas/${id}/`, { method: "DELETE" });

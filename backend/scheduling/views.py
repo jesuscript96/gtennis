@@ -13,6 +13,7 @@ from academy.permissions import ReadOnlyOrDireccion
 from engine.service import _effective_state, _overrides, generate, regenerate_afternoon
 
 from .models import (
+    AusenciaJugador,
     DIAS,
     Asignacion,
     ConfiguracionMotor,
@@ -21,6 +22,7 @@ from .models import (
     Semana,
 )
 from .serializers import (
+    AusenciaJugadorSerializer,
     AsignacionSerializer,
     ConfiguracionMotorSerializer,
     DisponibilidadEntrenadorSerializer,
@@ -577,3 +579,32 @@ class AsignacionViewSet(viewsets.ModelViewSet):
                 {"error": "La pista no tiene jugadores en ese turno."}, status=409
             )
         return Response({"ok": True, "actualizadas": n})
+
+
+class AusenciaJugadorViewSet(DisponibilidadViewSet):
+    """Ausencias declaradas por RANGO DE FECHAS.
+
+    Hereda el control de alcance de `DisponibilidadViewSet` — cada entrenador
+    solo toca a sus jugadores — y cambia únicamente el modelo: aquí una lesión
+    de tres semanas es una fila con ida y vuelta, no quince partes diarios.
+    """
+
+    serializer_class = AusenciaJugadorSerializer
+
+    def get_queryset(self):
+        qs = AusenciaJugador.objects.select_related("jugador", "declarada_por")
+        user = self.request.user
+        if not user.is_superadmin:
+            from academy.scope import jugadores_visibles
+
+            if getattr(user, "coach", None) is None and self._entrenador() is None:
+                return qs.none()
+            qs = qs.filter(jugador__in=jugadores_visibles(user))
+        jugador = self.request.query_params.get("jugador")
+        return qs.filter(jugador=jugador) if jugador else qs
+
+    def perform_create(self, serializer):
+        self._assert_puede(serializer.validated_data["jugador"])
+        # Queda registrado quién la declaró: para una baja larga conviene
+        # poder preguntar.
+        serializer.save(declarada_por=self._entrenador())

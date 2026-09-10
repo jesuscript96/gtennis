@@ -29,22 +29,27 @@ class Ambito(models.TextChoices):
     DIA = "DIA", "Todo el día"
     MANANA = "MANANA", "Toda la mañana"
     TARDE = "TARDE", "Toda la tarde"
-    M1 = "M1", "Turno M1"
-    M2 = "M2", "Turno M2"
-    T1 = "T1", "Turno T1"
-    T2 = "T2", "Turno T2"
+    M1 = "M1", "Turno M1 (8:30-10:00)"
+    M2 = "M2", "Turno M2 (10:30-12:30)"
+    JP = "JP", "Junior Program (12:30-14:30)"
+    T1 = "T1", "Turno T1 (14:15-15:30)"
+    T2 = "T2", "Turno T2 (15:30-17:30)"
 
 
-# Players excluded from auto-pairing for the shift/day.
-# EN_TORNEO and AUSENCIA_JUGADOR are no longer excluded — they are
-# deprioritised so they fill courts only after fully-available players.
+# Estados que dejan al jugador fuera del emparejamiento automático ese
+# día/turno. AUSENCIA_JUGADOR entra aquí: si el entrenador ha declarado que el
+# alumno está lesionado, enfermo, de vacaciones o de exámenes, no está en el
+# club y no puede ocupar una plaza de pista. Antes solo se le bajaba la
+# prioridad, con lo que marcar una ausencia no la sacaba del cuadrante y el
+# parte de los viernes no servía de nada.
 ESTADOS_EXCLUYENTES = {
     Estado.CLIMATOLOGIA,
+    Estado.AUSENCIA_JUGADOR,
 }
 
-# States that reduce priority in the pairing objective.
+# Estados que solo restan prioridad: el jugador sigue por el club y llena
+# hueco después de los plenamente disponibles.
 ESTADOS_DEPRIORIZADOS = {
-    Estado.AUSENCIA_JUGADOR,
     Estado.EN_TORNEO,
 }
 
@@ -107,6 +112,86 @@ class Disponibilidad(models.Model):
 
     def __str__(self):
         return f"{self.jugador} · D{self.dia} · {self.get_estado_display()}"
+
+
+class AusenciaJugador(models.Model):
+    """Una ausencia larga de un jugador, con fecha de ida y de vuelta.
+
+    `Disponibilidad` sirve para el parte de una semana concreta: una fila por
+    jugador y día. Para una lesión de tres semanas eso son quince filas a mano,
+    y el entrenador no las va a meter. Aquí se declara una sola vez —del 2 de
+    noviembre al 15 de diciembre— y el motor la respeta todos los días que
+    caigan dentro, sin importar de qué semana sean.
+
+    El ámbito permite que sea parcial: todo el día, solo las mañanas, o una
+    franja concreta ("los martes por la tarde no puede, tiene fisio").
+    """
+
+    jugador = models.ForeignKey(
+        "academy.Jugador", on_delete=models.CASCADE, related_name="ausencias"
+    )
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField()
+    ambito = models.CharField(
+        max_length=10, choices=Ambito.choices, default=Ambito.DIA,
+        help_text="Todo el día, una parte de la jornada o una franja concreta.",
+    )
+    estado = models.CharField(
+        max_length=20, choices=Estado.choices, default=Estado.AUSENCIA_JUGADOR
+    )
+    subtipo = models.CharField(
+        max_length=20, choices=SubtipoAusencia.choices, blank=True
+    )
+    # Franja horaria concreta, para las ausencias de un solo día: "el miércoles
+    # no está de 8:30 a 10:00" o "llega a las 10:30". Vacías = todo el ámbito.
+    # No tienen sentido en un rango largo: una lesión de tres semanas no es de
+    # ocho a diez, y el formulario solo las pide cuando ida y vuelta coinciden.
+    hora_desde = models.TimeField(
+        null=True, blank=True, help_text="Solo para ausencias de un día."
+    )
+    hora_hasta = models.TimeField(null=True, blank=True)
+    nota = models.CharField(max_length=200, blank=True)
+    declarada_por = models.ForeignKey(
+        "academy.Entrenador", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="ausencias_declaradas",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Ausencia por fechas"
+        verbose_name_plural = "Ausencias por fechas"
+        ordering = ["-fecha_inicio"]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.fecha_fin < self.fecha_inicio:
+            raise ValidationError("La vuelta no puede ser anterior a la ida.")
+        if (self.hora_desde or self.hora_hasta) and self.fecha_fin != self.fecha_inicio:
+            raise ValidationError(
+                "Las horas solo valen para una ausencia de un único día."
+            )
+        if self.hora_desde and self.hora_hasta and self.hora_hasta <= self.hora_desde:
+            raise ValidationError("La hora de fin debe ser posterior a la de inicio.")
+
+    def cubre(self, fecha):
+        return self.fecha_inicio <= fecha <= self.fecha_fin
+
+    def afecta(self, hora_inicio, hora_fin):
+        """¿Pisa esta ausencia un turno que va de `hora_inicio` a `hora_fin`?
+
+        Sin horas, la ausencia cubre el ámbito entero. Con horas, solo los
+        turnos que se solapan con la ventana: así "llega a las 10:30" deja
+        fuera la franja de 8:30 y respeta la de 10:30.
+        """
+        if not self.hora_desde and not self.hora_hasta:
+            return True
+        desde = self.hora_desde or hora_inicio
+        hasta = self.hora_hasta or hora_fin
+        return desde < hora_fin and hasta > hora_inicio
+
+    def __str__(self):
+        return f"{self.jugador} · {self.fecha_inicio}–{self.fecha_fin} ({self.get_estado_display()})"
 
 
 class DisponibilidadEntrenador(models.Model):
@@ -206,10 +291,64 @@ class ConfiguracionMotor(models.Model):
         default=2, help_text="Repeticiones a partir de las cuales se penaliza fuerte."
     )
     aplicar_vecindad = models.BooleanField(
-        default=True, help_text="Aplicar la regla de división N±1."
+        default=True, help_text="Aplicar la regla de vecindad de divisiones."
+    )
+    vecindad_max = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="Diferencia máxima de división dentro de una pista. A 1 "
+                  "(N±1) quedan fuera el 30% de las parejas que la dirección "
+                  "deportiva forma de verdad; a 2, solo el 9%.",
     )
     time_limit_s = models.PositiveSmallIntegerField(
         default=10, help_text="Tiempo máx. del solver por turno (segundos)."
+    )
+    # --- Dosis de entrenamiento (#18) --------------------------------------
+    sesiones_semana_default = models.PositiveSmallIntegerField(
+        default=4,
+        help_text="Sesiones/semana que se intenta dar a cada jugador sin "
+                  "objetivo propio. Manda sobre el nivel: nadie repite hasta "
+                  "que todos han cubierto su cupo.",
+    )
+    sesiones_dia_max_default = models.PositiveSmallIntegerField(
+        default=2, help_text="Máximo de sesiones el mismo día por jugador."
+    )
+    sesiones_bloque_max = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="Máximo de sesiones en el mismo bloque (mañana o tarde). "
+                  "En los cuadrantes reales, de 249 jugadores con doble sesión "
+                  "en un día, 248 la hacen mañana+tarde y solo 1 dos mañanas.",
+    )
+    peso_densidad = models.PositiveIntegerField(
+        default=400,
+        help_text="Penalización por cada jugador por encima de la densidad "
+                  "normal de la pista (2). Permite subir a 3-4 solo cuando "
+                  "hace falta para que alguien entrene.",
+    )
+    peso_pareja = models.PositiveIntegerField(
+        default=5000,
+        help_text="Bonus por juntar una pareja preferente. Va en la misma "
+                  "escala que peso_asignacion x prioridad: desempata entre "
+                  "compañeros igual de válidos sin llegar a dejar a nadie fuera.",
+    )
+    peso_pista_abierta = models.PositiveIntegerField(
+        default=500,
+        help_text="Coste de abrir una pista. Hace que el motor agrupe de dos "
+                  "en dos en vez de repartir clases individuales.",
+    )
+    peso_carga_entrenador = models.PositiveIntegerField(
+        default=4,
+        help_text="Cuánto pesa equilibrar la carga entre entrenadores frente "
+                  "a respetar los % objetivo de cada jugador.",
+    )
+    permitir_individuales = models.BooleanField(
+        default=True,
+        help_text="Permitir pistas de un solo jugador (clase particular) "
+                  "cuando no hay con quién emparejarlo.",
+    )
+    usar_satelites = models.BooleanField(
+        default=True,
+        help_text="Desbordar a los clubs satélite cuando el Resort se llena. "
+                  "En verano se desactiva: lo que no cabe queda en el banquillo.",
     )
 
     class Meta:

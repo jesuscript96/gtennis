@@ -9,6 +9,8 @@ from .models import (
     Escuela,
     Feedback,
     Invitado,
+    HorarioEntrenador,
+    HorarioJugador,
     Jugador,
     Pista,
     PreferenciaSuperficie,
@@ -45,7 +47,7 @@ class TurnoSerializer(serializers.ModelSerializer):
         model = Turno
         fields = [
             "id", "codigo", "nombre", "bloque", "hora_inicio", "hora_fin",
-            "hora_inicio_verano", "hora_fin_verano", "orden",
+            "hora_inicio_verano", "hora_fin_verano", "orden", "activo",
         ]
 
 
@@ -120,6 +122,64 @@ class JugadorSerializer(serializers.ModelSerializer):
             "entrenador_responsable", "entrenador_nombre", "escuela",
             "escuela_nombre", "foto_url", "activo", "notas",
         ]
+
+
+class HorarioJugadorSerializer(serializers.ModelSerializer):
+    """Una fila del horario semanal: qué franja de mañana y cuál de tarde."""
+
+    class Meta:
+        model = HorarioJugador
+        fields = ["dia", "turno_manana", "turno_tarde"]
+
+
+class JugadorTurnosSerializer(serializers.ModelSerializer):
+    """Vista del jugador para un ENTRENADOR.
+
+    El entrenador no gestiona la ficha del alumno — ni datos personales, ni
+    división, ni escuela, ni contactos. Lo único que declara es CUÁNDO entrena:
+    su franja de mañana, la de tarde, y si algún día cambia. Por eso aquí solo
+    viaja el nombre (para saber de quién se habla) y el horario.
+
+    Las ausencias van por su propio endpoint (`/api/disponibilidades/`).
+    """
+
+    horario = HorarioJugadorSerializer(many=True, required=False)
+
+    class Meta:
+        model = Jugador
+        fields = ["id", "nombre", "turno_manana", "turno_tarde", "horario"]
+        read_only_fields = ["id", "nombre"]
+
+    def update(self, instance, validated_data):
+        filas = validated_data.pop("horario", None)
+        for campo, valor in validated_data.items():
+            setattr(instance, campo, valor)
+        instance.save()
+        if filas is not None:
+            # Se reemplaza el horario entero: lo que no venga en la petición
+            # es que ese día ya no entrena.
+            instance.horario.all().delete()
+            for f in filas:
+                HorarioJugador.objects.create(jugador=instance, **f)
+        return instance
+
+
+class HorarioEntrenadorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HorarioEntrenador
+        fields = ["id", "dia", "manana", "tarde"]
+
+
+class MiJornadaSerializer(serializers.Serializer):
+    """La semana del entrenador tal y como la ve él: siete filas, una por día,
+    con dos casillas. Se devuelven SIEMPRE los cinco días laborables aunque no
+    haya fila guardada, para que la pantalla sea una rejilla y no una lista a
+    la que hay que ir añadiendo cosas."""
+
+    dia = serializers.IntegerField()
+    nombre = serializers.CharField()
+    manana = serializers.BooleanField()
+    tarde = serializers.BooleanField()
 
 
 class RencillaSerializer(serializers.ModelSerializer):

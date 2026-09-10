@@ -65,6 +65,11 @@ class Turno(models.Model):
     hora_inicio_verano = models.TimeField(null=True, blank=True)
     hora_fin_verano = models.TimeField(null=True, blank=True)
     orden = models.PositiveSmallIntegerField(default=0)
+    # Las franjas de escuela de tarde existen en el cuadrante pero todavía no
+    # entran en el reparto automático. Se apagan sin borrarlas.
+    activo = models.BooleanField(
+        default=True, help_text="Si no, el motor no reparte en este turno."
+    )
 
     class Meta:
         verbose_name = "Turno"
@@ -188,6 +193,45 @@ class Entrenador(models.Model):
         return self.jugadores_permitidos().filter(pk=jugador.pk).exists()
 
 
+class HorarioEntrenador(models.Model):
+    """Qué bloques trabaja un entrenador cada día de la semana.
+
+    Es su patrón estable: "los martes solo por la mañana", "los viernes no
+    vengo". Por defecto trabaja mañana y tarde, así que NO hace falta crear
+    filas para quien tiene jornada completa — sin fila, ambas cuentan como
+    disponibles.
+
+    No confundir con `DisponibilidadEntrenador`, que es la excepción de una
+    semana concreta (un torneo, una tarde libre), ni con
+    `VacacionesEntrenador`, que es un periodo largo con fechas.
+    """
+
+    DIAS = [
+        (0, "Lunes"), (1, "Martes"), (2, "Miércoles"),
+        (3, "Jueves"), (4, "Viernes"), (5, "Sábado"),
+    ]
+
+    entrenador = models.ForeignKey(
+        Entrenador, on_delete=models.CASCADE, related_name="horario"
+    )
+    dia = models.PositiveSmallIntegerField(choices=DIAS)
+    manana = models.BooleanField(default=True, verbose_name="Trabaja por la mañana")
+    tarde = models.BooleanField(default=True, verbose_name="Trabaja por la tarde")
+
+    class Meta:
+        verbose_name = "Jornada del entrenador"
+        verbose_name_plural = "Jornada semanal"
+        unique_together = ("entrenador", "dia")
+        ordering = ["entrenador", "dia"]
+
+    def trabaja(self, bloque):
+        return self.manana if bloque == Turno.Bloque.MANANA else self.tarde
+
+    def __str__(self):
+        partes = [b for b, v in (("mañana", self.manana), ("tarde", self.tarde)) if v]
+        return f"{self.entrenador} · {self.get_dia_display()}: {' y '.join(partes) or 'libre'}"
+
+
 class Coach(models.Model):
     """Rol intermedio (#16): por encima del entrenador y por debajo de la
     dirección deportiva. Tiene un conjunto de entrenadores a su cargo y ve a
@@ -255,6 +299,34 @@ class Jugador(models.Model):
     foto_url = models.URLField(blank=True)
     activo = models.BooleanField(default=True)
     notas = models.CharField(max_length=200, blank=True)
+    # --- Dosis de entrenamiento (#18) --------------------------------------
+    # Cuántas sesiones le tocan a este jugador. El motor reparte hasta cubrir
+    # el objetivo semanal de todos antes de dar una segunda vuelta, y nunca
+    # pone a nadie más veces al día de las que marca `sesiones_dia_max`.
+    # Vacío = usa el valor por defecto de ConfiguracionMotor.
+    sesiones_semana = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Sesiones/semana objetivo. Vacío = valor por defecto del motor.",
+    )
+    sesiones_dia_max = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Máximo de sesiones el mismo día. Vacío = valor por defecto.",
+    )
+    # En qué franja entra este jugador. Por defecto entrena dos turnos al día,
+    # uno de mañana y otro de tarde; estos campos fijan cuáles. Vacío = el
+    # motor elige la que mejor encaje dentro del bloque.
+    turno_manana = models.ForeignKey(
+        "Turno", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="jugadores_manana",
+        limit_choices_to={"codigo__in": ["M1", "M2"]},
+        help_text="M1 (8:30) o M2 (10:30). Vacío = cualquiera.",
+    )
+    turno_tarde = models.ForeignKey(
+        "Turno", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="jugadores_tarde",
+        limit_choices_to={"codigo__in": ["T1", "T2"]},
+        help_text="T1 (14:15) o T2 (15:30). Vacío = cualquiera.",
+    )
 
     class Meta:
         verbose_name = "Jugador"
@@ -309,6 +381,66 @@ class Jugador(models.Model):
 
         reparte(principales, cuota_p)
         reparte(secundarios, 100 - cuota_p)
+
+
+class HorarioJugador(models.Model):
+    """Qué franjas entrena un jugador cada día de la semana.
+
+    El alumno hace por defecto dos turnos al día, uno de mañana y otro de
+    tarde, pero no siempre los mismos: puede venir a primera hora los lunes y
+    a segunda los miércoles. Esto es el patrón semanal estable, no las
+    ausencias de una semana concreta — para eso está `Disponibilidad`.
+
+    Sin fila para un día, valen `Jugador.turno_manana` / `turno_tarde`; y si
+    esos también están vacíos, el motor elige la franja que mejor encaje.
+    Dejar un turno a nulo con la fila creada significa "ese día no entrena en
+    ese bloque".
+    """
+
+    DIAS = [
+        (0, "Lunes"), (1, "Martes"), (2, "Miércoles"),
+        (3, "Jueves"), (4, "Viernes"), (5, "Sábado"),
+    ]
+
+    jugador = models.ForeignKey(
+        "Jugador", on_delete=models.CASCADE, related_name="horario"
+    )
+    dia = models.PositiveSmallIntegerField(choices=DIAS)
+    turno_manana = models.ForeignKey(
+        "Turno", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="horarios_manana",
+        limit_choices_to={"bloque": "MANANA", "activo": True,
+                          "codigo__in": ["M1", "M2"]},
+        verbose_name="Turno de mañana",
+    )
+    turno_tarde = models.ForeignKey(
+        "Turno", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="horarios_tarde",
+        limit_choices_to={"bloque": "TARDE", "activo": True,
+                          "codigo__in": ["T1", "T2"]},
+        verbose_name="Turno de tarde",
+    )
+
+    class Meta:
+        verbose_name = "Horario del jugador"
+        verbose_name_plural = "Horario semanal"
+        unique_together = ("jugador", "dia")
+        ordering = ["jugador", "dia"]
+
+    def clean(self):
+        if self.turno_manana and self.turno_manana.bloque != Turno.Bloque.MANANA:
+            raise ValidationError(
+                f"{self.turno_manana.codigo} no es un turno de mañana."
+            )
+        if self.turno_tarde and self.turno_tarde.bloque != Turno.Bloque.TARDE:
+            raise ValidationError(
+                f"{self.turno_tarde.codigo} no es un turno de tarde."
+            )
+
+    def __str__(self):
+        m = self.turno_manana.codigo if self.turno_manana else "—"
+        t = self.turno_tarde.codigo if self.turno_tarde else "—"
+        return f"{self.jugador} · {self.get_dia_display()}: {m} / {t}"
 
 
 class ResponsableJugador(models.Model):

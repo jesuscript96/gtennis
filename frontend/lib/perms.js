@@ -32,6 +32,11 @@ export function canWrite(endpoint, user = getUser()) {
 
 // Rol mínimo para VER una ruta del panel (las que no aparecen: todos).
 const PATH_MIN = {
+  // Rutas del panel general que el entrenador no necesita ver.
+  "/": "coach", "/cuadrante": "coach", "/semana": "coach", "/semanas": "coach",
+  "/disponibilidad-entrenador": "coach", "/vacaciones": "coach",
+  "/preferencias-superficie": "coach", "/invitados": "coach",
+  "/mantenimiento": "coach", "/feedback": "coach", "/avisos": "coach",
   "/sedes": "direccion", "/pistas": "direccion", "/divisiones": "direccion",
   "/escuelas": "direccion", "/turnos": "direccion", "/coaches": "direccion",
   "/configuracion": "direccion",

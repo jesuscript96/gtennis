@@ -10,8 +10,9 @@ La estructura real de la academia (feedback de Sergio #7/#8/#1):
 
 Turnos: M1·M2·JP·T1·T2 (JP entre M2 y T1, exclusivo de Junior Program).
 
-Idempotente: reentry safe. NO reactiva sedes inactivas (no incluye activa=True
-en defaults; respeta lo que diga la migración).
+Idempotente: reentry safe. NO reactiva sedes inactivas ni reescribe turnos que
+ya existan (respeta lo que digan las migraciones: este comando corre en cada
+despliegue y no debe deshacer el horario del curso).
 """
 from datetime import time
 
@@ -74,8 +75,13 @@ class Command(BaseCommand):
                     defaults={"superficie": sup, "activa": True},
                 )
 
+        # Solo se crean los que falten. Este comando corre en cada despliegue
+        # (release_command), así que sobrescribir aquí las horas deshacía en
+        # cada deploy el horario del curso que fija la migración 0028 y volvía
+        # a encender las franjas de escuela. Mismo criterio que con las sedes:
+        # respeta lo que diga la migración.
         for codigo, nombre, bloque, (ini, fin), (ini_v, fin_v), orden in TURNOS:
-            Turno.objects.update_or_create(
+            Turno.objects.get_or_create(
                 codigo=codigo,
                 defaults={
                     "nombre": nombre, "bloque": bloque,

@@ -7,6 +7,7 @@ from .models import (
     Entrenador,
     Escuela,
     Feedback,
+    HorarioJugador,
     Invitado,
     Jugador,
     Pista,
@@ -57,18 +58,62 @@ class EntrenadorAdmin(admin.ModelAdmin):
     filter_horizontal = ("jugadores_gestionados", "divisiones_habilitadas")
 
 
+class HorarioJugadorInline(admin.TabularInline):
+    """Las franjas de cada día, dentro de la ficha del jugador.
+
+    Se muestran los cinco días de lunes a viernes aunque estén vacíos, para
+    que se rellene como una tabla y no haya que ir añadiendo filas.
+    """
+
+    model = HorarioJugador
+    extra = 0
+    max_num = 6
+    fields = ("dia", "turno_manana", "turno_tarde")
+    verbose_name_plural = "Horario semanal — una franja de mañana y otra de tarde por día"
+
+
 @admin.register(Jugador)
 class JugadorAdmin(admin.ModelAdmin):
+    inlines = [HorarioJugadorInline]
     list_display = (
         "nombre", "codigo_cliente", "categoria", "escuela", "edad", "es_menor",
-        "division", "entrenador_responsable", "activo",
+        "division", "turno_manana", "turno_tarde", "horario_semanal", "activo",
     )
     list_filter = (
-        "categoria", "escuela", "division", "entrenador_responsable", "es_menor",
-        "activo",
+        "categoria", "escuela", "division", "turno_manana", "turno_tarde",
+        "es_menor", "activo",
     )
-    list_editable = ("division", "entrenador_responsable", "escuela")
+    list_editable = ("division", "escuela", "turno_manana", "turno_tarde")
     search_fields = ("nombre", "codigo_cliente", "email")
+    fieldsets = (
+        (None, {"fields": ("nombre", "codigo_cliente", "activo", "notas")}),
+        ("Clasificación", {"fields": ("division", "escuela", "categoria")}),
+        ("Datos personales", {
+            "fields": ("edad", "fecha_nacimiento", "es_menor", "email",
+                       "telefono", "consentimiento_rgpd", "foto_url"),
+            "classes": ("collapse",),
+        }),
+        ("Entrenamiento", {
+            "fields": ("turno_manana", "turno_tarde",
+                       "sesiones_semana", "sesiones_dia_max",
+                       "entrenador_responsable"),
+            "description": "Los turnos de aquí valen para toda la semana. "
+                           "Si algún día es distinto, se ajusta abajo en el "
+                           "horario semanal.",
+        }),
+    )
+
+    @admin.display(description="Horario por días")
+    def horario_semanal(self, obj):
+        filas = obj.horario.select_related("turno_manana", "turno_tarde")
+        if not filas:
+            return "—"
+        return " · ".join(
+            f"{h.get_dia_display()[:3]} "
+            f"{h.turno_manana.codigo if h.turno_manana else '–'}/"
+            f"{h.turno_tarde.codigo if h.turno_tarde else '–'}"
+            for h in filas
+        )
 
 
 @admin.register(Rencilla)

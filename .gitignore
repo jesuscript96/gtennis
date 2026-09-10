@@ -30,3 +30,8 @@ npm-debug.log*
 .idea/
 .vscode/
 .vercel
+
+# Copias de seguridad locales
+backend/db.sqlite3.bak-*
+backend/backup_*.json
+frontend/.claude/
