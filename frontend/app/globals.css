@@ -718,18 +718,26 @@ body.nav-locked { overflow: hidden; }
 /* Sus pistas de hoy. Lo primero que quiere ver: dónde está y con quién. */
 .pistas-hoy { margin: 0 0 1.5rem; }
 .pistas-hoy h2 { font-size: 1rem; margin: 0 0 .6rem; }
-.turno-bloque { margin-bottom: 1.1rem; }
-.turno-cab {
-  display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
-  margin: 0 0 .5rem; font-size: .82rem; color: var(--muted);
+/* Las pistas del entrenador: dos por fila y más pequeñas que en el cuadrante,
+   para que dos turnos del mismo día se vean de un vistazo sin bajar. */
+.mis-pistas {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 32rem;
+  gap: 10px;
 }
-.turno-cab span + span::before { content: "· "; }
-.turno-cab b {
-  font-size: .8rem; letter-spacing: .04em; color: var(--text);
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: 4px; padding: .05rem .4rem;
+.mis-pistas .court-name { font-size: 12px; }
+.mis-pistas .court-top { padding: 7px 10px 3px; }
+.mis-pistas .court-state { font-size: 9px; padding: 1px 7px; }
+.mis-pistas .court-av .nm { font-size: 8px; max-width: 54px; }
+.court-meta {
+  padding: 0 10px 7px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
-
+@media (max-width: 560px) {
+  .mis-pistas { grid-template-columns: 1fr; }
+}
 /* Lista de jugadores en acordeón: nombres, y lo demás al desplegar. */
 .buscador {
   width: 100%;

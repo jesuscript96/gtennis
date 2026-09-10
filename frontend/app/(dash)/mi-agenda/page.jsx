@@ -73,16 +73,6 @@ export default function MiAgenda() {
     setDiaPista(base.toISOString().slice(0, 10));
   }
 
-  // Las pistas del día, agrupadas por turno y en orden horario.
-  const porTurno = useMemo(() => {
-    const m = new Map();
-    for (const p of sesiones?.pistas || []) {
-      if (!m.has(p.turno)) m.set(p.turno, []);
-      m.get(p.turno).push(p);
-    }
-    return [...m.entries()].sort((a, b) => a[1][0].turno_orden - b[1][0].turno_orden);
-  }, [sesiones]);
-
   // Los días marcados como ausencia, para pintarlos en el calendario del año.
   const diasFuera = useMemo(() => {
     const m = new Map();
@@ -163,26 +153,23 @@ export default function MiAgenda() {
           ) : sesiones.pistas.length === 0 ? (
             <p className="hint">Ese día no tienes ninguna pista asignada.</p>
           ) : (
-            porTurno.map(([turno, pistas]) => (
-              <div key={turno} className="turno-bloque">
-                <div className="turno-cab">
-                  <b>{turno}</b>
-                  <span>{pistas[0].hora_inicio}–{pistas[0].hora_fin}</span>
-                  <span>{[...new Set(pistas.map((p) => p.sede))].join(" · ")}</span>
-                </div>
-                <div className="court-grid">
-                  {pistas.map((p) => (
-                    <CourtCard
-                      key={`${turno}-${p.pista}`}
-                      pista={{ label: `Pista ${p.pista}`, superficie: p.superficie }}
-                      players={p.jugadores}
-                      coach={sesiones.entrenador}
-                      mode={modoDePista(p)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))
+            <div className="court-grid mis-pistas">
+              {sesiones.pistas.map((p) => (
+                <CourtCard
+                  key={`${p.turno}-${p.pista}`}
+                  pista={{
+                    label: `Pista ${p.pista}`,
+                    superficie: p.superficie,
+                    // Cada pista se lee suelta: si no lleva su turno encima,
+                    // dos pistas seguidas parecen dos horas distintas.
+                    meta: `${p.turno} · ${p.hora_inicio}–${p.hora_fin} · ${p.sede}`,
+                  }}
+                  players={p.jugadores}
+                  coach={sesiones.entrenador}
+                  mode={modoDePista(p)}
+                />
+              ))}
+            </div>
           )}
         </section>
       )}

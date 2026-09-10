@@ -88,6 +88,7 @@ export default function CourtCard({ pista, players, coach, mode }) {
           </span>
         )}
       </div>
+      {pista.meta && <div className="court-meta">{pista.meta}</div>}
 
       <div className="court-field">
         {mode === "cancha" && <CourtSvg superficie={pista.superficie} />}
