@@ -15,12 +15,16 @@ const AMBITOS = [
   ["T1", "T1 · 14:15-15:30"],
   ["T2", "T2 · 15:30-17:30"],
 ];
+// «Todo el día» y los bloques enteros ya incluyen a los demás: marcarlos con
+// una franja suelta sería contradictorio, así que se excluyen entre sí.
+const GENERALES = ["DIA", "MANANA", "TARDE"];
+const NOMBRE_AMBITO = (v) => (AMBITOS.find(([k]) => k === v) || [, v])[1];
 const MOTIVOS = [
   ["LESION", "Lesión"], ["ENFERMEDAD", "Enfermedad"], ["ESTUDIOS", "Estudios"],
   ["PRUEBA_MEDICA", "Prueba médica"], ["VACACIONES", "Vacaciones / viaje"],
 ];
 const VACIO = {
-  jugador: "", fecha_inicio: "", fecha_fin: "", ambito: "DIA",
+  jugador: "", fecha_inicio: "", fecha_fin: "", ambitos: ["DIA"],
   hora_desde: "", hora_hasta: "", estado: "AUSENCIA_JUGADOR", subtipo: "", nota: "",
 };
 
@@ -59,6 +63,21 @@ export default function AusenciasFechas() {
     });
   }
 
+  // «Todo el día» manda sobre lo demás; marcar M1 después de él lo sustituye,
+  // y marcar la mañana entera retira M1, M2 y JP. Así no se guardan filas que
+  // se contradicen.
+  function alternarAmbito(v) {
+    setF((prev) => {
+      const tenia = prev.ambitos.includes(v);
+      if (tenia) {
+        const quedan = prev.ambitos.filter((x) => x !== v);
+        return { ...prev, ambitos: quedan.length ? quedan : ["DIA"] };
+      }
+      if (GENERALES.includes(v)) return { ...prev, ambitos: [v] };
+      return { ...prev, ambitos: [...prev.ambitos.filter((x) => !GENERALES.includes(x)), v] };
+    });
+  }
+
   async function crear(e) {
     e.preventDefault();
     setError(""); setAviso("");
@@ -67,9 +86,10 @@ export default function AusenciasFechas() {
       if (!body.hora_desde) delete body.hora_desde;
       if (!body.hora_hasta) delete body.hora_hasta;
       if (!body.subtipo) delete body.subtipo;
-      await addAusenciaFechas(body);
+      const creadas = await addAusenciaFechas(body);
+      const n = Array.isArray(creadas) ? creadas.length : 1;
       setF(VACIO); recargar();
-      setAviso("Ausencia declarada");
+      setAviso(n > 1 ? `Ausencia declarada en ${n} franjas` : "Ausencia declarada");
       setTimeout(() => setAviso(""), 2500);
     } catch (e) { setError(e.message); }
   }
@@ -114,11 +134,21 @@ export default function AusenciasFechas() {
               {MOTIVOS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
             </select>
           </label>
-          <label>Alcance
-            <select value={f.ambito} onChange={(e) => set("ambito", e.target.value)}>
-              {AMBITOS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-            </select>
-          </label>
+        </div>
+
+        <div className="bloque-ambitos">
+          <span className="etiqueta-bloque">
+            ¿Qué se pierde? Puedes marcar varias franjas
+          </span>
+          <div className="chips-ambito">
+            {AMBITOS.map(([v, t]) => (
+              <label key={v} className={f.ambitos.includes(v) ? "chip-ambito activo" : "chip-ambito"}>
+                <input type="checkbox" checked={f.ambitos.includes(v)}
+                  onChange={() => alternarAmbito(v)} />
+                {t}
+              </label>
+            ))}
+          </div>
         </div>
 
         {/* Solo para un día: la hora exacta. En un rango no tiene sentido. */}
@@ -167,7 +197,7 @@ export default function AusenciasFechas() {
                   <td>{a.fecha_inicio}</td>
                   <td>{a.fecha_fin}</td>
                   <td>
-                    {(AMBITOS.find(([v]) => v === a.ambito) || [, a.ambito])[1]}
+                    {NOMBRE_AMBITO(a.ambito)}
                     {a.hora_desde && (
                       <span className="horas"> {a.hora_desde.slice(0, 5)}–{(a.hora_hasta || "").slice(0, 5)}</span>
                     )}

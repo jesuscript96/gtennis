@@ -6,7 +6,7 @@ import { canWrite } from "../lib/perms";
 
 function emptyValue(fl) {
   if (fl.type === "bool") return false;
-  if (fl.type === "mfk") return [];
+  if (fl.type === "mfk" || fl.type === "multiselect") return [];
   return "";
 }
 
@@ -16,6 +16,13 @@ function defaults(fields) {
   return f;
 }
 
+// Campos que aplican en este momento: `soloCrear` desaparece al editar y
+// `soloEditar` no sale al crear.
+function camposDe(fields, editando) {
+  return fields.filter((fl) =>
+    editando ? !fl.soloCrear : !fl.soloEditar);
+}
+
 function toBody(fields, form) {
   const body = {};
   for (const fl of fields) {
@@ -23,6 +30,7 @@ function toBody(fields, form) {
     if (fl.type === "bool") v = !!v;
     else if (fl.type === "number" || fl.type === "fk") v = v === "" || v == null ? null : Number(v);
     else if (fl.type === "mfk") v = Array.isArray(v) ? v.map(Number) : [];
+    else if (fl.type === "multiselect") v = Array.isArray(v) ? v : [];
     else if (fl.type === "select") v = v === "" || v == null ? null : fl.numeric ? Number(v) : v;
     else if (fl.type === "time") v = v === "" || v == null ? null : v;
     body[fl.name] = v;
@@ -69,14 +77,14 @@ export default function ResourceCrud({ config }) {
 
   function openNew() {
     setEditing(null);
-    setForm(defaults(config.fields));
+    setForm(defaults(camposDe(config.fields, false)));
     setFormError(null);
     setOpen(true);
   }
   function openEdit(row) {
     setEditing(row);
     const f = {};
-    for (const fl of config.fields) f[fl.name] = row[fl.name] ?? emptyValue(fl);
+    for (const fl of camposDe(config.fields, true)) f[fl.name] = row[fl.name] ?? emptyValue(fl);
     setForm(f);
     setFormError(null);
     setOpen(true);
@@ -87,7 +95,7 @@ export default function ResourceCrud({ config }) {
     setSaving(true);
     setFormError(null);
     try {
-      const body = toBody(config.fields, form);
+      const body = toBody(camposDe(config.fields, !!editing), form);
       if (editing) await api.update(editing.id, body);
       else await api.create(body);
       setOpen(false);
@@ -179,7 +187,7 @@ export default function ResourceCrud({ config }) {
         <div className="overlay" onClick={() => setOpen(false)}>
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={save}>
             <h2>{editing ? "Editar" : "Nuevo"} {config.singular}</h2>
-            {config.fields.map((fl) => (
+            {camposDe(config.fields, !!editing).map((fl) => (
               <Field
                 key={fl.name}
                 field={fl}
@@ -228,6 +236,35 @@ function Field({ field, value, options, onChange }) {
             <option key={o.id} value={o.id}>{field.optionLabel(o)}</option>
           ))}
         </select>
+      </label>
+    );
+  }
+  // Varias opciones a la vez: "ese día no viene ni a M1 ni a M2" es una sola
+  // decisión, aunque el backend la guarde franja a franja.
+  if (field.type === "multiselect") {
+    const marcados = Array.isArray(value) ? value : [];
+    const alternar = (v) => {
+      if (marcados.includes(v)) {
+        const quedan = marcados.filter((x) => x !== v);
+        return onChange(quedan.length || !field.required ? quedan : [v]);
+      }
+      const excluye = field.exclusivas || [];
+      if (excluye.includes(v)) return onChange([v]);
+      onChange([...marcados.filter((x) => !excluye.includes(x)), v]);
+    };
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <div className="chips-ambito">
+          {field.options.map((o) => (
+            <label key={String(o.value)}
+              className={marcados.includes(o.value) ? "chip-ambito activo" : "chip-ambito"}>
+              <input type="checkbox" checked={marcados.includes(o.value)}
+                onChange={() => alternar(o.value)} />
+              {o.label}
+            </label>
+          ))}
+        </div>
       </label>
     );
   }

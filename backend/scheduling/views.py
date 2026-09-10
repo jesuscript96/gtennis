@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from django.utils import timezone as djtz
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
@@ -357,6 +357,30 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
 
     def _entrenador(self):
         return getattr(self.request.user, "entrenador", None)
+
+    def create(self, request, *args, **kwargs):
+        """Un parte puede cubrir varias franjas de una vez.
+
+        «Ese día no viene ni a M1 ni a M2» es una sola decisión del entrenador,
+        pero el motor consulta franja a franja, así que se guarda una fila por
+        franja. Si llega `ambitos` (lista) se abanica; con `ambito` a secas se
+        comporta como siempre.
+        """
+        ambitos = request.data.get("ambitos")
+        if isinstance(ambitos, str):
+            ambitos = [ambitos]
+        if not ambitos:
+            return super().create(request, *args, **kwargs)
+
+        base = {k: v for k, v in request.data.items() if k != "ambitos"}
+        creadas = []
+        for ambito in ambitos:
+            serializer = self.get_serializer(data={**base, "ambito": ambito})
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            creadas.append(serializer.data)
+        cabeceras = self.get_success_headers(creadas[0]) if creadas else {}
+        return Response(creadas, status=status.HTTP_201_CREATED, headers=cabeceras)
 
     def _assert_puede(self, jugador):
         user = self.request.user

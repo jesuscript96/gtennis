@@ -20,14 +20,17 @@ const SUBTIPO_OPTS = [
   { value: "VACACIONES", label: "Vacaciones" },
   { value: "MILONGA", label: "Milonga" },
 ];
+// Con la hora delante: el entrenador piensa en «la de las diez y media», no
+// en un código. Faltaba JP desde que entró el curso de septiembre.
 const AMBITO_OPTS = [
   { value: "DIA", label: "Todo el día" },
   { value: "MANANA", label: "Toda la mañana" },
   { value: "TARDE", label: "Toda la tarde" },
-  { value: "M1", label: "Turno M1" },
-  { value: "M2", label: "Turno M2" },
-  { value: "T1", label: "Turno T1" },
-  { value: "T2", label: "Turno T2" },
+  { value: "M1", label: "M1 · 8:30-10:00" },
+  { value: "M2", label: "M2 · 10:30-12:30" },
+  { value: "JP", label: "Junior Program · 12:30-14:30" },
+  { value: "T1", label: "T1 · 14:15-15:30" },
+  { value: "T2", label: "T2 · 15:30-17:30" },
 ];
 const PRIORIDAD_OPTS = [
   { value: "ALTA", label: "Alta" },
@@ -291,7 +294,11 @@ export const RESOURCES = {
       { name: "semana", label: "Semana", type: "fk", endpoint: "semanas", optionLabel: (o) => o.fecha_inicio, required: true },
       { name: "jugador", label: "Jugador", type: "fk", endpoint: "jugadores", optionLabel: (o) => o.nombre, required: true },
       { name: "dia", label: "Día", type: "select", numeric: true, options: DIA_OPTS, required: true },
-      { name: "ambito", label: "Temporalidad", type: "select", options: AMBITO_OPTS, required: true },
+      { name: "ambitos", label: "¿Qué se pierde? Puedes marcar varias franjas",
+        type: "multiselect", options: AMBITO_OPTS, required: true, soloCrear: true,
+        exclusivas: ["DIA", "MANANA", "TARDE"], default: ["DIA"] },
+      { name: "ambito", label: "Temporalidad", type: "select", options: AMBITO_OPTS,
+        required: true, soloEditar: true },
       { name: "estado", label: "Estado", type: "select", options: ESTADO_OPTS, required: true },
       { name: "subtipo", label: "Motivo (si es ausencia de jugador)", type: "select", options: SUBTIPO_OPTS },
       { name: "nota", label: "Nota", type: "text" },

@@ -609,6 +609,57 @@ class MiAgendaViewSet(viewsets.ViewSet):
         return Response({"entrenador": ent.nombre, "semana": self._semana(ent)})
 
     @action(detail=False, methods=["get"])
+    def sesiones(self, request):
+        """Sus pistas de un día: turno, hora, número de pista y quién le toca.
+
+        Es lo primero que quiere ver un entrenador al entrar — no su jornada
+        en abstracto, sino dónde tiene que estar y con quién.
+        """
+        from datetime import date, timedelta
+
+        from scheduling.models import Asignacion, Semana
+
+        ent = self._entrenador()
+        try:
+            fecha = date.fromisoformat(request.query_params["fecha"])
+        except (KeyError, ValueError):
+            fecha = date.today()
+        lunes = fecha - timedelta(days=fecha.weekday())
+        semana = Semana.objects.filter(fecha_inicio=lunes).first()
+        if semana is None:
+            return Response({"fecha": fecha, "hay_semana": False, "pistas": []})
+
+        filas = (
+            Asignacion.objects
+            .filter(semana=semana, dia=fecha.weekday(), entrenador=ent)
+            .select_related("turno", "pista", "pista__sede", "jugador")
+            .order_by("turno__orden", "pista__numero", "jugador__nombre")
+        )
+        pistas = {}
+        for a in filas:
+            clave = (a.turno_id, a.pista_id)
+            ficha = pistas.get(clave)
+            if ficha is None:
+                inicio, fin = a.turno.horas(fecha)
+                ficha = pistas[clave] = {
+                    "turno": a.turno.codigo,
+                    "hora_inicio": inicio.strftime("%H:%M"),
+                    "hora_fin": fin.strftime("%H:%M"),
+                    "pista": a.pista.numero,
+                    "sede": a.pista.sede.nombre,
+                    "superficie": a.pista.get_superficie_display(),
+                    "jugadores": [],
+                }
+            ficha["jugadores"].append({"id": a.jugador_id, "nombre": a.jugador.nombre})
+        return Response({
+            "fecha": fecha,
+            "hay_semana": True,
+            "semana": semana.fecha_inicio,
+            "estado_semana": semana.estado,
+            "pistas": list(pistas.values()),
+        })
+
+    @action(detail=False, methods=["get"])
     def dia(self, request):
         """Hoy: si trabaja de mañana, de tarde, o está fuera."""
         from datetime import date

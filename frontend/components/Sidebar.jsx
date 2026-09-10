@@ -46,7 +46,7 @@ const SECTIONS_ENTRENADOR = [
     ["/mi-agenda", "Mi agenda"],
   ] },
   { title: "Mis jugadores", items: [
-    ["/jugadores", "Turnos"],
+    ["/jugadores", "Mis jugadores"],
     ["/ausencias", "Ausencias de la semana"],
     ["/ausencias-fechas", "Bajas por fechas"],
   ] },

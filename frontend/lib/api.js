@@ -142,6 +142,14 @@ export const rechazarInvitado = (id, motivo = "") =>
 const q = (de) => (de ? `?entrenador=${de}` : "");
 export const getMiAgenda = (de) => req(`/mi-agenda/${q(de)}`);
 export const getMiDia = (de) => req(`/mi-agenda/dia/${q(de)}`);
+// Sus pistas de un día: turno, hora, número y quién le toca.
+export const getMisSesiones = (de, fecha) => {
+  const p = new URLSearchParams();
+  if (de) p.set("entrenador", de);
+  if (fecha) p.set("fecha", fecha);
+  const s = p.toString();
+  return req(`/mi-agenda/sesiones/${s ? `?${s}` : ""}`);
+};
 export const saveMiSemana = (semana, de) =>
   req(`/mi-agenda/semana/${q(de)}`, { method: "PATCH", body: JSON.stringify({ semana }) });
 export const getMisAusencias = (de) => req(`/mi-agenda/ausencias/${q(de)}`);
@@ -152,8 +160,8 @@ export const delMiAusencia = (id, de) =>
 export const getEntrenadoresAgenda = () => req("/mi-agenda/entrenadores/");
 
 // --- Ausencias de jugador por rango de fechas ------------------------------
-export const getAusenciasFechas = (jugador) =>
-  req(`/ausencias-fechas/${jugador ? `?jugador=${jugador}` : ""}`);
+export const getAusenciasFechas = async (jugador) =>
+  rows(await req(`/ausencias-fechas/${jugador ? `?jugador=${jugador}` : ""}`));
 export const addAusenciaFechas = (body) =>
   req("/ausencias-fechas/", { method: "POST", body: JSON.stringify(body) });
 export const delAusenciaFechas = (id) =>

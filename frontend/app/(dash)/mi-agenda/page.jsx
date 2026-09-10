@@ -2,11 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  getMiAgenda, getMiDia, saveMiSemana,
+  getMiAgenda, getMiDia, getMisSesiones, saveMiSemana,
   getMisAusencias, addMiAusencia, delMiAusencia,
   getEntrenadoresAgenda, getUser,
 } from "../../../lib/api";
 
+const DIAS_CORTOS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+const fechaLarga = (iso) => {
+  const d = new Date(iso);
+  return `${DIAS_CORTOS[d.getDay()]} ${d.getDate()}`;
+};
+const fechaCorta = (iso) => {
+  const d = new Date(iso);
+  return `${d.getDate()}/${d.getMonth() + 1}`;
+};
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -27,18 +36,34 @@ export default function MiAgenda() {
   const eligeOtros = !!(usuario?.is_superadmin || usuario?.is_coach);
   const [equipo, setEquipo] = useState([]);
   const [quien, setQuien] = useState("");
+  // Sus pistas: es lo primero que quiere ver al entrar. Empieza en hoy, pero
+  // puede adelantarse — «¿qué tengo mañana?» es la otra pregunta obvia.
+  const [sesiones, setSesiones] = useState(null);
+  const [diaPista, setDiaPista] = useState(null);
 
   async function cargar(de = quien) {
     try {
       setError("");
-      const [a, d, v] = await Promise.all([getMiAgenda(de), getMiDia(de), getMisAusencias(de)]);
+      const [a, d, v, ses] = await Promise.all([
+        getMiAgenda(de), getMiDia(de), getMisAusencias(de), getMisSesiones(de, diaPista),
+      ]);
       setSemana(a.semana); setNombre(a.entrenador); setHoy(d); setAusencias(v);
+      setSesiones(ses);
     } catch (e) { setError(e.message); }
   }
   useEffect(() => {
     if (eligeOtros) getEntrenadoresAgenda().then(setEquipo).catch(() => {});
   }, [eligeOtros]);
   useEffect(() => { cargar(quien); }, [quien]);
+  useEffect(() => {
+    if (diaPista) getMisSesiones(quien, diaPista).then(setSesiones).catch(() => {});
+  }, [diaPista, quien]);
+
+  function moverDia(pasos) {
+    const base = new Date(diaPista || (sesiones && sesiones.fecha) || Date.now());
+    base.setDate(base.getDate() + pasos);
+    setDiaPista(base.toISOString().slice(0, 10));
+  }
 
   // Los días marcados como ausencia, para pintarlos en el calendario del año.
   const diasFuera = useMemo(() => {
@@ -98,6 +123,48 @@ export default function MiAgenda() {
       )}
       {error && <p className="error">{error}</p>}
       {aviso && <p className="ok-msg">{aviso}</p>}
+
+      {/* ---- SUS PISTAS DE HOY ---- */}
+      {sesiones && (
+        <section className="pistas-hoy">
+          <div className="cab-pistas">
+            <h2>{diaPista ? "En pista" : "Hoy en pista"}</h2>
+            <div className="nav-dia">
+              <button type="button" onClick={() => moverDia(-1)} aria-label="Día anterior">‹</button>
+              <span>{fechaLarga(sesiones.fecha)}</span>
+              <button type="button" onClick={() => moverDia(1)} aria-label="Día siguiente">›</button>
+              {diaPista && (
+                <button type="button" className="link-menor" onClick={() => setDiaPista(null)}>hoy</button>
+              )}
+            </div>
+          </div>
+          {!sesiones.hay_semana ? (
+            <p className="hint">
+              La semana del {fechaCorta(sesiones.fecha)} todavía no está montada.
+            </p>
+          ) : sesiones.pistas.length === 0 ? (
+            <p className="hint">Hoy no tienes ninguna pista asignada.</p>
+          ) : (
+            <div className="rejilla-pistas">
+              {sesiones.pistas.map((p, i) => (
+                <article key={i} className="pista-card">
+                  <header>
+                    <span className="pista-turno">{p.turno}</span>
+                    <span className="pista-hora">{p.hora_inicio}–{p.hora_fin}</span>
+                  </header>
+                  <div className="pista-donde">
+                    <strong>Pista {p.pista}</strong>
+                    <span>{p.sede} · {p.superficie}</span>
+                  </div>
+                  <ul className="pista-jugadores">
+                    {p.jugadores.map((j) => <li key={j.id}>{j.nombre}</li>)}
+                  </ul>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ---- HOY ---- */}
       {hoy && (
