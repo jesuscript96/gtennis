@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import CourtCard from "../../../components/CourtCard";
+import { isCentral, modeForSurface, surfaceOf } from "../../../lib/clublayout";
 import {
   getMiAgenda, getMiDia, getMisSesiones, saveMiSemana,
   getMisAusencias, addMiAusencia, delMiAusencia,
   getEntrenadoresAgenda, getUser,
 } from "../../../lib/api";
 
+// En el Resort, las pistas de tierra se pintan con la foto y las azules con el
+// esquema; en los satélites, siempre el esquema. Igual que el cuadrante.
+function modoDePista(p) {
+  if (p.es_satelite || !isCentral(p.sede)) return "cancha";
+  return modeForSurface(surfaceOf(p.pista));
+}
 const DIAS_CORTOS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const fechaLarga = (iso) => {
   const d = new Date(iso);
@@ -64,6 +72,16 @@ export default function MiAgenda() {
     base.setDate(base.getDate() + pasos);
     setDiaPista(base.toISOString().slice(0, 10));
   }
+
+  // Las pistas del día, agrupadas por turno y en orden horario.
+  const porTurno = useMemo(() => {
+    const m = new Map();
+    for (const p of sesiones?.pistas || []) {
+      if (!m.has(p.turno)) m.set(p.turno, []);
+      m.get(p.turno).push(p);
+    }
+    return [...m.entries()].sort((a, b) => a[1][0].turno_orden - b[1][0].turno_orden);
+  }, [sesiones]);
 
   // Los días marcados como ausencia, para pintarlos en el calendario del año.
   const diasFuera = useMemo(() => {
@@ -143,25 +161,28 @@ export default function MiAgenda() {
               La semana del {fechaCorta(sesiones.fecha)} todavía no está montada.
             </p>
           ) : sesiones.pistas.length === 0 ? (
-            <p className="hint">Hoy no tienes ninguna pista asignada.</p>
+            <p className="hint">Ese día no tienes ninguna pista asignada.</p>
           ) : (
-            <div className="rejilla-pistas">
-              {sesiones.pistas.map((p, i) => (
-                <article key={i} className="pista-card">
-                  <header>
-                    <span className="pista-turno">{p.turno}</span>
-                    <span className="pista-hora">{p.hora_inicio}–{p.hora_fin}</span>
-                  </header>
-                  <div className="pista-donde">
-                    <strong>Pista {p.pista}</strong>
-                    <span>{p.sede} · {p.superficie}</span>
-                  </div>
-                  <ul className="pista-jugadores">
-                    {p.jugadores.map((j) => <li key={j.id}>{j.nombre}</li>)}
-                  </ul>
-                </article>
-              ))}
-            </div>
+            porTurno.map(([turno, pistas]) => (
+              <div key={turno} className="turno-bloque">
+                <div className="turno-cab">
+                  <b>{turno}</b>
+                  <span>{pistas[0].hora_inicio}–{pistas[0].hora_fin}</span>
+                  <span>{[...new Set(pistas.map((p) => p.sede))].join(" · ")}</span>
+                </div>
+                <div className="court-grid">
+                  {pistas.map((p) => (
+                    <CourtCard
+                      key={`${turno}-${p.pista}`}
+                      pista={{ label: `Pista ${p.pista}`, superficie: p.superficie }}
+                      players={p.jugadores}
+                      coach={sesiones.entrenador}
+                      mode={modoDePista(p)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
           )}
         </section>
       )}

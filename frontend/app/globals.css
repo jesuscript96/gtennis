@@ -718,43 +718,16 @@ body.nav-locked { overflow: hidden; }
 /* Sus pistas de hoy. Lo primero que quiere ver: dónde está y con quién. */
 .pistas-hoy { margin: 0 0 1.5rem; }
 .pistas-hoy h2 { font-size: 1rem; margin: 0 0 .6rem; }
-.rejilla-pistas {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: .75rem;
+.turno-bloque { margin-bottom: 1.1rem; }
+.turno-cab {
+  display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+  margin: 0 0 .5rem; font-size: .82rem; color: var(--muted);
 }
-.pista-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--gold);
-  border-radius: var(--r);
-  padding: .7rem .85rem;
-}
-.pista-card > header {
-  display: flex;
-  align-items: baseline;
-  gap: .5rem;
-  margin-bottom: .35rem;
-}
-.pista-turno {
-  font-weight: 700;
-  font-size: .8rem;
-  letter-spacing: .04em;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: .05rem .4rem;
-}
-.pista-hora { font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.pista-donde { display: flex; flex-direction: column; margin-bottom: .5rem; }
-.pista-donde strong { font-size: 1.05rem; }
-.pista-donde span { font-size: .78rem; color: var(--muted); }
-.pista-jugadores { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; }
-.pista-jugadores li {
-  font-size: .88rem;
-  padding: .18rem .45rem;
-  background: var(--surface-2);
-  border-radius: 5px;
+.turno-cab span + span::before { content: "· "; }
+.turno-cab b {
+  font-size: .8rem; letter-spacing: .04em; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 4px; padding: .05rem .4rem;
 }
 
 /* Lista de jugadores en acordeón: nombres, y lo demás al desplegar. */
@@ -841,7 +814,6 @@ body.nav-locked { overflow: hidden; }
 }
 
 @media (max-width: 640px) {
-  .rejilla-pistas { grid-template-columns: 1fr; }
   .fila-jugador { grid-template-columns: 1fr 1.4rem; }
   .fila-jugador .resumen { grid-column: 1 / -1; }
 }

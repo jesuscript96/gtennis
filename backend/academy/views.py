@@ -632,9 +632,12 @@ class MiAgendaViewSet(viewsets.ViewSet):
         filas = (
             Asignacion.objects
             .filter(semana=semana, dia=fecha.weekday(), entrenador=ent)
-            .select_related("turno", "pista", "pista__sede", "jugador")
+            .select_related("turno", "pista", "pista__sede", "jugador",
+                            "jugador__division")
             .order_by("turno__orden", "pista__numero", "jugador__nombre")
         )
+        # Se devuelve lo mismo que pinta el cuadrante de dirección —foto,
+        # división y estado— para que la pista se dibuje igual aquí.
         pistas = {}
         for a in filas:
             clave = (a.turno_id, a.pista_id)
@@ -643,19 +646,29 @@ class MiAgendaViewSet(viewsets.ViewSet):
                 inicio, fin = a.turno.horas(fecha)
                 ficha = pistas[clave] = {
                     "turno": a.turno.codigo,
+                    "turno_orden": a.turno.orden,
                     "hora_inicio": inicio.strftime("%H:%M"),
                     "hora_fin": fin.strftime("%H:%M"),
                     "pista": a.pista.numero,
                     "sede": a.pista.sede.nombre,
-                    "superficie": a.pista.get_superficie_display(),
+                    "es_satelite": a.pista.sede.es_satelite,
+                    "superficie": a.pista.superficie,
+                    "superficie_nombre": a.pista.get_superficie_display(),
                     "jugadores": [],
                 }
-            ficha["jugadores"].append({"id": a.jugador_id, "nombre": a.jugador.nombre})
+            ficha["jugadores"].append({
+                "id": a.jugador_id,
+                "nombre": a.jugador.nombre,
+                "foto": a.jugador.foto_url or "",
+                "division": a.jugador.division.nivel if a.jugador.division_id else None,
+                "estado": a.estado,
+            })
         return Response({
             "fecha": fecha,
             "hay_semana": True,
             "semana": semana.fecha_inicio,
             "estado_semana": semana.estado,
+            "entrenador": {"nombre": ent.nombre, "foto": ent.foto_url or ""},
             "pistas": list(pistas.values()),
         })
 
