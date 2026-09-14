@@ -164,6 +164,11 @@ def _available_players(
     players = []
     qs = Jugador.objects.filter(activo=True).select_related("division")
     for j in qs:
+        # Alta a mitad de mes: hasta el día que empieza, el alumno no entra en
+        # ningún entrenamiento aunque su ficha ya exista (y lo mismo al revés
+        # con la fecha de baja).
+        if not j.en_alta(fecha):
+            continue
         # #6: los jugadores de una escuela con turno único (p. ej. Junior
         # Program → JP) solo entran en ese turno; en el resto se excluyen.
         turno_unico, solo_central = escuela_cfg.get(j.escuela_id, (None, False))

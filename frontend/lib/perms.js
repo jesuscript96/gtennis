@@ -39,6 +39,7 @@ const PATH_MIN = {
   "/mantenimiento": "coach", "/feedback": "coach", "/avisos": "coach",
   "/sedes": "direccion", "/pistas": "direccion", "/divisiones": "direccion",
   "/escuelas": "direccion", "/turnos": "direccion", "/coaches": "direccion",
+  "/grupos": "direccion",
   "/configuracion": "direccion",
   "/entrenadores": "coach",
 };

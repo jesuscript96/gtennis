@@ -833,3 +833,152 @@ body.nav-locked { overflow: hidden; }
   font-size: .95rem; line-height: 1; color: var(--text);
 }
 .nav-dia button.link-menor { width: auto; height: auto; border: 0; background: none; }
+
+/* ---- Filtros de la barra de herramientas (escuela, ver bajas…) ---- */
+.toolbar .filtro-select { width: auto; min-width: 170px; }
+.toolbar .filtro-check { margin-bottom: 0; font-size: 13px; white-space: nowrap; }
+
+/* ---- Agenda del alumno dentro de "Mis jugadores" ---- */
+.agenda-jugador { margin-top: .85rem; display: grid; gap: .9rem; }
+.agenda-jugador h3 {
+  margin: 0 0 .4rem; font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--muted); font-weight: 600;
+}
+.agenda-jugador .hint { margin: 0; }
+.agenda-hoy {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: .7rem .8rem;
+}
+ul.sesiones { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+ul.sesiones .sesion {
+  display: grid; grid-template-columns: auto 1fr; gap: .15rem .6rem;
+  align-items: baseline; font-size: .85rem;
+  border-left: 3px solid var(--accent); padding-left: .6rem;
+}
+ul.sesiones .sesion.previsto { border-left-color: var(--border-strong); }
+ul.sesiones .hora { font-weight: 600; font-variant-numeric: tabular-nums; }
+ul.sesiones .donde { color: var(--text); }
+ul.sesiones .con, ul.sesiones .companeros {
+  grid-column: 2; color: var(--muted); font-size: .78rem;
+}
+ul.semana-jugador { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+ul.semana-jugador > li {
+  display: grid; grid-template-columns: 2.2rem 1fr; gap: .5rem;
+  align-items: center; padding: .25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+ul.semana-jugador > li:last-child { border-bottom: 0; }
+ul.semana-jugador > li.hoy .dia { color: var(--accent); font-weight: 700; }
+ul.semana-jugador .dia { font-size: .78rem; color: var(--muted); font-weight: 600; }
+ul.semana-jugador .celdas { display: flex; flex-wrap: wrap; gap: .3rem; }
+ul.semana-jugador .vacio { color: var(--muted); font-size: .8rem; }
+.chip-sesion {
+  font-size: .74rem; padding: .18rem .5rem; border-radius: 999px;
+  background: #eef3ee; color: #2f6b4a; white-space: nowrap;
+}
+.chip-sesion.previsto { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border-strong); }
+.chip-baja {
+  font-size: .74rem; padding: .18rem .5rem; border-radius: 999px;
+  background: #fbeaea; color: var(--st-ausencia); white-space: nowrap;
+}
+/* ---- Grupos: el organigrama (bloque → columnas → alumnos) ---- */
+.grupos .bloque {
+  background: var(--bg-sidebar); border: 1px solid var(--border);
+  border-radius: 12px; padding: .8rem .85rem; margin-bottom: 1rem;
+}
+.grupos .bloque.esperando { border-style: dashed; border-color: var(--border-strong); }
+.grupos .bloque.encima { border: 2px dashed var(--accent); background: #f8efe9; }
+.bloque-head {
+  display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap;
+  margin-bottom: .7rem;
+}
+.bloque-head h2 {
+  font-family: var(--font-serif); font-size: 1.05rem; font-weight: 500; margin: 0;
+}
+.grupos .cuenta { font-size: .74rem; color: var(--muted); }
+.bloque-head .traer { margin-left: auto; }
+/* El `.msg` general lleva 40px de aire para las tablas vacías; aquí sobra. */
+.grupos .bloque > .msg { font-size: .82rem; color: var(--muted); margin: 0; padding: .2rem 0; }
+
+/* Las columnas son las sub-columnas del Excel: en fila, y si no caben se
+   desplazan a lo ancho dentro del bloque (nunca la página entera). */
+.columnas {
+  display: flex; gap: .7rem; align-items: flex-start;
+  overflow-x: auto; padding-bottom: .3rem;
+}
+.columna {
+  flex: 0 0 232px; max-width: 232px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: .6rem .65rem;
+}
+.columna.esperando { border-style: dashed; border-color: var(--border-strong); }
+.columna.encima { border: 2px solid var(--accent); background: #fdf7f4; }
+.columna.cogido, ul.miembros > li.cogido { opacity: .45; }
+.col-head { cursor: grab; }
+.col-head:active { cursor: grabbing; }
+.col-head h3 {
+  margin: 0; font-size: .9rem; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.col-head .sub { margin: .1rem 0 .45rem; font-size: .72rem; color: var(--muted); }
+.btn.sm.traer { width: 100%; margin-bottom: .5rem; }
+.bloque-head .btn.sm.traer { width: auto; margin-bottom: 0; }
+
+ul.miembros { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+ul.miembros > li {
+  display: flex; align-items: center; gap: .2rem; border-radius: 7px;
+  padding: .05rem .1rem; cursor: grab;
+}
+ul.miembros > li:hover { background: var(--surface-2); }
+ul.miembros > li:active { cursor: grabbing; }
+/* Los que no lleva nadie son muchos: en rejilla, no en una torre de 30. */
+ul.miembros.sueltos {
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  column-gap: .8rem;
+}
+.nombre-alumno {
+  flex: 1; display: flex; align-items: center; gap: .4rem; text-align: left;
+  background: none; border: 0; padding: .26rem .15rem; font: inherit;
+  font-size: .82rem; color: var(--text); cursor: inherit; min-width: 0;
+}
+.nombre-alumno:disabled { cursor: default; }
+.nombre-alumno .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nombre-alumno .de-quien { flex: none; font-size: .66rem; color: var(--muted); }
+.div-badge {
+  flex: none; font-size: .64rem; font-weight: 700; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 5px; padding: .05rem .28rem; min-width: 1.6rem; text-align: center;
+}
+ul.miembros .quitar {
+  flex: none; background: none; border: 0; cursor: pointer;
+  color: var(--border-strong); font-size: .8rem; line-height: 1;
+  padding: .22rem .28rem; border-radius: 6px;
+}
+ul.miembros .quitar:hover { background: var(--surface-2); color: var(--st-ausencia); }
+
+.grupo details.tambien, .columna details.tambien {
+  margin-top: .45rem; border-top: 1px solid var(--border); padding-top: .35rem;
+}
+.columna details.tambien summary {
+  cursor: pointer; font-size: .72rem; color: var(--muted); list-style: none;
+}
+.columna details.tambien summary::before { content: "▸ "; }
+.columna details.tambien[open] summary::before { content: "▾ "; }
+.columna details.tambien ul.miembros { margin-top: .25rem; }
+.columna .msg { font-size: .78rem; color: var(--muted); margin: 0; padding: .35rem 0; }
+
+.barra-cogido {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  background: #f6ece7; border: 1px solid var(--accent);
+  border-radius: var(--r); padding: .5rem .7rem; margin-bottom: .9rem;
+  font-size: .85rem;
+}
+
+@media (max-width: 640px) {
+  /* Sin arrastrar y con poco ancho, las columnas se apilan y se mueve tocando. */
+  .columnas { flex-wrap: wrap; overflow-x: visible; }
+  .columna { flex: 1 1 100%; max-width: none; }
+  ul.miembros.sueltos { grid-template-columns: 1fr; }
+  .toolbar .filtro-select { width: 100%; min-width: 0; }
+}

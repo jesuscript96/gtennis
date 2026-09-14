@@ -27,7 +27,12 @@ from .models import (
     VacacionesEntrenador,
 )
 from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion
-from .scope import coaches_del_entrenador, entrenadores_visibles, jugadores_visibles
+from .scope import (
+    coaches_del_entrenador,
+    coaches_visibles,
+    entrenadores_visibles,
+    jugadores_visibles,
+)
 from .serializers import (
     AvisoSerializer,
     CoachSerializer,
@@ -169,13 +174,161 @@ class JugadorViewSet(viewsets.ModelViewSet):
     ordering_fields = ["nombre", "edad"]
 
     def get_queryset(self):
-        base = Jugador.objects.filter(activo=True).select_related(
-            "division", "entrenador_responsable"
+        base = Jugador.objects.select_related(
+            "division", "entrenador_responsable", "escuela"
         )
+        # La lista enseña solo a los que están en activo, pero una ficha
+        # concreta se abre siempre: si no, al alumno que se dio de baja no hay
+        # manera de volver a darle de alta ni de corregirle nada — desaparece.
+        pide_todos = self.request.query_params.get("todos") in (
+            "1", "true", "si", "sí",
+        )
+        if self.action == "list" and not pide_todos:
+            base = base.filter(activo=True)
+        escuela = self.request.query_params.get("escuela")
+        if escuela == "sin":
+            base = base.filter(escuela__isnull=True)
+        elif escuela and escuela.isdigit():
+            base = base.filter(escuela_id=escuela)
         user = self.request.user
         if not user.is_authenticated:
             return base
         return jugadores_visibles(user, base=base)
+
+    DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
+
+    @action(detail=True, methods=["get"])
+    def agenda(self, request, pk=None):
+        """La agenda del propio alumno: lo que tiene hoy y lo que tiene esta
+        semana.
+
+        El entrenador abre a un jugador suyo y quiere saber cuándo entrena y
+        con quién, no solo qué franjas tiene declaradas. Si la semana ya está
+        generada se devuelve el cuadrante real (pista, hora, entrenador y
+        compañeros); si todavía no lo está, se devuelve lo previsto según su
+        horario, marcado como tal para no confundir una cosa con la otra.
+        """
+        from collections import defaultdict
+        from datetime import date, timedelta
+
+        from scheduling.models import Asignacion, AusenciaJugador, Semana
+
+        jugador = self.get_object()
+        try:
+            fecha = date.fromisoformat(request.query_params["fecha"])
+        except (KeyError, ValueError):
+            fecha = date.today()
+        lunes = fecha - timedelta(days=fecha.weekday())
+        semana = Semana.objects.filter(fecha_inicio=lunes).first()
+
+        sesiones = defaultdict(list)
+        if semana is not None:
+            mias = list(
+                Asignacion.objects.filter(semana=semana, jugador=jugador)
+                .select_related("turno", "pista", "pista__sede", "entrenador")
+                .order_by("dia", "turno__orden")
+            )
+            companeros = defaultdict(list)
+            if mias:
+                filtro = Q()
+                for a in mias:
+                    filtro |= Q(dia=a.dia, turno_id=a.turno_id, pista_id=a.pista_id)
+                for otro in (
+                    Asignacion.objects.filter(semana=semana).filter(filtro)
+                    .exclude(jugador=jugador).select_related("jugador")
+                ):
+                    companeros[(otro.dia, otro.turno_id, otro.pista_id)].append(
+                        otro.jugador.nombre
+                    )
+            for a in mias:
+                inicio, fin = a.turno.horas(lunes + timedelta(days=a.dia))
+                sesiones[a.dia].append({
+                    "turno": a.turno.codigo,
+                    "hora_inicio": inicio.strftime("%H:%M"),
+                    "hora_fin": fin.strftime("%H:%M"),
+                    "pista": a.pista.numero,
+                    "sede": a.pista.sede.nombre,
+                    "es_satelite": a.pista.sede.es_satelite,
+                    "entrenador": a.entrenador.nombre if a.entrenador_id else None,
+                    "estado": a.estado,
+                    "companeros": sorted(
+                        companeros.get((a.dia, a.turno_id, a.pista_id), [])
+                    ),
+                    "previsto": False,
+                })
+
+        # Lo previsto: su horario declarado, para los días que el cuadrante aún
+        # no cubre. Sin esto la pantalla sale vacía hasta que dirección genera
+        # la semana, que es justo cuando el entrenador la mira.
+        turnos = {t.id: t for t in Turno.objects.all()}
+        horario = {h.dia: h for h in jugador.horario.all()}
+        for d in range(6):
+            if sesiones[d]:
+                continue
+            fila = horario.get(d)
+            if fila is not None:
+                ids = [fila.turno_manana_id, fila.turno_tarde_id]
+            else:
+                ids = [jugador.turno_manana_id, jugador.turno_tarde_id]
+            dia_fecha = lunes + timedelta(days=d)
+            for tid in ids:
+                t = turnos.get(tid)
+                if t is None:
+                    continue
+                inicio, fin = t.horas(dia_fecha)
+                sesiones[d].append({
+                    "turno": t.codigo,
+                    "hora_inicio": inicio.strftime("%H:%M"),
+                    "hora_fin": fin.strftime("%H:%M"),
+                    "pista": None, "sede": None, "es_satelite": False,
+                    "entrenador": None, "estado": None, "companeros": [],
+                    "previsto": True,
+                })
+
+        bajas = list(
+            AusenciaJugador.objects.filter(
+                jugador=jugador,
+                fecha_inicio__lte=lunes + timedelta(days=5),
+                fecha_fin__gte=lunes,
+            )
+        )
+        hoy = date.today()
+        dias = []
+        for d in range(6):
+            dia_fecha = lunes + timedelta(days=d)
+            baja = next(
+                (b for b in bajas if b.fecha_inicio <= dia_fecha <= b.fecha_fin), None
+            )
+            dias.append({
+                "dia": d,
+                "nombre": self.DIAS_SEMANA[d],
+                "fecha": dia_fecha,
+                "es_hoy": dia_fecha == hoy,
+                "sesiones": sesiones[d],
+                "alta": jugador.en_alta(dia_fecha),
+                "ausencia": None if baja is None else {
+                    "estado": baja.get_estado_display(),
+                    "ambito": baja.get_ambito_display(),
+                    "nota": baja.nota,
+                },
+            })
+        return Response({
+            "jugador": {
+                "id": jugador.id,
+                "nombre": jugador.nombre,
+                "division": jugador.division.nivel if jugador.division_id else None,
+                "escuela": jugador.escuela.nombre if jugador.escuela_id else None,
+                "fecha_alta": jugador.fecha_alta,
+            },
+            "fecha": fecha,
+            "hay_semana": semana is not None,
+            "semana": None if semana is None else {
+                "fecha_inicio": semana.fecha_inicio,
+                "estado": semana.estado,
+            },
+            "hoy": next((d for d in dias if d["es_hoy"]), None),
+            "dias": dias,
+        })
 
     def perform_destroy(self, instance):
         self._assert_direccion()
@@ -729,3 +882,209 @@ class MiAgendaViewSet(viewsets.ViewSet):
         ent = self._entrenador()
         ent.vacaciones.filter(pk=pk).delete()
         return Response(status=204)
+
+
+class GrupoViewSet(viewsets.ViewSet):
+    """Los grupos de entrenamiento: cada entrenador con los alumnos que lleva.
+
+    El grupo de alguien son los alumnos de los que es RESPONSABLE
+    (`Jugador.entrenador_responsable`): su sub-columna del organigrama, la
+    gente por la que responde. Eso es lo que dirección reparte y lo que se
+    edita aquí.
+
+    Aparte están los vínculos de `ResponsableJugador`, que son más anchos: el
+    reparto va por bloques y todos los entrenadores capacitados para una
+    división pueden entrenar a sus alumnos. Esos salen aparte, en "también
+    entrena", porque si se mezclan con los propios todos los grupos de un mismo
+    bloque parecen el mismo grupo repetido.
+
+    Los bloques (Dani Gimeno, Pablo Gil, Santi Panzarasa…) son los `Coach`.
+    """
+
+    # El organigrama es cosa de dirección y de los coaches (que ven el suyo).
+    # El entrenador no reorganiza a nadie: lo suyo son sus jugadores.
+    permission_classes = [DireccionOrCoachWrite]
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if not (request.user.is_superadmin or _coach_activo(request.user)):
+            raise PermissionDenied(
+                "Los grupos los ve la dirección deportiva y los coaches."
+            )
+
+    def _ficha(self, j, grupo_de=None):
+        return {
+            "id": j.id,
+            "nombre": j.nombre,
+            "division": j.division.nivel if j.division_id else None,
+            "escuela": j.escuela.nombre if j.escuela_id else None,
+            "foto": j.foto_url or "",
+            # En "también entrena": de quién es en realidad este alumno.
+            "grupo_de": grupo_de,
+        }
+
+    def _assert_direccion(self):
+        if not self.request.user.is_superadmin:
+            raise PermissionDenied(
+                "Solo la dirección deportiva reorganiza los grupos."
+            )
+
+    def list(self, request):
+        from collections import defaultdict
+
+        entrenadores = list(
+            entrenadores_visibles(request.user)
+            .filter(activo=True)
+            .prefetch_related("divisiones_habilitadas", "coaches")
+            .order_by("nombre")
+        )
+        ids = {e.id for e in entrenadores}
+        nombres = {e.id: e.nombre for e in entrenadores}
+        jugadores = {
+            j.id: j
+            for j in jugadores_visibles(
+                request.user,
+                base=Jugador.objects.filter(activo=True).select_related(
+                    "division", "escuela"
+                ),
+            )
+        }
+
+        propios = defaultdict(list)
+        for j in sorted(jugadores.values(), key=lambda x: x.nombre):
+            if j.entrenador_responsable_id in ids:
+                propios[j.entrenador_responsable_id].append(self._ficha(j))
+
+        tambien = defaultdict(list)
+        for rj in ResponsableJugador.objects.filter(
+            activo=True, entrenador_id__in=ids, jugador_id__in=jugadores
+        ).order_by("jugador__nombre"):
+            j = jugadores[rj.jugador_id]
+            if j.entrenador_responsable_id == rj.entrenador_id:
+                continue  # ya está en su grupo propio
+            tambien[rj.entrenador_id].append(self._ficha(
+                j, grupo_de=nombres.get(j.entrenador_responsable_id),
+            ))
+
+        por_bloque = defaultdict(list)
+        for e in entrenadores:
+            coach = e.coaches.filter(activo=True).first()
+            niveles = sorted(e.divisiones_habilitadas.values_list("nivel", flat=True))
+            por_bloque[coach.id if coach else None].append({
+                "entrenador": {
+                    "id": e.id,
+                    "nombre": e.nombre,
+                    "foto": e.foto_url or "",
+                    "divisiones": "Todas" if not niveles else ", ".join(
+                        f"D{n}" for n in niveles
+                    ),
+                },
+                "jugadores": propios[e.id],
+                "tambien": tambien[e.id],
+            })
+
+        # Se devuelven TODOS los bloques, también los que se han quedado sin
+        # entrenadores: si no, no habría dónde soltar al que se arrastra.
+        coaches = coaches_visibles(request.user).order_by("nombre")
+        bloques = [
+            {
+                "coach": {"id": c.id, "nombre": c.nombre},
+                "grupos": por_bloque.get(c.id, []),
+            }
+            for c in coaches
+        ]
+        bloques.append({"coach": None, "grupos": por_bloque.get(None, [])})
+
+        sin_grupo = [
+            self._ficha(j) for j in sorted(jugadores.values(), key=lambda x: x.nombre)
+            if j.entrenador_responsable_id not in ids
+        ]
+        return Response({
+            "bloques": bloques,
+            "sin_grupo": sin_grupo,
+            "entrenadores": [{"id": e.id, "nombre": e.nombre} for e in entrenadores],
+            "puede_editar": bool(request.user.is_superadmin),
+        })
+
+    def _jugador(self, request):
+        jugador = Jugador.objects.filter(pk=request.data.get("jugador")).first()
+        if jugador is None:
+            raise NotFound("Ese jugador no existe.")
+        return jugador
+
+    def _entrenador(self, request, obligatorio=True):
+        valor = request.data.get("entrenador")
+        if valor in (None, "", "null"):
+            if obligatorio:
+                raise NotFound("Falta el entrenador.")
+            return None
+        ent = Entrenador.objects.filter(pk=valor).first()
+        if ent is None:
+            raise NotFound("Ese entrenador no existe.")
+        return ent
+
+    @action(detail=False, methods=["post"])
+    def mover(self, request):
+        """Mete al alumno en el grupo de este entrenador: pasa a ser su
+        responsable. El entrenador de antes deja de responder por él, pero si
+        sigue en su bloque puede seguir entrenándole (queda en "también")."""
+        self._assert_direccion()
+        jugador, entrenador = self._jugador(request), self._entrenador(request)
+        # Quien responde por un alumno tiene que poder entrenarle: el vínculo
+        # de bloque se crea si no estaba.
+        ResponsableJugador.objects.get_or_create(
+            jugador=jugador, entrenador=entrenador,
+            defaults={"prioridad": 1, "activo": True},
+        )
+        jugador.entrenador_responsable = entrenador
+        jugador.save(update_fields=["entrenador_responsable"])
+        return Response({"ok": True})
+
+    @action(detail=False, methods=["post"])
+    def anadir(self, request):
+        """Añade al alumno como "también le entrena", sin sacarlo de su grupo."""
+        self._assert_direccion()
+        jugador, entrenador = self._jugador(request), self._entrenador(request)
+        ResponsableJugador.objects.get_or_create(
+            jugador=jugador, entrenador=entrenador,
+            defaults={"prioridad": 1, "activo": True},
+        )
+        return Response({"ok": True})
+
+    @action(detail=False, methods=["post"])
+    def mover_entrenador(self, request):
+        """Cambia a un entrenador de bloque: pasa al equipo de ese coach.
+
+        Sus alumnos van con él —siguen siendo suyos— así que la columna entera
+        se muda de sitio. Lo que NO cambia son las divisiones que está
+        capacitado para entrenar: eso se decide aparte, en su ficha.
+
+        Sin `coach`, se queda fuera de todos los bloques (independiente).
+        """
+        self._assert_direccion()
+        ent = self._entrenador(request)
+        destino = request.data.get("coach")
+        coach = None
+        if destino not in (None, "", "null"):
+            coach = Coach.objects.filter(pk=destino).first()
+            if coach is None:
+                raise NotFound("Ese coach no existe.")
+        for c in ent.coaches.all():
+            c.entrenadores.remove(ent)
+        if coach is not None:
+            coach.entrenadores.add(ent)
+        return Response({"ok": True})
+
+    @action(detail=False, methods=["post"])
+    def quitar(self, request):
+        """Este entrenador deja de llevar a este alumno: ni responsable ni
+        vínculo de entreno. Si era su grupo, el alumno se queda sin asignar."""
+        self._assert_direccion()
+        jugador, entrenador = self._jugador(request), self._entrenador(request)
+        ResponsableJugador.objects.filter(
+            jugador=jugador, entrenador=entrenador
+        ).delete()
+        if jugador.entrenador_responsable_id == entrenador.id:
+            jugador.entrenador_responsable = None
+            jugador.save(update_fields=["entrenador_responsable"])
+        return Response({"ok": True})

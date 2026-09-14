@@ -55,24 +55,33 @@ export const RESOURCES = {
     singular: "jugador",
     search: true,
     numbered: true,
+    filters: [
+      { name: "escuela", label: "Escuela", type: "fk", endpoint: "escuelas", optionLabel: (o) => o.nombre, todas: "Todas las escuelas", extra: [{ value: "sin", label: "Sin escuela" }] },
+      { name: "todos", label: "Ver también los dados de baja", type: "bool", value: "1" },
+    ],
     columns: [
       { key: "codigo_cliente", label: "Cód.", render: (v) => v ?? "—" },
       { key: "nombre", label: "Nombre" },
-      { key: "categoria", label: "Categoría", render: (v) => (v === "PROFESIONAL" ? "Profesional" : v === "ALTO_RENDIMIENTO" ? "Alto rend." : "—") },
-      { key: "edad", label: "Edad" },
+      // La edad sale de la fecha de nacimiento; se enseñan las dos porque
+      // todavía hay alumnos antiguos de los que solo consta el número.
+      { key: "edad", label: "Edad", render: (v, row) => (row.fecha_nacimiento ? `${v ?? "—"} · ${fmtFecha(row.fecha_nacimiento)}` : v ?? "—") },
       { key: "es_menor", label: "Menor", type: "bool" },
       { key: "escuela_nombre", label: "Escuela", render: (v) => v || "—" },
       { key: "division_nivel", label: "Div", render: (v) => (v ? `D${v}` : "—") },
       { key: "entrenador_nombre", label: "Responsable", render: (v) => v || "—" },
+      { key: "fecha_alta", label: "Alta", render: (v) => (v ? fmtFecha(v) : "—") },
       { key: "activo", label: "Activo", type: "bool" },
     ],
     fields: [
       { name: "nombre", label: "Nombre", type: "text", required: true },
       { name: "codigo_cliente", label: "Código de cliente (TPC/Drive)", type: "number" },
-      { name: "escuela", label: "Escuela", type: "fk", endpoint: "escuelas", optionLabel: (o) => o.nombre },
-      { name: "edad", label: "Edad", type: "number" },
+      { name: "escuela", label: "Escuela", type: "fk", endpoint: "escuelas", optionLabel: (o) => o.nombre, help: "Alto Rendimiento, Junior Program o Escuela. Se puede cambiar en cualquier momento." },
+      // La edad se calcula sola a partir de la fecha; no se teclea.
+      { name: "fecha_nacimiento", label: "Fecha de nacimiento", type: "date", help: "La edad se calcula sola." },
       { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel },
       { name: "entrenador_responsable", label: "Entrenador responsable (principal)", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre },
+      { name: "fecha_alta", label: "Fecha de alta", type: "date", help: "El día que empieza a entrenar. Hasta esa fecha no entra en los entrenamientos. Vacío = desde siempre." },
+      { name: "fecha_baja", label: "Fecha de baja", type: "date", help: "Último día que entrena. Vacío = sigue en activo." },
       { name: "consentimiento_rgpd", label: "Consentimiento RGPD (datos de salud)", type: "bool" },
       { name: "foto_url", label: "Foto (URL en storage UE)", type: "text" },
       { name: "notas", label: "Notas", type: "text" },
@@ -86,14 +95,21 @@ export const RESOURCES = {
         },
       },
       {
-        label: "Movimiento",
+        // Ojo: esto NO cambia la escuela, solo avisa a dirección. Cambiarla se
+        // hace en Editar. El botón se llamaba "Movimiento" y se confundía con
+        // el cambio de verdad.
+        label: "Avisar",
         onClick: async (row) => {
-          const escuela = window.prompt(`#4 · ¿En qué escuela/grupo has visto a ${row.nombre}?`);
+          const escuela = window.prompt(
+            `¿En qué escuela o grupo has visto a ${row.nombre}?\n\n` +
+            "Esto solo avisa a dirección; NO le cambia la escuela. Para " +
+            "cambiársela, usa Editar."
+          );
           if (escuela === null) return;
           const nota = window.prompt("Nota (opcional):") || "";
           try {
             const r = await resource("jugadores").action(row.id, "reportar_movimiento", { escuela_observada: escuela, nota });
-            window.alert(`Aviso de movimiento enviado a dirección (${r.avisos_creados} aviso/s).`);
+            window.alert(`Aviso enviado a dirección (${r.avisos_creados} aviso/s). La escuela no ha cambiado.`);
           } catch (e) {
             window.alert(String(e.message || e));
           }

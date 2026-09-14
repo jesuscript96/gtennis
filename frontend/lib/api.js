@@ -159,6 +159,27 @@ export const delMiAusencia = (id, de) =>
   req(`/mi-agenda/ausencias/${id}/${q(de)}`, { method: "DELETE" });
 export const getEntrenadoresAgenda = () => req("/mi-agenda/entrenadores/");
 
+// --- Agenda del propio alumno (lo que ve su entrenador) --------------------
+// Lo que tiene hoy y lo que tiene esta semana: pista, hora, entrenador y con
+// quién. Si la semana aún no está generada devuelve lo previsto por su horario.
+export const getAgendaJugador = (id, fecha) =>
+  req(`/jugadores/${id}/agenda/${fecha ? `?fecha=${fecha}` : ""}`);
+
+// --- Grupos de entrenamiento (entrenador ↔ alumnos) ------------------------
+export const getGrupos = () => req("/grupos/");
+export const grupoAnadir = (jugador, entrenador) =>
+  req("/grupos/anadir/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
+export const grupoQuitar = (jugador, entrenador) =>
+  req("/grupos/quitar/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
+// Mover = este entrenador pasa a responder por el alumno.
+export const grupoMover = (jugador, entrenador) =>
+  req("/grupos/mover/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
+// Mover un entrenador de bloque: se lleva a sus alumnos con él.
+export const grupoMoverEntrenador = (entrenador, coach) =>
+  req("/grupos/mover_entrenador/", {
+    method: "POST", body: JSON.stringify({ entrenador, coach }),
+  });
+
 // --- Ausencias de jugador por rango de fechas ------------------------------
 export const getAusenciasFechas = async (jugador) =>
   rows(await req(`/ausencias-fechas/${jugador ? `?jugador=${jugador}` : ""}`));

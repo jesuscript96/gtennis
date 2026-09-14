@@ -156,6 +156,10 @@ class Command(BaseCommand):
         altas_e, altas_j, sin_div, redivs, resp_nuevos = [], [], [], [], []
         capacidades = defaultdict(set)
         vistos = set()
+        # Cuántos alumnos lleva ya cada entrenador como responsable de ficha.
+        # Sirve para repartir la sub-columna en partes iguales cuando la firman
+        # varios (Javi / Blas / Emilio) en vez de cargárselos todos al primero.
+        carga = defaultdict(int)
 
         for bloque in BLOQUES:
             head = bloque["head"]
@@ -204,10 +208,25 @@ class Command(BaseCommand):
                     actual = jug.division.nivel if jug.division else None
                     if actual != div:
                         redivs.append((jug.nombre, actual, div))
+                    # Responsable de ficha: uno solo, el de su sub-columna. Es
+                    # el grupo al que pertenece el alumno y quien responde por
+                    # él; si la columna la firman varios, se reparten.
+                    dueno = None
+                    candidatos = [
+                        e for e in (self._buscar(Entrenador, c, eidx) for c in sorted(cols))
+                        if e is not None
+                    ]
+                    if candidatos:
+                        dueno = min(candidatos, key=lambda e: (carga[e.pk], e.nombre))
+                        carga[dueno.pk] += 1
                     if not seco:
                         jug.division = divs.get(div)
                         jug.activo = True
-                        jug.save(update_fields=["division", "activo"])
+                        if dueno is not None:
+                            jug.entrenador_responsable = dueno
+                        jug.save(update_fields=[
+                            "division", "activo", "entrenador_responsable",
+                        ])
                         # Administración: TODO el bloque, sin pesos.
                         ResponsableJugador.objects.filter(jugador=jug).delete()
                         for cn in sorted(plantel):

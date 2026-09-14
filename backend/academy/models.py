@@ -280,9 +280,23 @@ class Jugador(models.Model):
     categoria = models.CharField(
         max_length=20, choices=Categoria.choices, blank=True
     )
-    edad = models.PositiveSmallIntegerField(null=True, blank=True)
+    # La fecha de nacimiento es el dato que se teclea; la edad se recalcula
+    # sola en cada `save()` y se guarda para poder filtrar y ordenar por ella.
+    # Se mantiene escribible porque de los alumnos antiguos solo consta la edad.
     fecha_nacimiento = models.DateField(null=True, blank=True)
+    edad = models.PositiveSmallIntegerField(null=True, blank=True)
     es_menor = models.BooleanField(default=False)
+    # Día exacto en que el alumno entra en la academia. Hay altas a mitad de
+    # mes ("entra el 16") y hasta ese día el motor no debe meterlo en ningún
+    # entrenamiento. Vacío = ya estaba, entra desde siempre.
+    fecha_alta = models.DateField(
+        null=True, blank=True, verbose_name="Fecha de alta",
+        help_text="Desde qué día entra en los entrenamientos. Vacío = desde siempre.",
+    )
+    fecha_baja = models.DateField(
+        null=True, blank=True, verbose_name="Fecha de baja",
+        help_text="Último día que entrena. Vacío = sigue en activo.",
+    )
     email = models.EmailField(blank=True)
     telefono = models.CharField(max_length=60, blank=True)
     # GDPR Art. 9 + minors: explicit consent required to store health states.
@@ -353,6 +367,18 @@ class Jugador(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    def en_alta(self, fecha):
+        """¿Está este jugador dado de alta el día `fecha`?
+
+        El alta a mitad de mes es lo normal en la academia: el alumno figura ya
+        en la ficha pero no debe salir en el cuadrante hasta el día que empieza.
+        """
+        if self.fecha_alta is not None and fecha < self.fecha_alta:
+            return False
+        if self.fecha_baja is not None and fecha > self.fecha_baja:
+            return False
+        return True
 
     def repartir_porcentajes(self):
         """Reparte el % objetivo por rol (#12): el grupo PRINCIPAL (prioridad 1,

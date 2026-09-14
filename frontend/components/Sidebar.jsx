@@ -24,6 +24,7 @@ const SECTIONS = [
   ] },
   { title: "Datos", items: [
     ["/jugadores", "Jugadores"],
+    ["/grupos", "Grupos", "direccion"],
     ["/entrenadores", "Entrenadores", "coach"],
     ["/coaches", "Coaches", "direccion"],
     ["/escuelas", "Escuelas", "direccion"],

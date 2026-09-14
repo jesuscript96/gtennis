@@ -121,7 +121,11 @@ class JugadorSerializer(serializers.ModelSerializer):
             "consentimiento_rgpd", "division", "division_nivel",
             "entrenador_responsable", "entrenador_nombre", "escuela",
             "escuela_nombre", "foto_url", "activo", "notas",
+            "fecha_alta", "fecha_baja",
         ]
+        # `edad` sigue siendo escribible por los alumnos antiguos de los que
+        # solo consta el número, pero en cuanto hay `fecha_nacimiento` manda la
+        # fecha: `Jugador.save` recalcula la edad en cada guardado.
 
 
 class HorarioJugadorSerializer(serializers.ModelSerializer):

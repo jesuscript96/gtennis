@@ -32,7 +32,7 @@ function toBody(fields, form) {
     else if (fl.type === "mfk") v = Array.isArray(v) ? v.map(Number) : [];
     else if (fl.type === "multiselect") v = Array.isArray(v) ? v : [];
     else if (fl.type === "select") v = v === "" || v == null ? null : fl.numeric ? Number(v) : v;
-    else if (fl.type === "time") v = v === "" || v == null ? null : v;
+    else if (fl.type === "time" || fl.type === "date") v = v === "" || v == null ? null : v;
     body[fl.name] = v;
   }
   return body;
@@ -45,19 +45,27 @@ export default function ResourceCrud({ config }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  const [filtros, setFiltros] = useState({});
   const [fkOptions, setFkOptions] = useState({});
+  const [filterOptions, setFilterOptions] = useState({});
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  async function load() {
+  async function load(filtrosAhora = filtros) {
     setLoading(true);
     setError(null);
     try {
-      const q = config.search && search ? `?search=${encodeURIComponent(search)}` : "";
-      setItems(await api.list(q));
+      const p = new URLSearchParams();
+      if (config.search && search) p.set("search", search);
+      for (const f of config.filters || []) {
+        const v = filtrosAhora[f.name];
+        if (v !== undefined && v !== "" && v !== false) p.set(f.name, v === true ? (f.value ?? "1") : v);
+      }
+      const q = p.toString();
+      setItems(await api.list(q ? `?${q}` : ""));
     } catch (e) {
       setError(String(e.message || e));
     } finally {
@@ -72,8 +80,20 @@ export default function ResourceCrud({ config }) {
     Promise.all(
       fks.map((f) => resource(f.endpoint).list().then((rows) => [f.name, rows]).catch(() => [f.name, []]))
     ).then((pairs) => setFkOptions(Object.fromEntries(pairs)));
+    const filtrosFk = (config.filters || []).filter((f) => f.type === "fk");
+    Promise.all(
+      filtrosFk.map((f) => resource(f.endpoint).list().then((rows) => [f.name, rows]).catch(() => [f.name, []]))
+    ).then((pairs) => setFilterOptions(Object.fromEntries(pairs)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.endpoint]);
+
+  // Los filtros recargan solos: obligar a pulsar "Buscar" después de elegir
+  // una escuela es un paso que nadie entiende.
+  function cambiarFiltro(nombre, valor) {
+    const siguiente = { ...filtros, [nombre]: valor };
+    setFiltros(siguiente);
+    load(siguiente);
+  }
 
   function openNew() {
     setEditing(null);
@@ -128,16 +148,47 @@ export default function ResourceCrud({ config }) {
 
       {config.help && <p className="help">{config.help}</p>}
 
-      {config.search && (
+      {(config.search || config.filters) && (
         <div className="toolbar">
-          <input
-            className="search"
-            placeholder="Buscar…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && load()}
-          />
-          <button className="btn ghost sm" onClick={load}>Buscar</button>
+          {config.search && (
+            <>
+              <input
+                className="search"
+                placeholder="Buscar…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && load()}
+              />
+              <button className="btn ghost sm" onClick={() => load()}>Buscar</button>
+            </>
+          )}
+          {(config.filters || []).map((f) => (
+            f.type === "bool" ? (
+              <label key={f.name} className="check filtro-check">
+                <input
+                  type="checkbox"
+                  checked={!!filtros[f.name]}
+                  onChange={(e) => cambiarFiltro(f.name, e.target.checked)}
+                />
+                {f.label}
+              </label>
+            ) : (
+              <select
+                key={f.name}
+                className="filtro-select"
+                value={filtros[f.name] ?? ""}
+                onChange={(e) => cambiarFiltro(f.name, e.target.value)}
+              >
+                <option value="">{f.todas || `Todas · ${f.label}`}</option>
+                {(filterOptions[f.name] || []).map((o) => (
+                  <option key={o.id} value={o.id}>{f.optionLabel(o)}</option>
+                ))}
+                {(f.extra || []).map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            )
+          ))}
         </div>
       )}
 
@@ -236,6 +287,7 @@ function Field({ field, value, options, onChange }) {
             <option key={o.id} value={o.id}>{field.optionLabel(o)}</option>
           ))}
         </select>
+        {field.help && <small className="mfk-help">{field.help}</small>}
       </label>
     );
   }
@@ -327,6 +379,7 @@ function Field({ field, value, options, onChange }) {
         required={field.required}
         onChange={(e) => onChange(e.target.value)}
       />
+      {field.help && <small className="mfk-help">{field.help}</small>}
     </label>
   );
 }

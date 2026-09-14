@@ -8,7 +8,7 @@ Reglas:
 """
 from django.db.models import Q
 
-from .models import Entrenador, Jugador
+from .models import Coach, Entrenador, Jugador
 
 
 def _coach(user):
@@ -28,6 +28,16 @@ def entrenadores_visibles(user):
     # Un entrenador ve a los demás (necesario para selects/cuadrante); el filtro
     # fuerte es sobre jugadores, no sobre la lista de entrenadores.
     return qs if ent is not None else qs.none()
+
+
+def coaches_visibles(user):
+    """Queryset de Coach (bloques) que `user` puede ver: dirección los ve
+    todos; un coach, el suyo."""
+    qs = Coach.objects.filter(activo=True)
+    if user.is_superadmin:
+        return qs
+    coach = _coach(user)
+    return qs.filter(pk=coach.pk) if coach else qs.none()
 
 
 def jugadores_visibles(user, base=None):
