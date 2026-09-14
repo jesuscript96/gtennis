@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getAgendaJugador, resource } from "../lib/api";
+import CalendarioAusencias from "./CalendarioAusencias";
 import PanelTurnos from "./PanelTurnos";
 
 /**
@@ -72,9 +73,13 @@ export default function MisJugadores() {
 
                   <PanelTurnos jugador={j} onGuardado={actualizar} compacto />
 
+                  <div className="bloque-faltas">
+                    <h3>Faltas</h3>
+                    <CalendarioAusencias jugador={j} />
+                  </div>
+
                   <div className="accesos">
-                    <Link href={`/ausencias-fechas?jugador=${j.id}`}>Declarar una baja</Link>
-                    <Link href={`/ausencias?jugador=${j.id}`}>Ausencia de esta semana</Link>
+                    <Link href={`/ausencias?jugador=${j.id}`}>Parte de esta semana</Link>
                   </div>
                 </div>
               )}

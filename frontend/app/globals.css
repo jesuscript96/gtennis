@@ -986,12 +986,33 @@ body.arrastrando * { cursor: grabbing !important; }
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* Papelera: solo existe mientras se arrastra un entrenador. */
+/* Flotante, nunca en el flujo: si empujara la página, el sitio al que apuntas
+   se movería justo al empezar a arrastrar. */
+.zona-quitar {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60; max-width: 300px;
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  border: 2px dashed var(--st-ausencia); border-radius: var(--r);
+  background: #fdf2f2; color: var(--st-ausencia);
+  padding: .6rem .8rem; font-size: .82rem;
+  box-shadow: 0 8px 24px rgba(31,30,29,.14);
+}
+.zona-quitar.encima { background: #f8dcdc; }
+/* Mientras se lleva un entrenador, el bloque entero es el destino: se marca
+   la cabecera, que es donde hay que soltar (encima de una columna no cuenta). */
+.grupos .bloque.esperando .bloque-head {
+  outline: 2px dashed var(--border-strong); outline-offset: 4px; border-radius: 6px;
+}
+.grupos .bloque.encima .bloque-head { outline-color: var(--accent); }
+
+/* Misma razón que la papelera: flota, no empuja. */
 .barra-cogido {
-  position: sticky; top: 0; z-index: 10;
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px;
+  z-index: 60; max-width: min(560px, 92vw);
   display: flex; align-items: center; justify-content: space-between; gap: .8rem;
   background: #f6ece7; border: 1px solid var(--accent);
-  border-radius: var(--r); padding: .5rem .7rem; margin-bottom: .9rem;
-  font-size: .85rem;
+  border-radius: var(--r); padding: .5rem .7rem;
+  font-size: .85rem; box-shadow: 0 8px 24px rgba(31,30,29,.14);
 }
 
 @media (max-width: 640px) {
@@ -1001,3 +1022,79 @@ body.arrastrando * { cursor: grabbing !important; }
   ul.miembros.sueltos { grid-template-columns: 1fr; }
   .toolbar .filtro-select { width: 100%; min-width: 0; }
 }
+
+/* ---- Calendario de faltas del alumno ---- */
+.bloque-faltas { margin-top: 1rem; }
+.bloque-faltas h3, .agenda-jugador h3 {
+  margin: 0 0 .4rem; font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--muted); font-weight: 600;
+}
+.calendario-ausencias {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: .7rem .75rem;
+}
+.cal-head {
+  display: flex; align-items: center; justify-content: center; gap: .8rem;
+  margin-bottom: .5rem; font-size: .9rem; text-transform: capitalize;
+}
+.cal-nav {
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 6px; width: 1.7rem; height: 1.7rem; cursor: pointer;
+  font-size: 1rem; line-height: 1; color: var(--text);
+}
+.cal-rejilla {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+  user-select: none;
+}
+.cal-dow {
+  text-align: center; font-size: .66rem; color: var(--muted);
+  font-weight: 600; padding-bottom: .2rem;
+}
+.cal-dia {
+  position: relative; aspect-ratio: 1 / 1; min-height: 2rem;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer; font: inherit; font-size: .78rem;
+  color: var(--text); padding: 0;
+}
+.cal-dia.vacio { background: none; border-color: transparent; cursor: default; }
+.cal-dia.domingo { color: var(--muted); background: var(--surface-2); }
+.cal-dia.hoy { border-color: var(--accent); font-weight: 700; }
+.cal-dia.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cal-dia:hover:not(.vacio):not(.sel) { border-color: var(--border-strong); }
+.cal-dia .marcas { display: flex; gap: 2px; height: 4px; }
+.cal-dia .marca { width: 4px; height: 4px; border-radius: 50%; display: block; }
+.cal-dia .marca.llena { width: 10px; border-radius: 2px; }
+.cal-dia.sel .marca { outline: 1px solid #fff; }
+
+.cal-leyenda {
+  margin: .45rem 0 0; font-size: .7rem; color: var(--muted);
+  display: flex; align-items: center; gap: .3rem;
+}
+.cal-leyenda .marca {
+  width: 4px; height: 4px; border-radius: 50%; background: var(--muted);
+  display: inline-block; margin-left: .35rem;
+}
+.cal-leyenda .marca.llena { width: 10px; border-radius: 2px; }
+
+.cal-declarar { margin-top: .6rem; }
+.cal-resumen { margin: 0 0 .3rem; font-size: .82rem; }
+.cal-declarar .fila-form { margin: 0 0 .5rem; }
+.cal-acciones { display: flex; gap: .5rem; align-items: center; }
+.calendario-ausencias .hint { margin: .6rem 0 0; }
+
+ul.cal-lista {
+  list-style: none; margin: .7rem 0 0; padding: .6rem 0 0;
+  border-top: 1px solid var(--border); display: grid; gap: .2rem;
+}
+ul.cal-lista > li {
+  display: flex; align-items: center; gap: .45rem; font-size: .78rem;
+}
+ul.cal-lista .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+ul.cal-lista .cuando { font-weight: 600; white-space: nowrap; }
+ul.cal-lista .que { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.cal-lista .quitar {
+  margin-left: auto; background: none; border: 0; cursor: pointer;
+  color: var(--border-strong); padding: .1rem .3rem; border-radius: 5px;
+}
+ul.cal-lista .quitar:hover { color: var(--st-ausencia); background: var(--surface); }

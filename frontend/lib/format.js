@@ -18,3 +18,13 @@ export const SUPERFICIE_LABEL = { TIERRA: "Tierra batida", RESINA: "Resina" };
 export const SUPERFICIE_SHORT = { TIERRA: "Tierra", RESINA: "Resina" };
 // Color de la superficie (arcilla vs azul resina). Independiente de estados.
 export const SUPERFICIE_COLOR = { TIERRA: "#B65C3A", RESINA: "#3B6EA5" };
+
+// Estados de la matriz del PRD, con los colores del Excel de la academia.
+export const ESTADO_COLOR = {
+  DISPONIBLE: "#1f9d57", AUSENCIA_JUGADOR: "#d33b3b", CALENTAMIENTO: "#c08a00",
+  EN_TORNEO: "#d9772b", CLIMATOLOGIA: "#2f7fd1", AUSENCIA_COACH: "#7b54e0",
+};
+export const ESTADO_LABEL = {
+  DISPONIBLE: "Disponible", AUSENCIA_JUGADOR: "Ausencia", CALENTAMIENTO: "Calentamiento",
+  EN_TORNEO: "En torneo", CLIMATOLOGIA: "Lluvia", AUSENCIA_COACH: "Sin coach",
+};

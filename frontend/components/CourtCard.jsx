@@ -1,16 +1,9 @@
 "use client";
 
 import Avatar from "./Avatar";
-import { SUPERFICIE_COLOR, SUPERFICIE_SHORT } from "../lib/format";
-
-const ESTADO_COLOR = {
-  DISPONIBLE: "#1f9d57", AUSENCIA_JUGADOR: "#d33b3b", CALENTAMIENTO: "#c08a00",
-  EN_TORNEO: "#d9772b", CLIMATOLOGIA: "#2f7fd1", AUSENCIA_COACH: "#7b54e0",
-};
-const ESTADO_LABEL = {
-  DISPONIBLE: "Disponible", AUSENCIA_JUGADOR: "Ausencia", CALENTAMIENTO: "Calentamiento",
-  EN_TORNEO: "En torneo", CLIMATOLOGIA: "Lluvia", AUSENCIA_COACH: "Sin coach",
-};
+import {
+  ESTADO_COLOR, ESTADO_LABEL, SUPERFICIE_COLOR, SUPERFICIE_SHORT,
+} from "../lib/format";
 
 const first = (n) => (n || "").split(" ")[0];
 

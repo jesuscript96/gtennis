@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getGrupos, grupoMover, grupoMoverEntrenador, grupoQuitar,
+  getGrupos, grupoMover, grupoMoverEntrenador, grupoQuitar, resource,
 } from "../../../lib/api";
 
 /**
@@ -38,6 +38,10 @@ export default function Page() {
   const [cogido, setCogido] = useState(null);
   const [encima, setEncima] = useState(null);
   const [fantasma, setFantasma] = useState(null);
+  // Se arrastra con el puntero (true) o se ha cogido tocando (false). Importa
+  // porque los botones "Traer aquí" solo valen para el toque: si salieran
+  // mientras se arrastra, empujarían la página y el destino se movería.
+  const [arrastrando, setArrastrando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const arrastre = useRef(null);
   // Los manejadores de ventana viven en el efecto (necesitan `soltarEn`), pero
@@ -60,6 +64,7 @@ export default function Page() {
     setCogido(null);
     setEncima(null);
     setFantasma(null);
+    setArrastrando(false);
     document.body.classList.remove("arrastrando");
   }, []);
 
@@ -93,6 +98,18 @@ export default function Page() {
         `${q.nombre} pasa al grupo de ${zona.nombre}.`
       );
     }
+    if (zona.quitar) {
+      if (!window.confirm(
+        `¿Quitar a ${q.nombre} de la lista de grupos?\n\n` +
+        "Deja de estar activo: no entra en el reparto ni sale aquí. Sus " +
+        "alumnos se quedan sin responsable hasta que los lleves a otro grupo. " +
+        "Se puede volver a activar desde Entrenadores."
+      )) return;
+      return accion(
+        () => resource("entrenadores").update(q.id, { activo: false }),
+        `${q.nombre} fuera de la lista de grupos.`
+      );
+    }
     if (zona.coach === q.desde) return;
     return accion(
       () => grupoMoverEntrenador(q.id, zona.coach),
@@ -106,7 +123,15 @@ export default function Page() {
   // Zona de destino bajo el cursor, de las que aceptan lo que se lleva.
   function zonaEn(x, y, tipo) {
     const el = document.elementFromPoint(x, y);
-    const destino = el && el.closest(`[data-zona="${tipo}"]`);
+    if (!el) return null;
+    if (tipo === "entrenador") {
+      // Soltar a un entrenador encima de otra columna no hace nada: se queda
+      // en la suya. Solo cuentan el bloque y la zona de quitar.
+      const papelera = el.closest('[data-zona="quitar"]');
+      if (papelera) return { clave: "quitar", quitar: true };
+      if (el.closest(".columna")) return null;
+    }
+    const destino = el.closest(`[data-zona="${tipo}"]`);
     if (!destino) return null;
     const d = destino.dataset;
     return {
@@ -126,6 +151,7 @@ export default function Page() {
         if (Math.hypot(e.clientX - a.x, e.clientY - a.y) < 5) return;
         a.activo = true;
         setCogido(a.payload);
+        setArrastrando(true);
         document.body.classList.add("arrastrando");
       }
       setFantasma({ x: e.clientX, y: e.clientY, nombre: a.payload.nombre });
@@ -169,7 +195,7 @@ export default function Page() {
     if (!editable || ocupado) return;
     // El dedo tiene que poder desplazar la lista: en táctil se mueve tocando.
     if (e.pointerType === "touch" || e.button !== 0) return;
-    if (e.target.closest("button.quitar")) return;
+    if (e.target.closest("button.quitar, button.traer")) return;
     const h = manejadores.current;
     if (!h.alMover) return;
     arrastre.current = { payload, x: e.clientX, y: e.clientY, activo: false };
@@ -191,6 +217,8 @@ export default function Page() {
     !busca.trim() || j.nombre.toLowerCase().includes(busca.trim().toLowerCase());
   const moviendoJugador = cogido?.tipo === "jugador";
   const moviendoEntrenador = cogido?.tipo === "entrenador";
+  // Los botones de destino son la alternativa al arrastre, no su compañía.
+  const conBotones = !!cogido && !arrastrando;
 
   // --- piezas --------------------------------------------------------------
   const alumno = (j, entrenador) => {
@@ -201,7 +229,7 @@ export default function Page() {
     return (
       <li key={`${entrenador ? entrenador.id : "sin"}-${j.id}`}
         className={moviendoJugador && cogido.id === j.id ? "cogido" : ""}
-        onPointerDown={(e) => empezarArrastre(e, payload)}>
+        onPointerDown={(e) => { e.stopPropagation(); empezarArrastre(e, payload); }}>
         <button type="button" className="nombre-alumno" disabled={!editable}
           title={editable ? "Arrástralo, o tócalo y elige destino" : undefined}
           onClick={() => setCogido(payload)}>
@@ -231,6 +259,7 @@ export default function Page() {
     const payload = { tipo: "entrenador", id: e.id, nombre: e.nombre, desde: coachId };
     return (
       <article key={e.id}
+        onPointerDown={(ev) => empezarArrastre(ev, payload)}
         data-zona="jugador" data-clave={clave} data-entrenador={e.id} data-nombre={e.nombre}
         className={[
           "columna",
@@ -239,7 +268,6 @@ export default function Page() {
           moviendoJugador ? "esperando" : "",
         ].filter(Boolean).join(" ")}>
         <header className="col-head"
-          onPointerDown={(ev) => empezarArrastre(ev, payload)}
           onClick={() => editable && setCogido(payload)}
           title={editable ? "Arrastra la columna a otro bloque" : undefined}>
           <span className="agarre" aria-hidden="true">⠿</span>
@@ -250,7 +278,7 @@ export default function Page() {
           </div>
         </header>
 
-        {moviendoJugador && editable && (
+        {moviendoJugador && conBotones && editable && (
           <button className="btn sm traer" disabled={ocupado}
             onClick={() => soltarEn({ entrenador: e.id, nombre: e.nombre }, cogido)}>
             Traer aquí
@@ -298,7 +326,7 @@ export default function Page() {
       {error && <p className="err">{error}</p>}
       {aviso && <p className="ok-msg">{aviso}</p>}
 
-      {cogido && (
+      {conBotones && (
         <div className="barra-cogido">
           <span>
             Moviendo {moviendoJugador ? "a" : "la columna de"}{" "}
@@ -306,6 +334,19 @@ export default function Page() {
             {moviendoJugador ? "una columna" : "un bloque"} o toca «Traer aquí».
           </span>
           <button className="btn ghost sm" onClick={limpiar}>Cancelar</button>
+        </div>
+      )}
+
+      {moviendoEntrenador && editable && (
+        <div data-zona="quitar"
+          className={`zona-quitar${encima === "quitar" ? " encima" : ""}`}>
+          <span>Soltar aquí para quitar a <b>{cogido.nombre}</b> de la lista</span>
+          {conBotones && (
+            <button className="btn ghost sm" disabled={ocupado}
+              onClick={() => soltarEn({ quitar: true }, cogido)}>
+              Quitar de la lista
+            </button>
+          )}
         </div>
       )}
 
@@ -318,7 +359,7 @@ export default function Page() {
             <span className="cuenta">
               {datos.sin_grupo.length} alumnos · nadie responde por ellos
             </span>
-            {moviendoJugador && editable && cogido.desde && (
+            {moviendoJugador && conBotones && editable && cogido.desde && (
               <button className="btn sm traer" disabled={ocupado}
                 onClick={() => soltarEn({ entrenador: null }, cogido)}>
                 Dejar sin grupo
@@ -350,7 +391,7 @@ export default function Page() {
                 {b.grupos.length} entrenador{b.grupos.length === 1 ? "" : "es"}
                 {" · "}{alumnos} alumno{alumnos === 1 ? "" : "s"}
               </span>
-              {moviendoEntrenador && editable && (
+              {moviendoEntrenador && conBotones && editable && (
                 <button className="btn sm traer" disabled={ocupado}
                   onClick={() => soltarEn({
                     coach: b.coach ? b.coach.id : null,
