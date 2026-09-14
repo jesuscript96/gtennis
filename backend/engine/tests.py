@@ -2,6 +2,7 @@
 from django.test import SimpleTestCase
 
 from .pairing import Court, PairingInput, Player, solve_pairing
+from .service import hay_entrenamiento
 
 
 def central(n):
@@ -152,3 +153,17 @@ class EmparejarEntrenadoresTests(SimpleTestCase):
         )
         self.assertEqual(asignado[10], 101)
         self.assertEqual(asignado[11], 100)
+
+
+class MediaJornadaCerradaTests(SimpleTestCase):
+    """El club no abre los miércoles por la tarde: ahí no se coloca a nadie."""
+
+    def test_el_miercoles_por_la_tarde_esta_cerrado(self):
+        self.assertFalse(hay_entrenamiento(2, "TARDE"))
+
+    def test_el_miercoles_por_la_manana_si(self):
+        self.assertTrue(hay_entrenamiento(2, "MANANA"))
+
+    def test_el_resto_de_tardes_si(self):
+        for dia in (0, 1, 3, 4, 5):
+            self.assertTrue(hay_entrenamiento(dia, "TARDE"), dia)

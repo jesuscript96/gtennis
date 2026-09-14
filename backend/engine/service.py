@@ -139,6 +139,17 @@ def _player_priority(division, state, deficit=0):
     return max(0, deficit) * (NIVEL_MAX + 1) + nivel
 
 
+# Medias jornadas en las que el club no entrena. Los miércoles por la tarde no
+# hay pista: ni jugadores ni entrenadores se pueden colocar ahí, ni el motor ni
+# a mano. (día de la semana con lunes=0, bloque)
+CERRADO = {(2, "TARDE")}
+
+
+def hay_entrenamiento(dia, bloque):
+    """¿Se entrena ese día en ese bloque? El miércoles por la tarde, no."""
+    return (dia, bloque) not in CERRADO
+
+
 def entrenador_en_franja(entrenador, turno):
     """¿Entra este entrenador en esta franja?
 
@@ -597,6 +608,15 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             for d in DisponibilidadEntrenador.objects.filter(semana=semana, dia=dia)
         }
         for turno in turnos:
+            # El club cierra algunas medias jornadas: ahí no se reparte nada y,
+            # además, se limpia lo que hubiera de antes. Saltar sin borrar deja
+            # en pie el cuadrante de la última generación, que es justo lo que
+            # no debe verse.
+            if not hay_entrenamiento(dia, turno.bloque):
+                Asignacion.objects.filter(
+                    semana=semana, dia=dia, turno=turno
+                ).delete()
+                continue
             # Entrenadores elegibles para este turno: no de vacaciones y cuya
             # ventana horaria cubre el turno (según horario de temporada).
             ini_t, fin_t = turno.horas(fecha)

@@ -48,12 +48,18 @@ def _sedes_payload():
     ]
 
 
-def _turnos_payload():
+def _turnos_payload(dia=None):
+    """Las franjas del cuadrante. Con `dia`, solo las que ese día se entrenan:
+    el club cierra medias jornadas (los miércoles por la tarde) y ahí no debe
+    poder colocarse a nadie, tampoco a mano."""
+    from engine.service import hay_entrenamiento
+
     return [
         {"id": t.id, "codigo": t.codigo, "bloque": t.bloque,
          "hora_inicio": t.hora_inicio, "hora_fin": t.hora_fin,
          "hora_inicio_verano": t.hora_inicio_verano, "hora_fin_verano": t.hora_fin_verano}
         for t in Turno.objects.all()
+        if dia is None or hay_entrenamiento(dia, t.bloque)
     ]
 
 
@@ -89,7 +95,7 @@ class AhoraView(APIView):
             "ahora": now.strftime("%H:%M"), "dia": hoy,
             "dia_nombre": dict(DIAS).get(hoy, "Domingo"),
             "turno_actual": None, "proximo": None, "turno_mostrado": None,
-            "sedes": _sedes_payload(), "turnos": _turnos_payload(), "asignaciones": [],
+            "sedes": _sedes_payload(), "turnos": _turnos_payload(hoy), "asignaciones": [],
         }
 
         # Semana de referencia: la de esta semana (si está generada) o la última generada.
@@ -160,7 +166,7 @@ class AhoraView(APIView):
             "turno_mostrado": turno_sel.codigo,
             "semana": SemanaSerializer(semana).data,
             "sedes": _sedes_payload(),
-            "turnos": _turnos_payload(),
+            "turnos": _turnos_payload(hoy),
             "asignaciones": AsignacionSerializer(qs, many=True).data,
         })
 
@@ -226,7 +232,7 @@ class SemanaViewSet(viewsets.ModelViewSet):
             {
                 "semana": SemanaSerializer(semana).data,
                 "dia": dia,
-                "turnos": _turnos_payload(),
+                "turnos": _turnos_payload(dia),
                 "sedes": _sedes_payload(),
                 "asignaciones": AsignacionSerializer(asignaciones, many=True).data,
             }
@@ -540,6 +546,16 @@ class AsignacionViewSet(viewsets.ModelViewSet):
 
         if not all([jugador_id, semana_id, dia is not None, turno_id, pista_id]):
             return Response({"error": "Faltan parámetros."}, status=400)
+
+        from engine.service import hay_entrenamiento
+
+        turno = Turno.objects.filter(pk=turno_id).first()
+        if turno is not None and not hay_entrenamiento(int(dia), turno.bloque):
+            return Response(
+                {"error": "Ese día no se entrena en ese bloque (el club cierra "
+                          "los miércoles por la tarde)."},
+                status=400,
+            )
 
         # ¿Ya asignado a este turno ese día?
         existing = Asignacion.objects.filter(
