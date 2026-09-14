@@ -6,8 +6,8 @@ from datetime import date, time
 
 from django.test import SimpleTestCase, TestCase
 
-from academy.models import Jugador, Turno
-from engine.service import _available_players
+from academy.models import Entrenador, Jugador, Turno
+from engine.service import _available_players, entrenador_en_franja
 from scheduling.models import Semana
 
 LUNES = date(2026, 9, 14)
@@ -77,3 +77,29 @@ class MotorRespetaElAltaTests(TestCase):
 
     def test_a_los_demas_no_les_afecta(self):
         self.assertIn(self.veterano.id, self._ids(0))
+
+
+class FranjaDelEntrenadorTests(SimpleTestCase):
+    """El entrenador declara franja igual que el alumno; sin declararla entra
+    en cualquiera, que es lo que hace la academia."""
+
+    def setUp(self):
+        self.m1 = Turno(id=1, codigo="M1", bloque=Turno.Bloque.MANANA)
+        self.m2 = Turno(id=2, codigo="M2", bloque=Turno.Bloque.MANANA)
+        self.t1 = Turno(id=3, codigo="T1", bloque=Turno.Bloque.TARDE)
+
+    def test_sin_declarar_entra_en_todas(self):
+        e = Entrenador(nombre="X")
+        self.assertTrue(entrenador_en_franja(e, self.m1))
+        self.assertTrue(entrenador_en_franja(e, self.m2))
+        self.assertTrue(entrenador_en_franja(e, self.t1))
+
+    def test_con_franja_solo_esa(self):
+        e = Entrenador(nombre="X", turno_manana_id=2)
+        self.assertFalse(entrenador_en_franja(e, self.m1))
+        self.assertTrue(entrenador_en_franja(e, self.m2))
+
+    def test_la_manana_no_condiciona_la_tarde(self):
+        # Declarar M2 no le saca de las tardes: cada bloque va por su cuenta.
+        e = Entrenador(nombre="X", turno_manana_id=2)
+        self.assertTrue(entrenador_en_franja(e, self.t1))

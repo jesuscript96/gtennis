@@ -139,6 +139,23 @@ def _player_priority(division, state, deficit=0):
     return max(0, deficit) * (NIVEL_MAX + 1) + nivel
 
 
+def entrenador_en_franja(entrenador, turno):
+    """¿Entra este entrenador en esta franja?
+
+    Igual que el alumno: si tiene declarada la franja de ese bloque solo entra
+    en esa, y si no la tiene entra en cualquiera — que es el caso normal, da
+    clase siempre que haya jugadores suyos disponibles.
+
+    No confundir con `HorarioEntrenador` ("los martes no vengo por la tarde"),
+    que va por día: esto es la franja fija de toda la semana.
+    """
+    from academy.models import Turno as _T
+
+    fijo = (entrenador.turno_manana_id if turno.bloque == _T.Bloque.MANANA
+            else entrenador.turno_tarde_id)
+    return fijo is None or fijo == turno.id
+
+
 def _available_players(
     semana, dia, turno, sponsors, escuela_cfg=None, surface_prefs=None,
     exclusive_escuela_id=None, cfg=None, hechas_dia=None, hechas_semana=None,
@@ -593,6 +610,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 if jor is not None and not (
                     jor[0] if turno.bloque == Turno.Bloque.MANANA else jor[1]
                 ):
+                    continue
+                if not entrenador_en_franja(c, turno):
                     continue
                 ovr = coach_ovr.get(c.id)
                 if ovr is not None and not ovr.disponible_en(ini_t, fin_t):

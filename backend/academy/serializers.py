@@ -59,14 +59,20 @@ class DivisionSerializer(serializers.ModelSerializer):
 
 class EntrenadorSerializer(serializers.ModelSerializer):
     divisiones_habilitadas_display = serializers.SerializerMethodField()
+    turnos_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Entrenador
         fields = [
             "id", "nombre", "activo", "disponibilidad_notas", "disponible_semana",
             "foto_url", "gestiona_todos_jugadores", "divisiones_habilitadas",
-            "divisiones_habilitadas_display",
+            "divisiones_habilitadas_display", "turno_manana", "turno_tarde",
+            "turnos_display",
         ]
+
+    def get_turnos_display(self, obj):
+        codigos = [t.codigo for t in (obj.turno_manana, obj.turno_tarde) if t]
+        return " + ".join(codigos) if codigos else "Cualquiera"
 
     def get_divisiones_habilitadas_display(self, obj):
         niveles = sorted(obj.divisiones_habilitadas.values_list("nivel", flat=True))
@@ -102,30 +108,27 @@ class VacacionesEntrenadorSerializer(serializers.ModelSerializer):
         ]
 
 
-class JugadorSerializer(serializers.ModelSerializer):
-    division_nivel = serializers.IntegerField(
-        source="division.nivel", read_only=True, default=None
-    )
-    entrenador_nombre = serializers.CharField(
-        source="entrenador_responsable.nombre", read_only=True, default=None
-    )
-    escuela_nombre = serializers.CharField(
-        source="escuela.nombre", read_only=True, default=None
-    )
+class GuardaHorarioJugador:
+    """Guarda el horario semanal del alumno reemplazándolo entero.
 
-    class Meta:
-        model = Jugador
-        fields = [
-            "id", "nombre", "codigo_cliente", "categoria", "edad",
-            "fecha_nacimiento", "es_menor", "email", "telefono",
-            "consentimiento_rgpd", "division", "division_nivel",
-            "entrenador_responsable", "entrenador_nombre", "escuela",
-            "escuela_nombre", "foto_url", "activo", "notas",
-            "fecha_alta", "fecha_baja",
-        ]
-        # `edad` sigue siendo escribible por los alumnos antiguos de los que
-        # solo consta el número, pero en cuanto hay `fecha_nacimiento` manda la
-        # fecha: `Jugador.save` recalcula la edad en cada guardado.
+    Lo comparten la ficha completa (dirección) y la vista de turnos (el
+    entrenador): el horario es el mismo dato y tiene que guardarse igual lo
+    escriba quien lo escriba. Lo que no venga en la petición es que ese día ya
+    no entrena; sin la clave `horario`, el horario no se toca.
+    """
+
+    def _guardar_horario(self, instance, filas):
+        if filas is None:
+            return
+        instance.horario.all().delete()
+        for f in filas:
+            HorarioJugador.objects.create(jugador=instance, **f)
+
+    def update(self, instance, validated_data):
+        filas = validated_data.pop("horario", None)
+        instance = super().update(instance, validated_data)
+        self._guardar_horario(instance, filas)
+        return instance
 
 
 class HorarioJugadorSerializer(serializers.ModelSerializer):
@@ -136,7 +139,34 @@ class HorarioJugadorSerializer(serializers.ModelSerializer):
         fields = ["dia", "turno_manana", "turno_tarde"]
 
 
-class JugadorTurnosSerializer(serializers.ModelSerializer):
+class JugadorSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
+    division_nivel = serializers.IntegerField(
+        source="division.nivel", read_only=True, default=None
+    )
+    entrenador_nombre = serializers.CharField(
+        source="entrenador_responsable.nombre", read_only=True, default=None
+    )
+    escuela_nombre = serializers.CharField(
+        source="escuela.nombre", read_only=True, default=None
+    )
+    horario = HorarioJugadorSerializer(many=True, required=False)
+
+    class Meta:
+        model = Jugador
+        fields = [
+            "id", "nombre", "codigo_cliente", "categoria", "edad",
+            "fecha_nacimiento", "es_menor", "email", "telefono",
+            "consentimiento_rgpd", "division", "division_nivel",
+            "entrenador_responsable", "entrenador_nombre", "escuela",
+            "escuela_nombre", "foto_url", "activo", "notas",
+            "fecha_alta", "fecha_baja", "turno_manana", "turno_tarde", "horario",
+        ]
+        # `edad` sigue siendo escribible por los alumnos antiguos de los que
+        # solo consta el número, pero en cuanto hay `fecha_nacimiento` manda la
+        # fecha: `Jugador.save` recalcula la edad en cada guardado.
+
+
+class JugadorTurnosSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
     """Vista del jugador para un ENTRENADOR.
 
     El entrenador no gestiona la ficha del alumno — ni datos personales, ni
@@ -153,19 +183,6 @@ class JugadorTurnosSerializer(serializers.ModelSerializer):
         model = Jugador
         fields = ["id", "nombre", "turno_manana", "turno_tarde", "horario"]
         read_only_fields = ["id", "nombre"]
-
-    def update(self, instance, validated_data):
-        filas = validated_data.pop("horario", None)
-        for campo, valor in validated_data.items():
-            setattr(instance, campo, valor)
-        instance.save()
-        if filas is not None:
-            # Se reemplaza el horario entero: lo que no venga en la petición
-            # es que ese día ya no entrena.
-            instance.horario.all().delete()
-            for f in filas:
-                HorarioJugador.objects.create(jugador=instance, **f)
-        return instance
 
 
 class HorarioEntrenadorSerializer(serializers.ModelSerializer):

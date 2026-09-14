@@ -776,6 +776,10 @@ body.nav-locked { overflow: hidden; }
 .fila-jugador .chevron { color: var(--muted); font-size: 1.05rem; text-align: center; }
 .detalle-jugador { padding: 0 .85rem .85rem; border-top: 1px solid var(--border); }
 .detalle-jugador .fila-form { margin-top: .75rem; }
+/* El panel de turnos se usa dentro del desplegable del entrenador y suelto en
+   la pantalla de dirección: sin margen propio encaja en los dos. */
+.card > .panel-turnos { padding: 4px 2px; }
+.card > .panel-turnos .fila-form { margin-top: 0; }
 .por-dias summary { cursor: pointer; font-size: .82rem; color: var(--accent); }
 .tabla-dias { width: 100%; border-collapse: collapse; margin-top: .5rem; font-size: .85rem; }
 .tabla-dias th {

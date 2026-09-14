@@ -151,6 +151,22 @@ class Entrenador(models.Model):
         blank=True,
         related_name="entrenadores",
     )
+    # En qué franja da clase, igual que el alumno. Vacío = cualquiera: entra
+    # siempre que haya jugadores suyos disponibles, que es el caso normal.
+    # Para "los martes no vengo por la tarde" está `HorarioEntrenador`, que va
+    # por día; esto es la franja fija de toda la semana.
+    turno_manana = models.ForeignKey(
+        "Turno", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="entrenadores_manana",
+        limit_choices_to={"codigo__in": ["M1", "M2"]},
+        help_text="M1 (8:30) o M2 (10:30). Vacío = cualquiera.",
+    )
+    turno_tarde = models.ForeignKey(
+        "Turno", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="entrenadores_tarde",
+        limit_choices_to={"codigo__in": ["T1", "T2"]},
+        help_text="T1 (14:15) o T2 (15:30). Vacío = cualquiera.",
+    )
 
     class Meta:
         verbose_name = "Entrenador"

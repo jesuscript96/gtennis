@@ -243,7 +243,9 @@ export default function ResourceCrud({ config }) {
                 key={fl.name}
                 field={fl}
                 value={form[fl.name]}
-                options={fkOptions[fl.name] || []}
+                // `filtra` recorta la lista del endpoint: los turnos de mañana
+                // son M1 y M2, no todo lo que devuelve /turnos/.
+                options={(fkOptions[fl.name] || []).filter(fl.filtra || (() => true))}
                 onChange={(v) => setForm((f) => ({ ...f, [fl.name]: v }))}
               />
             ))}

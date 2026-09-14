@@ -85,6 +85,7 @@ function rows(data) {
 export function resource(name) {
   return {
     list: async (q = "") => rows(await req(`/${name}/${q}`)),
+    get: (id) => req(`/${name}/${id}/`),
     create: (body) => req(`/${name}/`, { method: "POST", body: JSON.stringify(body) }),
     update: (id, body) =>
       req(`/${name}/${id}/`, { method: "PATCH", body: JSON.stringify(body) }),

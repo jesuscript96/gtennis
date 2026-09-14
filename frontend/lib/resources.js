@@ -43,6 +43,13 @@ const FEEDBACK_ESTADO_OPTS = [
   { value: "HECHO", label: "Hecho" },
   { value: "DESCARTADO", label: "Descartado" },
 ];
+// Etiqueta de turno con la hora delante: se piensa en «la de las diez y
+// media», no en un código.
+const turnoLabel = (t) => `${t.codigo} · ${String(t.hora_inicio).slice(0, 5)}`;
+const esManana = (t) => ["M1", "M2"].includes(t.codigo);
+const esTarde = (t) => ["T1", "T2"].includes(t.codigo);
+const AYUDA_TURNO = "Vacío = cualquiera de las dos (el motor elige, y solo una al día).";
+
 const fmtFecha = (v) => {
   if (!v) return "—";
   try { return new Date(v).toLocaleDateString("es-ES"); } catch { return v; }
@@ -70,6 +77,7 @@ export const RESOURCES = {
       { key: "division_nivel", label: "Div", render: (v) => (v ? `D${v}` : "—") },
       { key: "entrenador_nombre", label: "Responsable", render: (v) => v || "—" },
       { key: "fecha_alta", label: "Alta", render: (v) => (v ? fmtFecha(v) : "—") },
+      { key: "horario", label: "Días distintos", render: (v) => (v && v.length ? `${v.length}` : "—") },
       { key: "activo", label: "Activo", type: "bool" },
     ],
     fields: [
@@ -80,6 +88,8 @@ export const RESOURCES = {
       { name: "fecha_nacimiento", label: "Fecha de nacimiento", type: "date", help: "La edad se calcula sola." },
       { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel },
       { name: "entrenador_responsable", label: "Entrenador responsable (principal)", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre },
+      { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO },
+      { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO },
       { name: "fecha_alta", label: "Fecha de alta", type: "date", help: "El día que empieza a entrenar. Hasta esa fecha no entra en los entrenamientos. Vacío = desde siempre." },
       { name: "fecha_baja", label: "Fecha de baja", type: "date", help: "Último día que entrena. Vacío = sigue en activo." },
       { name: "consentimiento_rgpd", label: "Consentimiento RGPD (datos de salud)", type: "bool" },
@@ -92,6 +102,14 @@ export const RESOURCES = {
         label: "Entrenadores",
         onClick: (row) => {
           window.location.href = `/jugador-responsables?jugador=${row.id}&nombre=${encodeURIComponent(row.nombre)}`;
+        },
+      },
+      {
+        // Las dos franjas fijas están en la ficha; aquí se ven los días que se
+        // salen de lo habitual, que necesitan rejilla y no caben en el formulario.
+        label: "Turnos",
+        onClick: (row) => {
+          window.location.href = `/jugador-turnos?jugador=${row.id}`;
         },
       },
       {
@@ -126,12 +144,15 @@ export const RESOURCES = {
     columns: [
       { key: "nombre", label: "Nombre" },
       { key: "divisiones_habilitadas_display", label: "Entrena divisiones" },
+      { key: "turnos_display", label: "Franjas" },
       { key: "activo", label: "Activo", type: "bool" },
       { key: "disponible_semana", label: "Disp. semana", type: "bool" },
     ],
     fields: [
       { name: "nombre", label: "Nombre", type: "text", required: true },
       { name: "divisiones_habilitadas", label: "Divisiones que puede entrenar (vacío = todas)", type: "mfk", endpoint: "divisiones", optionLabel: divLabel, help: "Si no marcas ninguna, el entrenador puede entrenar a cualquier división." },
+      { name: "turno_manana", label: "Da clase por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
+      { name: "turno_tarde", label: "Da clase por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },
       { name: "disponible_semana", label: "Disponible esta semana (fallback manual)", type: "bool", default: true },
       { name: "activo", label: "Activo", type: "bool", default: true },

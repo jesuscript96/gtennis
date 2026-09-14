@@ -3,11 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getAgendaJugador, resource } from "../lib/api";
-
-const DIAS = [
-  [0, "L", "Lunes"], [1, "M", "Martes"], [2, "X", "Miércoles"],
-  [3, "J", "Jueves"], [4, "V", "Viernes"], [5, "S", "Sábado"],
-];
+import PanelTurnos from "./PanelTurnos";
 
 /**
  * Los jugadores de un entrenador: una lista de nombres y nada más.
@@ -22,18 +18,12 @@ export default function MisJugadores() {
   const [turnos, setTurnos] = useState([]);
   const [abierto, setAbierto] = useState(null);
   const [busca, setBusca] = useState("");
-  const [guardando, setGuardando] = useState(false);
-  const [aviso, setAviso] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     api.list().then(setJugadores).catch((e) => setError(e.message));
     resource("turnos").list().then(setTurnos).catch(() => {});
   }, [api]);
-
-  const manana = turnos.filter((t) => t.bloque === "MANANA" && t.codigo !== "JP");
-  const tarde = turnos.filter((t) => t.bloque !== "MANANA");
-  const etiqueta = (t) => `${t.codigo} · ${t.hora_inicio.slice(0, 5)}`;
 
   const visibles = jugadores.filter((j) =>
     j.nombre.toLowerCase().includes(busca.trim().toLowerCase())
@@ -48,30 +38,8 @@ export default function MisJugadores() {
     return partes.join(" + ") + (excepciones ? ` · ${excepciones} día${excepciones > 1 ? "s" : ""} distintos` : "");
   }
 
-  async function guardar(j, cambios) {
-    setGuardando(true); setError(""); setAviso("");
-    try {
-      const actualizado = await api.update(j.id, cambios);
-      setJugadores((prev) => prev.map((x) => (x.id === j.id ? { ...x, ...actualizado } : x)));
-      setAviso(`Guardado · ${j.nombre}`);
-    } catch (e) { setError(e.message); }
-    setGuardando(false);
-  }
-
-  // Una fila de horario por día que se sale de lo habitual. Sin fila, ese día
-  // usa los turnos de arriba.
-  function cambiarDia(j, dia, campo, valor) {
-    const filas = [...(j.horario || [])];
-    const i = filas.findIndex((f) => f.dia === dia);
-    const fila = i >= 0 ? { ...filas[i] } : { dia, turno_manana: j.turno_manana, turno_tarde: j.turno_tarde };
-    fila[campo] = valor;
-    if (i >= 0) filas[i] = fila; else filas.push(fila);
-    guardar(j, { horario: filas });
-  }
-
-  function quitarDia(j, dia) {
-    guardar(j, { horario: (j.horario || []).filter((f) => f.dia !== dia) });
-  }
+  const actualizar = (nuevo) =>
+    setJugadores((prev) => prev.map((x) => (x.id === nuevo.id ? nuevo : x)));
 
   return (
     <div className="page">
@@ -84,12 +52,10 @@ export default function MisJugadores() {
         onChange={(e) => setBusca(e.target.value)} />
 
       {error && <p className="error">{error}</p>}
-      {aviso && <p className="ok-msg">{aviso}</p>}
 
       <ul className="lista-jugadores">
         {visibles.map((j) => {
           const activo = abierto === j.id;
-          const porDia = new Map((j.horario || []).map((f) => [f.dia, f]));
           return (
             <li key={j.id} className={activo ? "abierto" : ""}>
               <button type="button" className="fila-jugador"
@@ -104,65 +70,7 @@ export default function MisJugadores() {
                 <div className="detalle-jugador">
                   <AgendaJugador jugador={j} />
 
-                  <div className="fila-form">
-                    <label>Por la mañana
-                      <select value={j.turno_manana || ""} disabled={guardando}
-                        onChange={(e) => guardar(j, { turno_manana: e.target.value || null })}>
-                        <option value="">— no entrena —</option>
-                        {manana.map((t) => <option key={t.id} value={t.id}>{etiqueta(t)}</option>)}
-                      </select>
-                    </label>
-                    <label>Por la tarde
-                      <select value={j.turno_tarde || ""} disabled={guardando}
-                        onChange={(e) => guardar(j, { turno_tarde: e.target.value || null })}>
-                        <option value="">— no entrena —</option>
-                        {tarde.map((t) => <option key={t.id} value={t.id}>{etiqueta(t)}</option>)}
-                      </select>
-                    </label>
-                  </div>
-
-                  <details className="por-dias">
-                    <summary>¿Algún día distinto?</summary>
-                    <table className="tabla-dias">
-                      <thead>
-                        <tr><th>Día</th><th>Mañana</th><th>Tarde</th><th /></tr>
-                      </thead>
-                      <tbody>
-                        {DIAS.map(([d, , nombre]) => {
-                          const f = porDia.get(d);
-                          return (
-                            <tr key={d} className={f ? "excepcion" : ""}>
-                              <td>{nombre}</td>
-                              <td>
-                                <select value={(f ? f.turno_manana : j.turno_manana) || ""}
-                                  disabled={guardando}
-                                  onChange={(e) => cambiarDia(j, d, "turno_manana", e.target.value || null)}>
-                                  <option value="">— no —</option>
-                                  {manana.map((t) => <option key={t.id} value={t.id}>{t.codigo}</option>)}
-                                </select>
-                              </td>
-                              <td>
-                                <select value={(f ? f.turno_tarde : j.turno_tarde) || ""}
-                                  disabled={guardando}
-                                  onChange={(e) => cambiarDia(j, d, "turno_tarde", e.target.value || null)}>
-                                  <option value="">— no —</option>
-                                  {tarde.map((t) => <option key={t.id} value={t.id}>{t.codigo}</option>)}
-                                </select>
-                              </td>
-                              <td>
-                                {f && (
-                                  <button type="button" className="link-menor"
-                                    onClick={() => quitarDia(j, d)}>
-                                    como siempre
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </details>
+                  <PanelTurnos jugador={j} onGuardado={actualizar} compacto />
 
                   <div className="accesos">
                     <Link href={`/ausencias-fechas?jugador=${j.id}`}>Declarar una baja</Link>
