@@ -1,26 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getGrupos, grupoMover, grupoMoverEntrenador, grupoQuitar,
 } from "../../../lib/api";
 
 /**
- * El organigrama de la academia, tal y como está en el Excel de dirección:
- * cada bloque es un coach, dentro van las columnas de sus entrenadores y bajo
- * cada columna sus alumnos.
+ * El organigrama de la academia, como está en el Excel de dirección: cada
+ * bloque es un coach, dentro van las columnas de sus entrenadores y bajo cada
+ * columna sus alumnos.
  *
  * Se reorganiza arrastrando, y cada cosa solo entra donde tiene sentido: un
  * alumno cae en una columna de entrenador, y una columna entera —el entrenador
- * con sus alumnos— cae en un bloque. Lo que se arrastra se guarda al soltarlo:
- * el alumno cambia de responsable y el entrenador de coach.
+ * con sus alumnos— cae en un bloque. Al soltar se guarda.
  *
- * Arrastrar no existe en el móvil, así que todo se puede hacer también
- * tocando: tocas a quien mueves y luego "Traer aquí" en el destino.
+ * El arrastre va con eventos de puntero y NO con el drag-and-drop de HTML5. No
+ * es capricho: la fila del alumno es un botón, y un control de formulario se
+ * come el gesto, así que con `draggable` el navegador no llegaba a empezar el
+ * arrastre nunca. Con punteros da igual lo que haya dentro, y de paso se puede
+ * pintar el fantasma que sigue al cursor y desplazar la página sola al llegar
+ * a los bordes.
  *
- * Un alumno puede estar además en el "también entrena" de otros entrenadores
- * de su bloque —todos los capacitados para su división pueden entrenarle— y
- * eso va plegado para que no parezca que el grupo está repetido.
+ * En táctil no se arrastra —el dedo tiene que poder desplazar la lista— así
+ * que ahí se toca a quien se mueve y luego "Traer aquí" en el destino. Eso
+ * funciona también con ratón, para quien lo prefiera.
+ *
+ * Un alumno sale además en el "también entrena" de otros entrenadores de su
+ * bloque: todos los capacitados para su división pueden entrenarle. Va plegado
+ * para que no parezca el mismo grupo repetido.
  */
 export default function Page() {
   const [datos, setDatos] = useState(null);
@@ -30,17 +37,146 @@ export default function Page() {
   // Lo que se está moviendo, se arrastre o se toque: { tipo, id, nombre, desde }
   const [cogido, setCogido] = useState(null);
   const [encima, setEncima] = useState(null);
+  const [fantasma, setFantasma] = useState(null);
   const [ocupado, setOcupado] = useState(false);
+  const arrastre = useRef(null);
+  // Los manejadores de ventana viven en el efecto (necesitan `soltarEn`), pero
+  // quien los engancha es el pointerdown de cada fila: se pasan por aquí.
+  const manejadores = useRef({});
 
-  async function cargar() {
+  const cargar = useCallback(async () => {
     try {
       setDatos(await getGrupos());
     } catch (e) {
       setError(e.message);
     }
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const editable = !!datos?.puede_editar;
+
+  const limpiar = useCallback(() => {
+    setCogido(null);
+    setEncima(null);
+    setFantasma(null);
+    document.body.classList.remove("arrastrando");
+  }, []);
+
+  const accion = useCallback(async (fn, mensaje) => {
+    setOcupado(true); setError(""); setAviso("");
+    try {
+      await fn();
+      setAviso(mensaje);
+      await cargar();
+    } catch (e) {
+      setError(e.message);
+    }
+    setOcupado(false);
+  }, [cargar]);
+
+  // --- soltar: lo mismo para el arrastre y para el toque --------------------
+  const soltarEn = useCallback((zona, q) => {
+    limpiar();
+    if (!q || !zona) return;
+    if (q.tipo === "jugador") {
+      if (zona.entrenador === null) {
+        if (!q.desde) return;
+        return accion(
+          () => grupoQuitar(q.id, q.desde),
+          `${q.nombre} se queda sin responsable.`
+        );
+      }
+      if (zona.entrenador === q.desde) return;
+      return accion(
+        () => grupoMover(q.id, zona.entrenador),
+        `${q.nombre} pasa al grupo de ${zona.nombre}.`
+      );
+    }
+    if (zona.coach === q.desde) return;
+    return accion(
+      () => grupoMoverEntrenador(q.id, zona.coach),
+      zona.coach
+        ? `${q.nombre} y sus alumnos pasan al bloque de ${zona.nombre}.`
+        : `${q.nombre} se queda fuera de los bloques.`
+    );
+  }, [accion, limpiar]);
+
+  // --- arrastre con eventos de puntero -------------------------------------
+  // Zona de destino bajo el cursor, de las que aceptan lo que se lleva.
+  function zonaEn(x, y, tipo) {
+    const el = document.elementFromPoint(x, y);
+    const destino = el && el.closest(`[data-zona="${tipo}"]`);
+    if (!destino) return null;
+    const d = destino.dataset;
+    return {
+      clave: d.clave,
+      nombre: d.nombre,
+      entrenador: d.entrenador ? Number(d.entrenador) : null,
+      coach: d.coach ? Number(d.coach) : null,
+    };
   }
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => {
+    function alMover(e) {
+      const a = arrastre.current;
+      if (!a) return;
+      if (!a.activo) {
+        // Umbral: sin esto, un clic con un temblor de 1px ya sería arrastre.
+        if (Math.hypot(e.clientX - a.x, e.clientY - a.y) < 5) return;
+        a.activo = true;
+        setCogido(a.payload);
+        document.body.classList.add("arrastrando");
+      }
+      setFantasma({ x: e.clientX, y: e.clientY, nombre: a.payload.nombre });
+      const zona = zonaEn(e.clientX, e.clientY, a.payload.tipo);
+      setEncima(zona ? zona.clave : null);
+
+      // Al llegar a los bordes la página se desplaza sola: si no, no se puede
+      // llevar a nadie de la lista de arriba a un bloque de más abajo.
+      const margen = 70, paso = 14;
+      if (e.clientY < margen) window.scrollBy(0, -paso);
+      else if (e.clientY > window.innerHeight - margen) window.scrollBy(0, paso);
+    }
+
+    function alSoltar(e) {
+      const a = arrastre.current;
+      arrastre.current = null;
+      window.removeEventListener("pointermove", alMover);
+      window.removeEventListener("pointerup", alSoltar);
+      window.removeEventListener("pointercancel", alCancelar);
+      if (!a || !a.activo) return;  // fue un clic: lo recoge el onClick
+      soltarEn(zonaEn(e.clientX, e.clientY, a.payload.tipo), a.payload);
+    }
+
+    function alCancelar() {
+      arrastre.current = null;
+      window.removeEventListener("pointermove", alMover);
+      window.removeEventListener("pointerup", alSoltar);
+      window.removeEventListener("pointercancel", alCancelar);
+      limpiar();
+    }
+
+    manejadores.current = { alMover, alSoltar, alCancelar };
+    return () => {
+      window.removeEventListener("pointermove", alMover);
+      window.removeEventListener("pointerup", alSoltar);
+      window.removeEventListener("pointercancel", alCancelar);
+    };
+  }, [soltarEn, limpiar]);
+
+  function empezarArrastre(e, payload) {
+    if (!editable || ocupado) return;
+    // El dedo tiene que poder desplazar la lista: en táctil se mueve tocando.
+    if (e.pointerType === "touch" || e.button !== 0) return;
+    if (e.target.closest("button.quitar")) return;
+    const h = manejadores.current;
+    if (!h.alMover) return;
+    arrastre.current = { payload, x: e.clientX, y: e.clientY, activo: false };
+    window.addEventListener("pointermove", h.alMover);
+    window.addEventListener("pointerup", h.alSoltar);
+    window.addEventListener("pointercancel", h.alCancelar);
+  }
 
   if (!datos) {
     return (
@@ -51,145 +187,74 @@ export default function Page() {
     );
   }
 
-  const editable = datos.puede_editar;
   const coincide = (j) =>
     !busca.trim() || j.nombre.toLowerCase().includes(busca.trim().toLowerCase());
-
-  async function accion(fn, mensaje) {
-    setOcupado(true); setError(""); setAviso("");
-    try {
-      await fn();
-      setAviso(mensaje);
-      await cargar();
-    } catch (e) {
-      setError(e.message);
-    }
-    setOcupado(false);
-  }
-
-  // --- mover: lo mismo para el arrastre y para el toque ---------------------
-  function soltarEnColumna(entrenador) {
-    const q = cogido;
-    limpiar();
-    if (!q || q.tipo !== "jugador" || q.desde === entrenador.id) return;
-    accion(
-      () => grupoMover(q.id, entrenador.id),
-      `${q.nombre} pasa al grupo de ${entrenador.nombre}.`
-    );
-  }
-
-  function soltarEnBloque(coach) {
-    const q = cogido;
-    limpiar();
-    const idCoach = coach ? coach.id : null;
-    if (!q || q.tipo !== "entrenador" || q.desde === idCoach) return;
-    accion(
-      () => grupoMoverEntrenador(q.id, idCoach),
-      coach
-        ? `${q.nombre} y sus alumnos pasan al bloque de ${coach.nombre}.`
-        : `${q.nombre} se queda fuera de los bloques.`
-    );
-  }
-
-  function soltarEnSinGrupo() {
-    const q = cogido;
-    limpiar();
-    if (!q || q.tipo !== "jugador" || !q.desde) return;
-    accion(
-      () => grupoQuitar(q.id, q.desde),
-      `${q.nombre} se queda sin responsable.`
-    );
-  }
-
-  const limpiar = () => { setCogido(null); setEncima(null); };
-
-  // Arrastrar y tocar comparten estado: empezar a arrastrar es "coger".
-  const alArrastrar = (payload) => (e) => {
-    if (!editable) return;
-    setCogido(payload);
-    e.dataTransfer.effectAllowed = "move";
-    try { e.dataTransfer.setData("text/plain", payload.nombre); } catch { /* Safari */ }
-  };
-  const permitirSoltar = (tipo, zona) => (e) => {
-    if (!editable || cogido?.tipo !== tipo) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "move";
-    if (encima !== zona) setEncima(zona);
-  };
-  const alSoltar = (fn) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    fn();
-  };
-
   const moviendoJugador = cogido?.tipo === "jugador";
   const moviendoEntrenador = cogido?.tipo === "entrenador";
 
   // --- piezas --------------------------------------------------------------
-  const alumno = (j, entrenador) => (
-    <li key={`${entrenador ? entrenador.id : "sin"}-${j.id}`}
-      className={cogido?.tipo === "jugador" && cogido.id === j.id ? "cogido" : ""}
-      draggable={editable}
-      onDragStart={alArrastrar({
-        tipo: "jugador", id: j.id, nombre: j.nombre,
-        desde: entrenador ? entrenador.id : null,
-      })}
-      onDragEnd={limpiar}>
-      <button type="button" className="nombre-alumno" disabled={!editable}
-        title={editable ? "Arrástralo, o tócalo y elige destino" : undefined}
-        onClick={() => setCogido({
-          tipo: "jugador", id: j.id, nombre: j.nombre,
-          desde: entrenador ? entrenador.id : null,
-        })}>
-        <span className="div-badge">{j.division ? `D${j.division}` : "—"}</span>
-        <span className="txt">{j.nombre}</span>
-        {j.grupo_de && <span className="de-quien">de {j.grupo_de}</span>}
-      </button>
-      {editable && entrenador && (
-        <button type="button" className="quitar" disabled={ocupado}
-          title={`${entrenador.nombre} deja de llevarle`}
-          onClick={() => accion(
-            () => grupoQuitar(j.id, entrenador.id),
-            `${entrenador.nombre} ya no lleva a ${j.nombre}.`
-          )}>
-          ✕
+  const alumno = (j, entrenador) => {
+    const payload = {
+      tipo: "jugador", id: j.id, nombre: j.nombre,
+      desde: entrenador ? entrenador.id : null,
+    };
+    return (
+      <li key={`${entrenador ? entrenador.id : "sin"}-${j.id}`}
+        className={moviendoJugador && cogido.id === j.id ? "cogido" : ""}
+        onPointerDown={(e) => empezarArrastre(e, payload)}>
+        <button type="button" className="nombre-alumno" disabled={!editable}
+          title={editable ? "Arrástralo, o tócalo y elige destino" : undefined}
+          onClick={() => setCogido(payload)}>
+          <span className="div-badge">{j.division ? `D${j.division}` : "—"}</span>
+          <span className="txt">{j.nombre}</span>
+          {j.grupo_de && <span className="de-quien">de {j.grupo_de}</span>}
         </button>
-      )}
-    </li>
-  );
+        {editable && entrenador && (
+          <button type="button" className="quitar" disabled={ocupado}
+            title={`${entrenador.nombre} deja de llevarle`}
+            onClick={() => accion(
+              () => grupoQuitar(j.id, entrenador.id),
+              `${entrenador.nombre} ya no lleva a ${j.nombre}.`
+            )}>
+            ✕
+          </button>
+        )}
+      </li>
+    );
+  };
 
-  const columna = (g) => {
+  const columna = (g, coachId) => {
     const e = g.entrenador;
     const propios = g.jugadores.filter(coincide);
     const tambien = g.tambien.filter(coincide);
-    const zona = `col-${e.id}`;
+    const clave = `col-${e.id}`;
+    const payload = { tipo: "entrenador", id: e.id, nombre: e.nombre, desde: coachId };
     return (
       <article key={e.id}
+        data-zona="jugador" data-clave={clave} data-entrenador={e.id} data-nombre={e.nombre}
         className={[
           "columna",
-          cogido?.tipo === "entrenador" && cogido.id === e.id ? "cogido" : "",
-          encima === zona ? "encima" : "",
+          moviendoEntrenador && cogido.id === e.id ? "cogido" : "",
+          encima === clave ? "encima" : "",
           moviendoJugador ? "esperando" : "",
-        ].filter(Boolean).join(" ")}
-        onDragOver={permitirSoltar("jugador", zona)}
-        onDragLeave={() => encima === zona && setEncima(null)}
-        onDrop={alSoltar(() => soltarEnColumna(e))}>
-        <header className="col-head" draggable={editable}
-          onDragStart={alArrastrar({ tipo: "entrenador", id: e.id, nombre: e.nombre, desde: g.coachId })}
-          onDragEnd={limpiar}
-          onClick={() => editable && setCogido({
-            tipo: "entrenador", id: e.id, nombre: e.nombre, desde: g.coachId,
-          })}
+        ].filter(Boolean).join(" ")}>
+        <header className="col-head"
+          onPointerDown={(ev) => empezarArrastre(ev, payload)}
+          onClick={() => editable && setCogido(payload)}
           title={editable ? "Arrastra la columna a otro bloque" : undefined}>
-          <h3>{e.nombre}</h3>
-          <p className="sub">{e.divisiones} · {g.jugadores.length} alumno
-            {g.jugadores.length === 1 ? "" : "s"}</p>
+          <span className="agarre" aria-hidden="true">⠿</span>
+          <div>
+            <h3>{e.nombre}</h3>
+            <p className="sub">{e.divisiones} · {g.jugadores.length} alumno
+              {g.jugadores.length === 1 ? "" : "s"}</p>
+          </div>
         </header>
 
         {moviendoJugador && editable && (
           <button className="btn sm traer" disabled={ocupado}
-            onClick={() => soltarEnColumna(e)}>Traer aquí</button>
+            onClick={() => soltarEn({ entrenador: e.id, nombre: e.nombre }, cogido)}>
+            Traer aquí
+          </button>
         )}
 
         {propios.length === 0 ? (
@@ -220,9 +285,9 @@ export default function Page() {
       </div>
       <p className="help">
         Arrastra un <b>alumno</b> a la columna de otro entrenador, o una
-        <b> columna entera</b> a otro bloque: el alumno cambia de responsable y
-        el entrenador se lleva a los suyos. En el móvil, toca a quien mueves y
-        luego <b>Traer aquí</b>.
+        <b> columna entera</b> (por su cabecera) a otro bloque: el alumno cambia
+        de responsable y el entrenador se lleva a los suyos. En el móvil, toca a
+        quien mueves y luego <b>Traer aquí</b>.
       </p>
 
       <div className="toolbar">
@@ -236,10 +301,9 @@ export default function Page() {
       {cogido && (
         <div className="barra-cogido">
           <span>
-            Moviendo {cogido.tipo === "jugador" ? "a" : "la columna de"}{" "}
+            Moviendo {moviendoJugador ? "a" : "la columna de"}{" "}
             <b>{cogido.nombre}</b>. Suéltalo en{" "}
-            {cogido.tipo === "jugador" ? "una columna" : "un bloque"} o toca
-            «Traer aquí».
+            {moviendoJugador ? "una columna" : "un bloque"} o toca «Traer aquí».
           </span>
           <button className="btn ghost sm" onClick={limpiar}>Cancelar</button>
         </div>
@@ -247,16 +311,18 @@ export default function Page() {
 
       {datos.sin_grupo.length > 0 && (
         <section
-          className={`bloque huerfanos${encima === "sin-grupo" ? " encima" : ""}`}
-          onDragOver={permitirSoltar("jugador", "sin-grupo")}
-          onDragLeave={() => encima === "sin-grupo" && setEncima(null)}
-          onDrop={alSoltar(soltarEnSinGrupo)}>
+          data-zona="jugador" data-clave="sin-grupo" data-nombre="Sin grupo"
+          className={`bloque huerfanos${encima === "sin-grupo" ? " encima" : ""}${moviendoJugador ? " esperando" : ""}`}>
           <header className="bloque-head">
             <h2>Sin grupo</h2>
-            <span className="cuenta">{datos.sin_grupo.length} alumnos · nadie responde por ellos</span>
-            {moviendoJugador && editable && (
+            <span className="cuenta">
+              {datos.sin_grupo.length} alumnos · nadie responde por ellos
+            </span>
+            {moviendoJugador && editable && cogido.desde && (
               <button className="btn sm traer" disabled={ocupado}
-                onClick={soltarEnSinGrupo}>Dejar sin grupo</button>
+                onClick={() => soltarEn({ entrenador: null }, cogido)}>
+                Dejar sin grupo
+              </button>
             )}
           </header>
           {sinGrupo.length === 0
@@ -270,14 +336,14 @@ export default function Page() {
         const alumnos = b.grupos.reduce((n, g) => n + g.jugadores.length, 0);
         return (
           <section key={clave}
+            data-zona="entrenador" data-clave={clave}
+            data-coach={b.coach ? b.coach.id : ""}
+            data-nombre={b.coach ? b.coach.nombre : "sin bloque"}
             className={[
               "bloque",
               encima === clave ? "encima" : "",
               moviendoEntrenador ? "esperando" : "",
-            ].filter(Boolean).join(" ")}
-            onDragOver={permitirSoltar("entrenador", clave)}
-            onDragLeave={() => encima === clave && setEncima(null)}
-            onDrop={alSoltar(() => soltarEnBloque(b.coach))}>
+            ].filter(Boolean).join(" ")}>
             <header className="bloque-head">
               <h2>{b.coach ? b.coach.nombre : "Sin bloque"}</h2>
               <span className="cuenta">
@@ -286,7 +352,12 @@ export default function Page() {
               </span>
               {moviendoEntrenador && editable && (
                 <button className="btn sm traer" disabled={ocupado}
-                  onClick={() => soltarEnBloque(b.coach)}>Traer aquí</button>
+                  onClick={() => soltarEn({
+                    coach: b.coach ? b.coach.id : null,
+                    nombre: b.coach ? b.coach.nombre : "sin bloque",
+                  }, cogido)}>
+                  Traer aquí
+                </button>
               )}
             </header>
             {b.grupos.length === 0 ? (
@@ -295,12 +366,18 @@ export default function Page() {
               </p>
             ) : (
               <div className="columnas">
-                {b.grupos.map((g) => columna({ ...g, coachId: b.coach ? b.coach.id : null }))}
+                {b.grupos.map((g) => columna(g, b.coach ? b.coach.id : null))}
               </div>
             )}
           </section>
         );
       })}
+
+      {fantasma && (
+        <div className="fantasma" style={{ left: fantasma.x, top: fantasma.y }}>
+          {fantasma.nombre}
+        </div>
+      )}
     </div>
   );
 }
