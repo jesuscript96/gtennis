@@ -31,7 +31,6 @@ from academy.models import (
 )
 from scheduling.models import Ambito, AusenciaJugador, Estado
 
-DIAS_COL = [0, 1, 2, 3, 4]          # columnas L..V de la plantilla
 NO_ENTRENA = {"-", "--", "no", "nada", "libre", "descansa", "descanso", "off",
               "fiesta", "ninguno", "ninguna", "0"}
 VIENE_SIN_MAS = {"x", "si", "ok", "v", "vale", "viene", "*", "1"}
@@ -197,6 +196,27 @@ def fecha_de(valor, anio_ref):
     return None
 
 
+def columnas_de(ws, fila_cabecera=4):
+    """{cabecera normalizada: índice 0-based} de la fila de cabeceras.
+
+    Las columnas se buscan por su NOMBRE y no por su posición: la plantilla
+    crece cada vez que la dirección quiere declarar algo más, y con índices
+    fijos cualquier columna nueva desplazaba a las siguientes y el importador
+    leía la de al lado sin enterarse.
+    """
+    idx = {}
+    for c in ws[fila_cabecera]:
+        if c.value:
+            idx.setdefault(norm(str(c.value)), c.column - 1)
+    return idx
+
+
+def es_ejemplo(fila):
+    """La plantilla trae una fila de ejemplo; no se importa."""
+    v = fila[0].value
+    return isinstance(v, str) and v.strip().lower().startswith("(ejemplo)")
+
+
 class Command(BaseCommand):
     help = "Importa el Excel de recogida (texto libre) y explica lo que no entiende."
 
@@ -245,10 +265,13 @@ class Command(BaseCommand):
         ws = wb["Jugadores"]
         res = Counter()
         nombres = self._jugadores_idx
+        col = columnas_de(ws)
+        dias_col = [col.get(norm(d)) for d in ("LUNES", "MARTES", "MIÉRCOLES",
+                                               "JUEVES", "VIERNES")]
 
         for fila in ws.iter_rows(min_row=5, values_only=False):
             nombre = fila[0].value
-            if not nombre:
+            if not nombre or es_ejemplo(fila):
                 continue
             jug = nombres.get(norm(nombre))
             if jug is None:
@@ -258,8 +281,11 @@ class Command(BaseCommand):
 
             # 1) Leer los cinco días.
             lecturas = {}
-            for d in DIAS_COL:
-                celda = fila[6 + d]
+            for d, indice in enumerate(dias_col):
+                if indice is None or indice >= len(fila):
+                    lecturas[d] = (None, None, "vacio")
+                    continue
+                celda = fila[indice]
                 man, tar, marca = self.interprete.turnos_de(celda.value)
                 lecturas[d] = (man, tar, marca)
                 if marca == "no_entendido":
@@ -309,7 +335,7 @@ class Command(BaseCommand):
                 jug.turno_tarde = preferido(habitual_t, Turno.Bloque.TARDE)
 
             # 5) Sesiones por semana + control contra los días declarados.
-            celda_ses = fila[11]
+            celda_ses = self._celda(fila, col, "Ses./semana")
             ses = norm(celda_ses.value)
             declaradas = sum(bool(m) + bool(t) for m, t, _ in lecturas.values())
             if ses:
@@ -322,50 +348,129 @@ class Command(BaseCommand):
                 else:
                     self._duda("Jugadores", celda_ses.row, celda_ses.column_letter, celda_ses.value,
                                "no es un número")
-            jug.save(update_fields=["turno_manana", "turno_tarde", "sesiones_semana"])
+            # 6) Lo que se declara una vez y vale para toda la semana: la
+            #    franja de siempre pisa a lo deducido de los días, y las fechas
+            #    de alta y baja marcan desde y hasta cuándo cuenta.
+            for etiqueta, campo, bloque in (
+                ("De normal · MAÑANA", "turno_manana", Turno.Bloque.MANANA),
+                ("De normal · TARDE", "turno_tarde", Turno.Bloque.TARDE),
+            ):
+                celda = self._celda(fila, col, etiqueta)
+                texto = norm(celda.value) if celda is not None else ""
+                if not texto:
+                    continue
+                man, tar, marca = self.interprete.turnos_de(celda.value)
+                elegido = man if bloque == Turno.Bloque.MANANA else tar
+                if elegido is not None:
+                    setattr(jug, campo, elegido)
+                elif marca == "no_entrena":
+                    setattr(jug, campo, None)
+                elif marca not in ("vacio", "viene"):
+                    self._duda("Jugadores", celda.row, celda.column_letter,
+                               celda.value, "no sé qué franja es")
+
+            campos = ["turno_manana", "turno_tarde", "sesiones_semana"]
+            celda = self._celda(fila, col, "Máx. al día")
+            if celda is not None and norm(celda.value):
+                n = numero_de(norm(celda.value))
+                if n:
+                    jug.sesiones_dia_max = n
+                    campos.append("sesiones_dia_max")
+                else:
+                    self._duda("Jugadores", celda.row, celda.column_letter,
+                               celda.value, "no es un número")
+            for etiqueta, campo in (("Entra el día", "fecha_alta"),
+                                    ("Último día", "fecha_baja")):
+                celda = self._celda(fila, col, etiqueta)
+                if celda is None or not norm(celda.value):
+                    continue
+                f = fecha_de(celda.value, self.anio)
+                if f is None:
+                    self._duda("Jugadores", celda.row, celda.column_letter,
+                               celda.value, "no es una fecha")
+                else:
+                    setattr(jug, campo, f)
+                    campos.append(campo)
+                    res[campo] += 1
+
+            jug.save(update_fields=campos)
             res["jugadores"] += 1
 
-            self._extras(fila, jug, res)
+            self._extras(fila, col, jug, res)
         return res
 
     # ------------------------------------------------------------------ #
-    def _extras(self, fila, jug, res):
+    @staticmethod
+    def _celda(fila, col, nombre):
+        """La celda de esa columna en esta fila, o None si la plantilla no la
+        trae (una versión vieja del fichero, o la han borrado)."""
+        i = col.get(norm(nombre))
+        return fila[i] if i is not None and i < len(fila) else None
+
+    def _extras(self, fila, col, jug, res):
         """Las columnas de la derecha: solo si aplica, casi siempre vacías."""
+        def c(nombre):
+            return self._celda(fila, col, nombre)
+
+        # Escuela corregida.
+        celda = c("Escuela correcta")
+        if celda is not None and norm(celda.value):
+            from academy.models import Escuela
+
+            esc = next((e for e in Escuela.objects.all()
+                        if norm(e.nombre) == norm(celda.value)), None)
+            if esc is None:
+                self._duda("Jugadores", celda.row, celda.column_letter,
+                           celda.value, "no reconozco esa escuela")
+            elif esc != jug.escuela:
+                jug.escuela = esc
+                jug.save(update_fields=["escuela"])
+                res["escuela"] += 1
+
         # División corregida.
-        div = norm(fila[3].value)
+        celda_div = c("División correcta")
+        div = norm(celda_div.value) if celda_div is not None else ""
         if div:
             n = numero_de(div)
             d = Division.objects.filter(nivel=n).first() if n else None
             if d is None:
-                self._duda("Jugadores", fila[3].row, "D", fila[3].value,
-                           "no reconozco esa división")
+                self._duda("Jugadores", celda_div.row, celda_div.column_letter,
+                           celda_div.value, "no reconozco esa división")
             elif d != jug.division:
                 jug.division = d
                 jug.save(update_fields=["division"])
                 res["division"] += 1
 
         # Responsable corregido.
-        nombre = norm(fila[5].value)
+        celda_resp = c("Responsable correcto")
+        nombre = norm(celda_resp.value) if celda_resp is not None else ""
         if nombre and not nombre.startswith("—"):
             ent = self._entrenador(nombre)
             if ent is None:
-                self._duda("Jugadores", fila[5].row, "F", fila[5].value,
-                           "ese entrenador no existe")
+                self._duda("Jugadores", celda_resp.row, celda_resp.column_letter,
+                           celda_resp.value, "ese entrenador no existe")
             else:
                 ResponsableJugador.objects.filter(jugador=jug).update(activo=False)
                 ResponsableJugador.objects.update_or_create(
                     jugador=jug, entrenador=ent,
                     defaults={"activo": True, "prioridad": 1},
                 )
+                # El responsable de la ficha es el mismo dato: si no, la app
+                # diría una cosa y el motor otra.
+                jug.entrenador_responsable = ent
+                jug.save(update_fields=["entrenador_responsable"])
                 res["responsable"] += 1
 
         # Pareja preferida. «a poder ser» / «si puede» lo baja a preferente.
-        for nom in self._nombres(fila[12].value):
+        celda_par = c("Entrena SIEMPRE con")
+        for nom in self._nombres(celda_par.value if celda_par is not None else None):
             otro = self._jugador(nom)
             if otro is None or otro.id == jug.id:
-                self._duda("Jugadores", fila[12].row, "M", nom, "no encuentro a ese jugador")
+                self._duda("Jugadores", celda_par.row, celda_par.column_letter, nom,
+                           "no encuentro a ese jugador")
                 continue
-            blando = re.search(r"a poder ser|si puede|preferib|mejor si", norm(fila[12].value))
+            blando = re.search(r"a poder ser|si puede|preferib|mejor si",
+                               norm(celda_par.value))
             PreferenciaPareja.objects.update_or_create(
                 jugador=jug, jugador_objetivo=otro,
                 defaults={"tipo": PreferenciaPareja.Tipo.SOFT if blando
@@ -374,30 +479,37 @@ class Command(BaseCommand):
             res["parejas"] += 1
 
         # Veto.
-        for nom in self._nombres(fila[13].value):
+        celda_veto = c("NO ponerlo con")
+        celda_nota = c("Notas")
+        for nom in self._nombres(celda_veto.value if celda_veto is not None else None):
             otro = self._jugador(nom)
             if otro is None or otro.id == jug.id:
-                self._duda("Jugadores", fila[13].row, "N", nom, "no encuentro a ese jugador")
+                self._duda("Jugadores", celda_veto.row, celda_veto.column_letter, nom,
+                           "no encuentro a ese jugador")
                 continue
             a, b = sorted([jug, otro], key=lambda x: x.id)
             Rencilla.objects.update_or_create(
                 jugador_a=a, jugador_b=b,
-                defaults={"activa": True, "motivo": str(fila[16].value or "")[:200]},
+                defaults={"activa": True, "motivo": str(
+                    (celda_nota.value if celda_nota is not None else "") or "")[:200]},
             )
             res["vetos"] += 1
 
         # Contrato de patrocinio.
-        for nom in self._nombres(fila[14].value):
+        celda_con = c("Contrato con")
+        for nom in self._nombres(celda_con.value if celda_con is not None else None):
             ent = self._entrenador(norm(nom))
             if ent is None:
-                self._duda("Jugadores", fila[14].row, "O", nom, "ese entrenador no existe")
+                self._duda("Jugadores", celda_con.row, celda_con.column_letter, nom,
+                           "ese entrenador no existe")
                 continue
             Contrato.objects.update_or_create(
                 jugador=jug, entrenador=ent, defaults={"activo": True})
             res["contratos"] += 1
 
         # Superficie.
-        sup = norm(fila[15].value)
+        celda_sup = c("Superficie")
+        sup = norm(celda_sup.value) if celda_sup is not None else ""
         if sup:
             if "tierra" in sup or "batida" in sup:
                 elegida = Pista.Superficie.TIERRA
@@ -405,17 +517,18 @@ class Command(BaseCommand):
                 elegida = Pista.Superficie.RESINA
             else:
                 elegida = None
-                self._duda("Jugadores", fila[15].row, "P", fila[15].value,
-                           "¿tierra o resina?")
+                self._duda("Jugadores", celda_sup.row, celda_sup.column_letter,
+                           celda_sup.value, "¿tierra o resina?")
             if elegida:
                 PreferenciaSuperficie.objects.update_or_create(
                     jugador=jug, superficie=elegida,
                     defaults={"estricta": "estricta" in sup or "solo" in sup})
                 res["superficie"] += 1
 
-        nota = fila[16].value
+        nota = celda_nota.value if celda_nota is not None else None
         if nota and str(nota).strip():
-            self._duda("Jugadores", fila[16].row, "Q", nota, "nota para leer a mano")
+            self._duda("Jugadores", celda_nota.row, celda_nota.column_letter, nota,
+                       "nota para leer a mano")
 
     # ------------------------------------------------------------------ #
     def _nombres(self, celda):
@@ -452,28 +565,60 @@ class Command(BaseCommand):
         ws = wb["Entrenadores"]
         res = Counter()
         nombres = self._entrenadores_idx
+        col = columnas_de(ws)
+        dias_col = [col.get(norm(d)) for d in ("LUNES", "MARTES", "MIÉRCOLES",
+                                               "JUEVES", "VIERNES")]
 
         for fila in ws.iter_rows(min_row=5, values_only=False):
             nombre = fila[0].value
-            if not nombre:
+            if not nombre or es_ejemplo(fila):
                 continue
             ent = nombres.get(norm(nombre))
             if ent is None:
                 self._duda("Entrenadores", fila[0].row, "A", nombre, "entrenador no encontrado")
                 continue
 
-            niveles = divisiones_de(fila[2].value)
+            celda_div = self._celda(fila, col, "Divisiones correctas")
+            niveles = divisiones_de(celda_div.value) if celda_div is not None else set()
             if niveles:
                 divs = list(Division.objects.filter(nivel__in=niveles))
                 faltan = niveles - {d.nivel for d in divs}
                 if faltan:
-                    self._duda("Entrenadores", fila[2].row, "C", fila[2].value,
+                    self._duda("Entrenadores", celda_div.row, celda_div.column_letter,
+                               celda_div.value,
                                f"divisiones que no existen: {sorted(faltan)}")
                 ent.divisiones_habilitadas.set(divs)
                 res["divisiones"] += 1
 
-            for d in DIAS_COL:
-                celda = fila[3 + d]
+            # Su franja fija, igual que la del alumno: en blanco entra donde
+            # haga falta.
+            campos = []
+            for etiqueta, campo, bloque in (
+                ("De normal · MAÑANA", "turno_manana", Turno.Bloque.MANANA),
+                ("De normal · TARDE", "turno_tarde", Turno.Bloque.TARDE),
+            ):
+                celda = self._celda(fila, col, etiqueta)
+                if celda is None or not norm(celda.value):
+                    continue
+                man, tar, marca = self.interprete.turnos_de(celda.value)
+                elegido = man if bloque == Turno.Bloque.MANANA else tar
+                if elegido is not None:
+                    setattr(ent, campo, elegido)
+                    campos.append(campo)
+                elif marca == "no_entrena":
+                    setattr(ent, campo, None)
+                    campos.append(campo)
+                else:
+                    self._duda("Entrenadores", celda.row, celda.column_letter,
+                               celda.value, "no sé qué franja es")
+            if campos:
+                ent.save(update_fields=campos)
+                res["franjas"] += 1
+
+            for d, indice in enumerate(dias_col):
+                if indice is None or indice >= len(fila):
+                    continue
+                celda = fila[indice]
                 jor = self.interprete.jornada(celda.value)
                 if jor is None:
                     HorarioEntrenador.objects.filter(entrenador=ent, dia=d).delete()
@@ -483,9 +628,11 @@ class Command(BaseCommand):
                     defaults={"manana": jor[0], "tarde": jor[1]},
                 )
                 res["jornada"] += 1
-            nota = fila[8].value
+            celda_nota = self._celda(fila, col, "Notas")
+            nota = celda_nota.value if celda_nota is not None else None
             if nota and str(nota).strip():
-                self._duda("Entrenadores", fila[8].row, "I", nota, "nota para leer a mano")
+                self._duda("Entrenadores", celda_nota.row, celda_nota.column_letter,
+                           nota, "nota para leer a mano")
             res["entrenadores"] += 1
         return res
 
@@ -496,25 +643,40 @@ class Command(BaseCommand):
         ws = wb["Ausencias"]
         res = Counter()
         jug, ent = self._jugadores_idx, self._entrenadores_idx
+        col = columnas_de(ws)
 
         for fila in ws.iter_rows(min_row=5, values_only=False):
             quien = fila[0].value
-            if not quien:
+            if not quien or es_ejemplo(fila):
                 continue
-            desde = fecha_de(fila[1].value, self.anio)
-            hasta = fecha_de(fila[2].value, self.anio) or desde
+            c_desde = self._celda(fila, col, "Desde")
+            c_hasta = self._celda(fila, col, "Hasta")
+            desde = fecha_de(c_desde.value if c_desde is not None else None, self.anio)
+            hasta = fecha_de(c_hasta.value if c_hasta is not None else None,
+                             self.anio) or desde
             if desde is None:
-                self._duda("Ausencias", fila[1].row, "B", fila[1].value, "no es una fecha")
+                self._duda("Ausencias", fila[0].row, "B",
+                           c_desde.value if c_desde is not None else "", "no es una fecha")
                 continue
             if hasta < desde:
-                self._duda("Ausencias", fila[2].row, "C", fila[2].value,
-                           "el «hasta» va antes que el «desde»")
+                self._duda("Ausencias", c_hasta.row, c_hasta.column_letter,
+                           c_hasta.value, "el «hasta» va antes que el «desde»")
                 continue
-            motivo = str(fila[3].value or "").strip()
+            c_motivo = self._celda(fila, col, "Motivo")
+            motivo = str((c_motivo.value if c_motivo is not None else "") or "").strip()
+            c_nota = self._celda(fila, col, "Notas")
+            nota = str((c_nota.value if c_nota is not None else "") or "").strip()
+            if nota:
+                motivo = f"{motivo} · {nota}" if motivo else nota
             clave = norm(quien)
 
             if clave in jug:
-                ambito = self._ambito(fila[4])
+                # «Qué se pierde» es la columna nueva; se acepta también el
+                # nombre viejo para los ficheros ya repartidos.
+                ambito = self._ambito(
+                    self._celda(fila, col, "Qué se pierde")
+                    or self._celda(fila, col, "Turnos afectados")
+                )
                 AusenciaJugador.objects.update_or_create(
                     jugador=jug[clave], fecha_inicio=desde, fecha_fin=hasta,
                     ambito=ambito,
@@ -532,6 +694,8 @@ class Command(BaseCommand):
         return res
 
     def _ambito(self, celda):
+        if celda is None:
+            return Ambito.DIA
         s = norm(celda.value)
         if not s:
             return Ambito.DIA
@@ -542,7 +706,8 @@ class Command(BaseCommand):
             return Ambito.MANANA
         if "tarde" in s:
             return Ambito.TARDE
-        self._duda("Ausencias", celda.row, "E", celda.value, "no sé qué turnos afecta")
+        self._duda("Ausencias", celda.row, celda.column_letter, celda.value,
+                   "no sé qué se pierde")
         return Ambito.DIA
 
     # ------------------------------------------------------------------ #
@@ -555,13 +720,17 @@ class Command(BaseCommand):
           f"   (de los cuales {r_j.get('dias_libres', 0)} son «no viene»)")
         w(f"    turnos deducidos ...... {r_j.get('deducido', 0)}"
           "   (decía solo «mañana»/«tarde»)")
+        w(f"    escuelas corregidas ... {r_j.get('escuela', 0)}")
         w(f"    divisiones corregidas . {r_j.get('division', 0)}")
         w(f"    responsables fijados .. {r_j.get('responsable', 0)}")
+        w(f"    altas / bajas ......... {r_j.get('fecha_alta', 0)}"
+          f" / {r_j.get('fecha_baja', 0)}")
         w(f"    parejas / vetos ....... {r_j.get('parejas', 0)} / {r_j.get('vetos', 0)}")
         w(f"    contratos ............. {r_j.get('contratos', 0)}")
         w(f"    superficie ............ {r_j.get('superficie', 0)}")
         w(f"  Entrenadores leídos ..... {r_e.get('entrenadores', 0)}")
         w(f"    divisiones fijadas .... {r_e.get('divisiones', 0)}")
+        w(f"    franjas fijadas ....... {r_e.get('franjas', 0)}")
         w(f"    días de jornada ....... {r_e.get('jornada', 0)}")
         w(f"  Ausencias de jugador .... {r_a.get('jugadores', 0)}")
         w(f"  Ausencias de entrenador . {r_a.get('entrenadores', 0)}")
