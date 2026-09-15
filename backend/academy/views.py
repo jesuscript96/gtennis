@@ -193,6 +193,8 @@ class JugadorViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return base
+        if self.action == "entrenadores":
+            return base
         return jugadores_visibles(user, base=base)
 
     DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
@@ -479,7 +481,12 @@ class JugadorViewSet(viewsets.ModelViewSet):
             .select_related("entrenador")
             .order_by("prioridad", "-porcentaje_objetivo", "id")
         )
-        prop = propuesta(jugador.entrenador_responsable)
+        resp_param = request.query_params.get("responsable")
+        if resp_param and str(resp_param).isdigit():
+            ent_resp = Entrenador.objects.filter(pk=int(resp_param)).first()
+            prop = propuesta(ent_resp)
+        else:
+            prop = propuesta(jugador.entrenador_responsable)
 
         ent_ids = [e for e, _p, _c in prop]
         ent_nombres = dict(

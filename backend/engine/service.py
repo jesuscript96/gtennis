@@ -109,12 +109,15 @@ def _effective_state(overrides, jugador_id, turno, fecha=None):
     Una ausencia con horas solo cuenta si se solapa con este turno: quien
     "llega a las 10:30" está ausente en la franja de 8:30 pero no en la suya.
     """
-    ini, fin = turno.horas(fecha)
-    for key in (turno.codigo, turno.bloque, "DIA"):
+    has_horas = hasattr(turno, "horas") and callable(getattr(turno, "horas", None))
+    ini, fin = turno.horas(fecha) if has_horas else (None, None)
+    for key in (getattr(turno, "codigo", None), getattr(turno, "bloque", None), "DIA"):
+        if not key:
+            continue
         d = overrides.get((jugador_id, key))
         if d is None:
             continue
-        if hasattr(d, "afecta") and not d.afecta(ini, fin):
+        if hasattr(d, "afecta") and ini is not None and fin is not None and not d.afecta(ini, fin):
             continue
         return d.estado
     return Estado.DISPONIBLE

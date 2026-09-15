@@ -263,6 +263,9 @@ class SemanaViewSet(viewsets.ModelViewSet):
         class _DiaOnly:
             codigo = None
             bloque = None
+
+            def horas(self, fecha=None):
+                return None, None
         dia_state = _DiaOnly()
 
         coaches = list(Entrenador.objects.filter(activo=True).order_by("nombre"))
