@@ -1,21 +1,19 @@
-"""Aplica el organigrama de grupos de la dirección deportiva (septiembre 2026).
+"""Aplica el organigrama de la dirección deportiva (septiembre de 2026).
 
-El modelo tiene DOS ejes independientes, y hasta ahora estaban mezclados:
+De la pestaña «GRUPOS TODOS» del CALENDARIO 2026 salen tres cosas distintas:
 
-  CAPACIDAD DE ENTRENAR — la marca la división. Cada bloque cubre un rango de
-  divisiones y todos sus entrenadores pueden entrenar a cualquier jugador de
-  esas divisiones. Sin pesos ni porcentajes: las únicas excepciones son un
-  contrato de patrocinio o una rencilla.  → `Entrenador.divisiones_habilitadas`
+  NIVEL — «NIVELES PARA ENTRENAMIENTO» (filas 87-102). Es la división del
+  alumno y solo sirve para emparejarle con otros.  → `Jugador.division`
 
-  ADMINISTRACIÓN EN LA APP — todos los entrenadores del bloque pueden editar la
-  ficha de cualquier jugador del bloque y declararle ausencias. La sub-columna
-  de la tabla no restringe tampoco aquí; es solo cómo la dirección agrupa la
-  lista. Los administradores lo ven todo por su rol.  → `ResponsableJugador`
+  GESTIÓN — la tabla de encima (filas 67-82): cada columna es un entrenador
+  con los alumnos que gestiona.  → `Jugador.entrenador_responsable`
 
-Esto sustituye al reparto anterior por porcentajes (prioridad 1/2 con 70/30),
-que no correspondía a nada real y además concentraba la carga: el motor elegía
-siempre al entrenador con más déficit de porcentaje y nunca llegaba a
-equilibrar.
+  ENTRENAMIENTO — la misma tabla: el entrenador de su columna es su principal
+  y el resto de su grupo, secundarios con un 10% cada uno, que es el mínimo
+  (`academy.pesos`).  → `ResponsableJugador`
+
+Los porcentajes se retocan después a mano en la ficha del alumno. Volver a
+pasar el comando los devuelve a la regla; el informe dice a cuántos.
 
 Idempotente. Uso:
     python manage.py aplicar_grupos --dry-run
@@ -28,66 +26,57 @@ from django.db import transaction
 from academy.models import (
     Coach, Contrato, Division, Entrenador, Jugador, ResponsableJugador,
 )
+from academy.pesos import guardar as guardar_pesos, reparto_por_defecto
 
-# ── Organigrama ────────────────────────────────────────────────────────────
-# Cada bloque: head coach (que también entrena), las divisiones que cubre y
-# las sub-columnas. La sub-columna solo decide QUIÉN ADMINISTRA; para entrenar
-# vale cualquier entrenador del bloque.
-# Fuente: pestaña «GRUPOS TODOS» del CALENDARIO 2026.
-#   · Entrenadores por división: filas 67-70 (coach arriba, entrenadores abajo).
-#     No cambian de un curso a otro.
-#   · Jugadores por nivel: «NIVELES PARA ENTRENAMIENTOS», filas 87-102.
-# Desde septiembre de 2026 la escala es de 9 niveles, con la misma numeración
-# que la fila de divisiones de los entrenadores: 1-3 Dani Gimeno, 4-6 Pablo Gil,
-# 7-8 Santi Panzarasa y 9 Álvaro Mantoan. La columna N (los chinos) no lleva
-# número en la fila de niveles: va con Álvaro, Alberto y Jorge Milla, que es lo
-# que dice su cabecera, y toma la división de ese bloque.
+# ── Gestión y entrenamiento: la tabla de las filas 67-82 ────────────────────
+# Cada bloque: su coach y sus columnas, cada una con el entrenador (o los
+# entrenadores) de arriba y sus alumnos debajo. Los entrenadores van con el
+# nombre completo: el buscador difuso confunde «VICTOR R.» con Víctor M y
+# «JORGE I.» con Jorge García.
 BLOQUES = [
     {
         "head": "DANI GIMENO",
         "divisiones": [1, 2, 3],
         "columnas": [
-            (["VICTOR REDONDO"], 1,
+            (["VICTOR REDONDO"],
              ["Carlos Taberner", "Carlos Sanchez", "Raúl Brancaccio"]),
-            (["JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO"], 2,
+            (["JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO"],
              ["Carlos Lopez", "Carles cordoba", "Ignacio Parisca", "Sergio Planella",
               "Lucca Helguera", "Alejandro Garcia", "Mateo Alvarez", "Yanaki Milev",
-              "Toprak Avcibasi", "Elina Avanesyan"]),
-            (["JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO"], 3,
-             ["Enzo Helguera", "Marc Martin Roca", "Fermin Barcala", "Chimo Minguez",
-              "Javi Ballester"]),
+              "Toprak Avcibasi"]),
+            (["JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO"],
+             ["Enzo Helguera", "Maria Adrienko", "Marc Martin Roca", "Diego Vilches",
+              "Fermin Barcala", "Chimo Minguez", "Ciaran Kanani"]),
         ],
     },
     {
         "head": "PABLO GIL",
         "divisiones": [4, 5, 6],
         "columnas": [
-            (["PABLO GIL"], 4, ["Maria Adrienko", "Eric Badenes"]),
-            (["MARIO MUNIESA", "JORGE IBAÑEZ"], 5,
-             ["Marcos Romero", "Vicent Baixauli", "Carla Guerrero", "Ojas Malhorta",
-              "Diego Vilches", "Ciaran Kanani"]),
-            (["SALVA BARCALA"], 6, ["Dani Martins", "Manuel Mendez"]),
+            (["PABLO GIL"], ["Javi Ballester", "Eric Badenes", "Carla Guerrero"]),
+            (["MARIO MUNIESA", "JORGE IBAÑEZ"],
+             ["Marcos Romero", "Vicent Baixauli", "Marta Crespo", "Valeriia Bokova",
+              "Ojas Malhorta", "Jinxuan Liao Bonnie"]),
+            (["SALVA BARCALA"],
+             ["Amparo Gil", "Natalia Botea", "Anjali Vasanthan", "Rodrigo López",
+              "Manuel Mendez"]),
         ],
     },
     {
         "head": "SANTI PANZARASA",
         "divisiones": [7, 8],
         "columnas": [
-            (["PATRICIO"], 7,
-             ["Marta Crespo", "Valeriia Bokova", "Eugenia Álvarez", "Victoria Schneider",
-              "Amparo Gil", "Rodrigo López", "Jinxuan Liao Bonnie"]),
-            (["NACHO CALVO"], 8, ["Huaqi Li", "Natalia Botea", "Anjali Vasanthan"]),
+            (["PATRICIO"], ["Dani Martins", "Eugenia Álvarez", "Victoria Schneider"]),
+            (["NACHO CALVO"],
+             ["Nik Guilin", "Huaqi Li", "Shiying Xia 14 Silvia", "Arrow 13",
+              "Maria Ruiz", "Valentina Andrea 13", "Tomkin Deng"]),
         ],
     },
     {
         "head": "ALVARO MANTOAN",
         "divisiones": [9],
         "columnas": [
-            (["ALVARO MANTOAN", "ALBERTO", "JORGE MILLA"], 9,
-             ["Nik Guilin", "Arrow 13", "Valentina Andrea 13", "Maria Ruiz",
-              "Tomkin Deng", "Shiying Xia 14 Silvia"]),
-            # Columna N: sin número en la fila de niveles.
-            (["ALVARO MANTOAN", "ALBERTO", "JORGE MILLA"], 9,
+            (["ALVARO MANTOAN", "ALBERTO", "JORGE MILLA"],
              ["Ruohan Xu", "Jennie Zhang", "Yuantian Gao", "Kevin (zunwen wang)",
               "Yushuo Li 14 (chico)", "Pablo Pérez Fajardo", "Octavio Alcaraz",
               "Kandi Xu 15años (YU)", "Carol Grao", "Tal Or", "Xuancheng kairi 12",
@@ -95,6 +84,32 @@ BLOQUES = [
         ],
     },
 ]
+# Grupos de un entrenador suelto, fuera de los bloques (filas 81-82).
+PARTICULARES = [("JORGE GARCIA", ["Elina Avanesyan"])]
+
+# ── Nivel: «NIVELES PARA ENTRENAMIENTO», filas 87-102 ───────────────────────
+# La columna N (los chinos) no lleva número en la fila de niveles: va con la 9.
+NIVELES = {
+    1: ["Carlos Taberner", "Carlos Sanchez", "Raúl Brancaccio"],
+    2: ["Carlos Lopez", "Carles cordoba", "Ignacio Parisca", "Sergio Planella",
+        "Lucca Helguera", "Alejandro Garcia", "Mateo Alvarez", "Yanaki Milev",
+        "Toprak Avcibasi", "Elina Avanesyan"],
+    3: ["Enzo Helguera", "Marc Martin Roca", "Fermin Barcala", "Chimo Minguez",
+        "Javi Ballester"],
+    4: ["Maria Adrienko", "Eric Badenes"],
+    5: ["Marcos Romero", "Vicent Baixauli", "Carla Guerrero", "Ojas Malhorta",
+        "Diego Vilches", "Ciaran Kanani"],
+    6: ["Dani Martins", "Manuel Mendez"],
+    7: ["Marta Crespo", "Valeriia Bokova", "Eugenia Álvarez", "Victoria Schneider",
+        "Amparo Gil", "Rodrigo López", "Jinxuan Liao Bonnie"],
+    8: ["Huaqi Li", "Natalia Botea", "Anjali Vasanthan"],
+    9: ["Nik Guilin", "Arrow 13", "Valentina Andrea 13", "Maria Ruiz", "Tomkin Deng",
+        "Shiying Xia 14 Silvia",
+        "Ruohan Xu", "Jennie Zhang", "Yuantian Gao", "Kevin (zunwen wang)",
+        "Yushuo Li 14 (chico)", "Pablo Pérez Fajardo", "Octavio Alcaraz",
+        "Kandi Xu 15años (YU)", "Carol Grao", "Tal Or", "Xuancheng kairi 12",
+        "Gavin Dai", "Yanqiedeng Wang 13"],
+}
 
 # Entrenador particular: contrato de patrocinio (jugador ↔ entrenador fijo).
 CONTRATOS = [("JORGE GARCIA", "Elina Avanesyan")]
@@ -143,7 +158,7 @@ def fuera_de_servicio(nombre):
 
 
 class Command(BaseCommand):
-    help = "Aplica el organigrama de grupos: capacidad por división y responsable único."
+    help = "Aplica el organigrama: nivel, responsable y porcentajes de entrenamiento."
 
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true")
@@ -204,11 +219,7 @@ class Command(BaseCommand):
     def _run(self, **opts):
         w = self.stdout.write
         seco = opts["dry_run"]
-        # La escala la marca el organigrama, no la base: si la dirección añade
-        # un nivel (la 9, en septiembre de 2026) se crea aquí.
-        niveles = {n for b in BLOQUES for n in b["divisiones"]}
-        niveles |= {d for b in BLOQUES for _c, d, _j in b["columnas"]}
-        for n in sorted(niveles):
+        for n in NIVELES:
             Division.objects.get_or_create(nivel=n, defaults={"nombre": f"División {n}"})
         divs = {d.nivel: d for d in Division.objects.all()}
         # Con dos fichas del mismo nombre, se queda la activa (va la última).
@@ -218,117 +229,129 @@ class Command(BaseCommand):
         for e in Entrenador.objects.order_by("activo", "id"):
             eidx[clave(e.nombre)] = e
 
-        altas_e, altas_j, sin_div, redivs, resp_nuevos = [], [], [], [], []
-        coaches_retirados = []
-        # Nombres de la tabla que no coinciden letra a letra con su ficha: es
-        # donde se cuela un emparejamiento equivocado, así que se enseñan.
-        aproximados = []
-        capacidades = defaultdict(set)
-        vistos = set()
-        # Cuántos alumnos lleva ya cada entrenador como responsable de ficha.
-        # Sirve para repartir la sub-columna en partes iguales cuando la firman
-        # varios (Javi / Blas / Emilio) en vez de cargárselos todos al primero.
+        altas_e, altas_j, aproximados = set(), [], set()
+        redivs, cambios_resp, columnas, coaches_retirados = [], [], [], []
+        vistos, pesos_cambian = set(), 0
+        # Si una columna la firman varios, sus alumnos se reparten entre ellos
+        # como responsables.
         carga = defaultdict(int)
 
-        for bloque in BLOQUES:
-            head = bloque["head"]
-            plantel = {head}
-            for cols, _d, _j in bloque["columnas"]:
-                plantel.update(cols)
-            # 1) Capacidad de entrenar = las divisiones del bloque, para todos.
+        def ficha(modelo, idx, nom):
+            obj = self._buscar(modelo, nom, idx)
+            if obj is not None and clave(obj.nombre) != clave(nom):
+                aproximados.add((modelo.__name__.lower(), nom, obj.nombre))
+            return obj
+
+        grupos = [(b["head"], b["columnas"]) for b in BLOQUES]
+        grupos += [(None, [([ent], alumnos)]) for ent, alumnos in PARTICULARES]
+        for head, cols in grupos:
+            plantel = list(dict.fromkeys(
+                ([head] if head else []) + [n for arriba, _a in cols for n in arriba]
+            ))
+            ents = {}
             for nom in plantel:
-                ent = self._buscar(Entrenador, nom, eidx)
-                if ent is not None and clave(ent.nombre) != clave(nom):
-                    aproximados.append(("entrenador", nom, ent.nombre))
+                ent = ficha(Entrenador, eidx, nom)
                 if ent is None:
-                    altas_e.append(nom)
-                    if not seco:
-                        ent = Entrenador.objects.create(nombre=nom, activo=True)
-                        eidx[clave(nom)] = ent
-                    else:
+                    altas_e.add(nom)
+                    if seco:
                         continue
-                capacidades[ent.pk] |= set(bloque["divisiones"])
+                    ent = Entrenador.objects.create(nombre=nom, activo=True)
+                    eidx[clave(nom)] = ent
                 if not seco:
                     ent.activo = True
                     ent.disponible_semana = not fuera_de_servicio(nom)
                     ent.save(update_fields=["activo", "disponible_semana"])
+                ents[nom] = ent
 
-            # 2) Coach del bloque, con su equipo colgando. Se reusa el que ya
-            #    exista con ese nombre —el que tiene usuario, que es con el que
-            #    se entra— y los duplicados se retiran: si no, el bloque sale
-            #    partido en dos en la pestaña de grupos.
-            coach, duplicados = self._coach_del_bloque(head, crear=not seco)
-            coaches_retirados.extend(
-                (d.nombre, coach.nombre if coach else head) for d in duplicados
-            )
-            if not seco:
-                for dup in duplicados:
-                    dup.entrenadores.clear()
-                    dup.activo = False
-                    dup.save(update_fields=["activo"])
-                coach.activo = True
-                coach.save(update_fields=["activo"])
-                equipo = [self._buscar(Entrenador, n, eidx) for n in plantel]
-                coach.entrenadores.set([e for e in equipo if e])
+            if head is not None:
+                # Coach del bloque, con su equipo colgando. Se reusa el que ya
+                # exista —el que tiene usuario— y los duplicados se retiran: si
+                # no, el bloque sale partido en dos en la pestaña de grupos.
+                coach, duplicados = self._coach_del_bloque(head, crear=not seco)
+                coaches_retirados.extend(
+                    (d.nombre, coach.nombre if coach else head) for d in duplicados
+                )
+                if not seco:
+                    for dup in duplicados:
+                        dup.entrenadores.clear()
+                        dup.activo = False
+                        dup.save(update_fields=["activo"])
+                    coach.activo = True
+                    coach.save(update_fields=["activo"])
+                    coach.entrenadores.set(ents.values())
 
-            # 3) Jugadores: división + responsable único (el de su sub-columna).
-            for cols, div, jugadores in bloque["columnas"]:
-                for nom in jugadores:
-                    jug = self._buscar(Jugador, nom, jidx)
-                    if jug is not None and clave(jug.nombre) != clave(nom):
-                        aproximados.append(("jugador", nom, jug.nombre))
+            # Quien está fuera de servicio sigue en su bloque, pero ni gestiona
+            # ni entrena a nadie.
+            en_servicio = [n for n in plantel if n in ents and not fuera_de_servicio(n)]
+            for arriba, alumnos in cols:
+                principales = [n for n in arriba if n in en_servicio]
+                reparto = reparto_por_defecto(
+                    principales, sorted(n for n in en_servicio if n not in principales)
+                )
+                columnas.append((head, arriba, len(alumnos), reparto))
+                filas = sorted((ents[n].pk, p, c) for n, p, c in reparto)
+                for nom in alumnos:
+                    jug = ficha(Jugador, jidx, nom)
                     if jug is None:
-                        altas_j.append((nom, div, head))
+                        altas_j.append((nom, head or arriba[0]))
                         if seco:
                             continue
                         jug = Jugador.objects.create(
-                            nombre=nom, activo=True, division=divs.get(div),
+                            nombre=nom, activo=True,
                             notas="alta desde el organigrama de septiembre",
                         )
                         jidx[clave(nom)] = jug
                     vistos.add(jug.pk)
-                    actual = jug.division.nivel if jug.division else None
-                    if actual != div:
-                        redivs.append((jug.nombre, actual, div))
-                    # Responsable de ficha: uno solo, el de su sub-columna. Es
-                    # el grupo al que pertenece el alumno y quien responde por
-                    # él; si la columna la firman varios, se reparten.
                     dueno = None
-                    candidatos = [
-                        e for e in (self._buscar(Entrenador, c, eidx) for c in sorted(cols))
-                        if e is not None
-                    ]
-                    if candidatos:
-                        # Quien está fuera de servicio (Jorge Ibáñez, en China)
-                        # sigue en el bloque pero no responde por nadie.
-                        dueno = min(candidatos, key=lambda e: (
-                            fuera_de_servicio(e.nombre), carga[e.pk], e.nombre))
+                    if principales:
+                        dueno = min((ents[n] for n in principales),
+                                    key=lambda e: (carga[e.pk], e.nombre))
                         carga[dueno.pk] += 1
+                        if jug.entrenador_responsable_id != dueno.pk:
+                            antes = (jug.entrenador_responsable.nombre
+                                     if jug.entrenador_responsable_id else "—")
+                            cambios_resp.append((jug.nombre, antes, dueno.nombre))
+                    actuales = sorted(
+                        ResponsableJugador.objects.filter(jugador=jug, activo=True)
+                        .values_list("entrenador_id", "prioridad", "porcentaje_objetivo")
+                    )
+                    if actuales != filas:
+                        pesos_cambian += 1
                     if not seco:
-                        jug.division = divs.get(div)
                         jug.activo = True
                         if dueno is not None:
                             jug.entrenador_responsable = dueno
-                        jug.save(update_fields=[
-                            "division", "activo", "entrenador_responsable",
-                        ])
-                        # Administración: TODO el bloque, sin pesos.
-                        ResponsableJugador.objects.filter(jugador=jug).delete()
-                        for cn in sorted(plantel):
-                            ent = self._buscar(Entrenador, cn, eidx)
-                            if ent:
-                                ResponsableJugador.objects.create(
-                                    jugador=jug, entrenador=ent, prioridad=1,
-                                    porcentaje_objetivo=0, activo=True,
-                                )
-                    resp_nuevos.append((jug.nombre if jug else nom, sorted(plantel)))
+                        jug.save(update_fields=["activo", "entrenador_responsable"])
+                        guardar_pesos(jug, filas)
 
-        # 4) Capacidades y contratos.
+        # Nivel: la división, que solo sirve para emparejar.
+        con_nivel = set()
+        for nivel, nombres in NIVELES.items():
+            for nom in nombres:
+                jug = ficha(Jugador, jidx, nom)
+                if jug is None:
+                    continue
+                con_nivel.add(jug.pk)
+                actual = jug.division.nivel if jug.division_id else None
+                if actual != nivel:
+                    redivs.append((jug.nombre, actual, nivel))
+                    if not seco:
+                        jug.division = divs[nivel]
+                        jug.save(update_fields=["division"])
+        sin_nivel = sorted(Jugador.objects.filter(pk__in=vistos - con_nivel)
+                           .values_list("nombre", flat=True))
+        nivel_sin_grupo = sorted(Jugador.objects.filter(pk__in=con_nivel - vistos)
+                                 .values_list("nombre", flat=True))
+
         if not seco:
-            for pk, niveles in capacidades.items():
-                Entrenador.objects.get(pk=pk).divisiones_habilitadas.set(
-                    [divs[n] for n in niveles if n in divs]
-                )
+            for b in BLOQUES:
+                divs_b = b.get("divisiones", [])
+                plantel = list(dict.fromkeys([b["head"]] + [n for arriba, _a in b["columnas"] for n in arriba]))
+                for nom in plantel:
+                    ent = self._buscar(Entrenador, nom, eidx)
+                    if ent:
+                        ent.divisiones_habilitadas.set([divs[n] for n in divs_b if n in divs])
+
             for ent_nom, jug_nom in CONTRATOS:
                 ent = self._buscar(Entrenador, ent_nom, eidx)
                 jug = self._buscar(Jugador, jug_nom, jidx)
@@ -337,54 +360,53 @@ class Command(BaseCommand):
                         jugador=jug, entrenador=ent, defaults={"activo": True}
                     )
 
-        fuera_jug = [j for j in Jugador.objects.filter(activo=True)
-                     if j.pk not in vistos]
-        fuera = [j.nombre for j in fuera_jug]
-        # Quien tenía grupo y ya no aparece en el organigrama deja el grupo: si
-        # no, la pestaña de grupos le seguiría enseñando con su entrenador de
-        # antes. No se le da de baja ni se le toca la división.
-        salen = sorted(j.nombre for j in fuera_jug if j.entrenador_responsable_id)
-        for j in fuera_jug:
-            if j.entrenador_responsable_id:
-                ResponsableJugador.objects.filter(jugador=j).delete()
-                j.entrenador_responsable = None
-                j.save(update_fields=["entrenador_responsable"])
+        # Quien no está en el organigrama deja su grupo: si no, seguiría saliendo
+        # con sus entrenadores de antes. No se le da de baja ni se le toca el nivel.
+        fuera_jug = [j for j in Jugador.objects.filter(activo=True) if j.pk not in vistos]
+        fuera = sorted(j.nombre for j in fuera_jug)
+        salen = sorted(j.nombre for j in fuera_jug
+                       if j.entrenador_responsable_id or j.responsables.exists())
+        if not seco:
+            for j in fuera_jug:
+                guardar_pesos(j, [])
+                if j.entrenador_responsable_id:
+                    j.entrenador_responsable = None
+                    j.save(update_fields=["entrenador_responsable"])
 
         # -- informe ---------------------------------------------------------
-        w(self.style.MIGRATE_HEADING("\nCAPACIDAD DE ENTRENAR (por división)"))
-        for bloque in BLOQUES:
-            plantel = {bloque["head"]}
-            for c, _d, _j in bloque["columnas"]:
-                plantel.update(c)
-            nota = "".join(f"  ⚠ {n}: {m}" for n, m in NO_DISPONIBLES.items()
-                           if n in plantel)
-            w(f"  divisiones {bloque['divisiones']} → {', '.join(sorted(plantel))}{nota}")
-        w(self.style.MIGRATE_HEADING("\nADMINISTRACIÓN (quién puede editar a quién)"))
-        porcol = defaultdict(list)
-        for nom, cols in resp_nuevos:
-            porcol[", ".join(cols)].append(nom)
-        for col, jugs in porcol.items():
-            w(f"  {len(jugs):>2} jugadores ← {col}")
-        w(self.style.MIGRATE_HEADING(f"\nDIVISIONES CORREGIDAS ({len(redivs)})"))
-        for n, a, b in sorted(redivs, key=lambda x: x[2]):
-            w(f"  {str(a):>4} → {b}   {n}")
-        vistos_aprox = sorted(set(aproximados))
-        w(self.style.MIGRATE_HEADING(
-            f"\nNOMBRES QUE CASAN POR PARECIDO ({len(vistos_aprox)})"))
-        for tipo, en_tabla, en_ficha in vistos_aprox:
+        w(self.style.MIGRATE_HEADING("\nGRUPOS · principal y secundarios"))
+        for head, arriba, n, reparto in columnas:
+            principal = " · ".join(f"{e} {c}%" for e, p, c in reparto if p == 1)
+            secundarios = ", ".join(f"{e} {c}%" for e, p, c in reparto if p == 2)
+            w(f"  {head or '—':16s} {' / '.join(arriba):40s} {n:>2} alumnos  {principal}"
+              + (f"  + {secundarios}" if secundarios else ""))
+        for nom, motivo in NO_DISPONIBLES.items():
+            w(f"  ⚠ {nom}: {motivo}. Sigue en su bloque, pero ni gestiona ni entrena a nadie.")
+        w(self.style.MIGRATE_HEADING(f"\nRESPONSABLES QUE CAMBIAN ({len(cambios_resp)})"))
+        for nom, antes, despues in sorted(cambios_resp):
+            w(f"  {nom:32s} {antes} → {despues}")
+        w(self.style.MIGRATE_HEADING(f"\nPORCENTAJES QUE CAMBIAN: {pesos_cambian} alumnos"))
+        w(self.style.MIGRATE_HEADING(f"\nNIVELES CORREGIDOS ({len(redivs)})"))
+        for nom, antes, despues in sorted(redivs, key=lambda x: (x[2], x[0])):
+            w(f"  {str(antes):>4} → {despues}   {nom}")
+        w(self.style.MIGRATE_HEADING(f"\nNOMBRES QUE CASAN POR PARECIDO ({len(aproximados)})"))
+        for tipo, en_tabla, en_ficha in sorted(aproximados):
             w(f"  {tipo:10s} {en_tabla:28s} → {en_ficha}")
-        w(self.style.MIGRATE_HEADING(f"\nALTAS ({len(altas_j)} jugadores, {len(altas_e)} entrenadores)"))
-        for n, d, b in altas_j:
-            w(f"  jugador  div {d}  {n:28s} [{b}]")
-        for n in altas_e:
-            w(f"  entrenador  {n}")
-        w(self.style.WARNING(
-            f"\nACTIVOS QUE NO ESTÁN EN EL ORGANIGRAMA ({len(fuera)})"))
-        w("  " + ", ".join(sorted(fuera)))
-        w("  → ni se les da de baja ni se les cambia la división.")
+        w(self.style.MIGRATE_HEADING(
+            f"\nALTAS ({len(altas_j)} jugadores, {len(altas_e)} entrenadores)"))
+        for nom, grupo in altas_j:
+            w(f"  jugador     {nom:28s} [{grupo}]")
+        for nom in sorted(altas_e):
+            w(f"  entrenador  {nom}")
+        if sin_nivel or nivel_sin_grupo:
+            w(self.style.WARNING("\nNIVEL Y GRUPO QUE NO CUADRAN"))
+            w("  en un grupo sin nivel: " + (", ".join(sin_nivel) or "—"))
+            w("  con nivel sin grupo:   " + (", ".join(nivel_sin_grupo) or "—"))
+        w(self.style.WARNING(f"\nACTIVOS QUE NO ESTÁN EN EL ORGANIGRAMA ({len(fuera)})"))
+        w("  " + (", ".join(fuera) or "—"))
         w(self.style.WARNING(f"\nSALEN DE SU GRUPO ({len(salen)})"))
         w("  " + (", ".join(salen) or "—"))
-        w("  → tenían responsable y no están en el organigrama: pasan a «Sin grupo».")
+        w("  → sin responsable ni porcentajes, a «Sin grupo». Ni baja ni cambio de nivel.")
         if coaches_retirados:
             w(self.style.WARNING(
                 f"\nCOACHES DUPLICADOS RETIRADOS ({len(coaches_retirados)})"))
