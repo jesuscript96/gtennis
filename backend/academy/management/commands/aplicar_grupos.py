@@ -136,6 +136,12 @@ def clave(nombre):
     )
 
 
+def fuera_de_servicio(nombre):
+    """¿Está en NO_DISPONIBLES? Por clave y no letra a letra: la tabla escribe
+    «JORGE IBAÑEZ» y en producción la ficha se llama «Jorge Ibañez»."""
+    return clave(nombre) in {clave(n) for n in NO_DISPONIBLES}
+
+
 class Command(BaseCommand):
     help = "Aplica el organigrama de grupos: capacidad por división y responsable único."
 
@@ -244,7 +250,7 @@ class Command(BaseCommand):
                 capacidades[ent.pk] |= set(bloque["divisiones"])
                 if not seco:
                     ent.activo = True
-                    ent.disponible_semana = nom not in NO_DISPONIBLES
+                    ent.disponible_semana = not fuera_de_servicio(nom)
                     ent.save(update_fields=["activo", "disponible_semana"])
 
             # 2) Coach del bloque, con su equipo colgando. Se reusa el que ya
@@ -296,7 +302,7 @@ class Command(BaseCommand):
                         # Quien está fuera de servicio (Jorge Ibáñez, en China)
                         # sigue en el bloque pero no responde por nadie.
                         dueno = min(candidatos, key=lambda e: (
-                            e.nombre in NO_DISPONIBLES, carga[e.pk], e.nombre))
+                            fuera_de_servicio(e.nombre), carga[e.pk], e.nombre))
                         carga[dueno.pk] += 1
                     if not seco:
                         jug.division = divs.get(div)

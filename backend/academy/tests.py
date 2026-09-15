@@ -3,7 +3,9 @@
 Run: python manage.py test academy
 """
 from datetime import date, time
+from io import StringIO
 
+from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 
 from academy.models import (
@@ -235,3 +237,24 @@ class VieneAdemasTests(TestCase):
             hechas_bloque={(self.jug.id, "MANANA"): 5},
             hechas_dia={self.jug.id: 5},
         ))
+
+
+class OrganigramaFueraDeServicioTests(TestCase):
+    """Quien está fuera de servicio sigue en su bloque pero no responde por
+    ningún alumno, se escriba su ficha como se escriba. En producción es
+    «Jorge Ibañez» y la tabla dice «JORGE IBAÑEZ»: comparando letra a letra se
+    quedó con la mitad de la D5."""
+
+    def test_no_se_le_asignan_alumnos_con_el_nombre_de_produccion(self):
+        jorge = Entrenador.objects.create(nombre="Jorge Ibañez", activo=True)
+        mario = Entrenador.objects.create(nombre="Mario Muniesa", activo=True)
+        call_command("aplicar_grupos", stdout=StringIO())
+
+        self.assertFalse(Jugador.objects.filter(entrenador_responsable=jorge).exists())
+        self.assertTrue(Jugador.objects.filter(entrenador_responsable=mario).exists())
+        jorge.refresh_from_db()
+        self.assertFalse(jorge.disponible_semana)
+        self.assertEqual(
+            sorted(jorge.divisiones_habilitadas.values_list("nivel", flat=True)),
+            [4, 5, 6],
+        )
