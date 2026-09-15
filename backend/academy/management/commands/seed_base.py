@@ -1,5 +1,5 @@
 """Seed determinista de la estructura del club: sedes, pistas (con superficie),
-turnos (con horario de verano) y la escala de divisiones 1-8.
+turnos (con horario de verano) y la escala de divisiones 1-9.
 
 La estructura real de la academia (feedback de Sergio #7/#8/#1):
     Resort        base, 6 tierra (P1-P6) + 2 resina (P7-P8)
@@ -91,7 +91,8 @@ class Command(BaseCommand):
                 },
             )
 
-        for nivel in range(1, 9):
+        # 9 niveles desde septiembre de 2026 (pestaña «GRUPOS TODOS»).
+        for nivel in range(1, 10):
             Division.objects.get_or_create(
                 nivel=nivel, defaults={"nombre": f"División {nivel}"}
             )

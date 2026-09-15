@@ -33,6 +33,15 @@ from academy.models import (
 # Cada bloque: head coach (que también entrena), las divisiones que cubre y
 # las sub-columnas. La sub-columna solo decide QUIÉN ADMINISTRA; para entrenar
 # vale cualquier entrenador del bloque.
+# Fuente: pestaña «GRUPOS TODOS» del CALENDARIO 2026.
+#   · Entrenadores por división: filas 67-70 (coach arriba, entrenadores abajo).
+#     No cambian de un curso a otro.
+#   · Jugadores por nivel: «NIVELES PARA ENTRENAMIENTOS», filas 87-102.
+# Desde septiembre de 2026 la escala es de 9 niveles, con la misma numeración
+# que la fila de divisiones de los entrenadores: 1-3 Dani Gimeno, 4-6 Pablo Gil,
+# 7-8 Santi Panzarasa y 9 Álvaro Mantoan. La columna N (los chinos) no lleva
+# número en la fila de niveles: va con Álvaro, Alberto y Jorge Milla, que es lo
+# que dice su cabecera, y toma la división de ese bloque.
 BLOQUES = [
     {
         "head": "DANI GIMENO",
@@ -43,44 +52,42 @@ BLOQUES = [
             (["JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO"], 2,
              ["Carlos Lopez", "Carles cordoba", "Ignacio Parisca", "Sergio Planella",
               "Lucca Helguera", "Alejandro Garcia", "Mateo Alvarez", "Yanaki Milev",
-              "Toprak"]),
+              "Toprak Avcibasi", "Elina Avanesyan"]),
             (["JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO"], 3,
-             ["Enzo Helguera", "Maria Adrienko", "Marc Martin Roca", "Diego Vilches",
-              "Fermin Barcala", "Ximo Minguez", "Ciaran Kanani"]),
+             ["Enzo Helguera", "Marc Martin Roca", "Fermin Barcala", "Chimo Minguez",
+              "Javi Ballester"]),
         ],
     },
     {
         "head": "PABLO GIL",
-        "divisiones": [4, 5],
+        "divisiones": [4, 5, 6],
         "columnas": [
-            # Confirmado por dirección: la columna de Pablo es división 4.
-            (["PABLO GIL"], 4,
-             ["Javi Ballester", "Eric Badenes", "Carla Guerrero"]),
-            (["MARIO MUNIESA", "JORGE IBAÑEZ"], 4,
-             ["Marcos Romero", "Vicent Baixauli", "Marta Crespo", "Valeriia Bokova",
-              "Ojas Malhorta", "Jinxuan Liao Bonnie"]),
-            (["SALVA BARCALA"], 5,
-             ["Amparo Gil", "Natalia Botea", "Anjali Vasanthan", "Rodrigo López",
-              "Manuel Mendez"]),
+            (["PABLO GIL"], 4, ["Maria Adrienko", "Eric Badenes"]),
+            (["MARIO MUNIESA", "JORGE IBAÑEZ"], 5,
+             ["Marcos Romero", "Vicent Baixauli", "Carla Guerrero", "Ojas Malhorta",
+              "Diego Vilches", "Ciaran Kanani"]),
+            (["SALVA BARCALA"], 6, ["Dani Martins", "Manuel Mendez"]),
         ],
     },
     {
         "head": "SANTI PANZARASA",
-        "divisiones": [6, 7],
+        "divisiones": [7, 8],
         "columnas": [
-            (["PATRICIO"], 6,
-             ["Dani Martins", "Eugenia Álvarez", "Victoria Schneider",
-              "Yashvardhan Singh"]),
-            (["NACHO CALVO"], 7,
-             ["Nik Guilin", "Huaqi Li", "Valentina Andrea 13", "Arrow 12",
-              "Maria Ruiz", "TOM KIM"]),
+            (["PATRICIO"], 7,
+             ["Marta Crespo", "Valeriia Bokova", "Eugenia Álvarez", "Victoria Schneider",
+              "Amparo Gil", "Rodrigo López", "Jinxuan Liao Bonnie"]),
+            (["NACHO CALVO"], 8, ["Huaqi Li", "Natalia Botea", "Anjali Vasanthan"]),
         ],
     },
     {
         "head": "ALVARO MANTOAN",
-        "divisiones": [8],
+        "divisiones": [9],
         "columnas": [
-            (["ALVARO MANTOAN", "ALBERTO", "JORGE MILLA"], 8,
+            (["ALVARO MANTOAN", "ALBERTO", "JORGE MILLA"], 9,
+             ["Nik Guilin", "Arrow 13", "Valentina Andrea 13", "Maria Ruiz",
+              "Tomkin Deng", "Shiying Xia 14 Silvia"]),
+            # Columna N: sin número en la fila de niveles.
+            (["ALVARO MANTOAN", "ALBERTO", "JORGE MILLA"], 9,
              ["Ruohan Xu", "Jennie Zhang", "Yuantian Gao", "Kevin (zunwen wang)",
               "Yushuo Li 14 (chico)", "Pablo Pérez Fajardo", "Octavio Alcaraz",
               "Kandi Xu 15años (YU)", "Carol Grao", "Tal Or", "Xuancheng kairi 12",
@@ -88,6 +95,7 @@ BLOQUES = [
         ],
     },
 ]
+
 # Entrenador particular: contrato de patrocinio (jugador ↔ entrenador fijo).
 CONTRATOS = [("JORGE GARCIA", "Elina Avanesyan")]
 # Entrenadores fuera de servicio esta temporada, con motivo.
@@ -102,6 +110,11 @@ ALIAS = {
     "MANUEL MENDEZ": "Manuel Méndez Domínguez",
     "RUOHAN XU": "Ruohan Xu (Yu)",
     "MARIA ADRIENKO": "Maria Adrienko",
+    # Ximo se escribe también con Ch en valenciano.
+    "CHIMO MINGUEZ": "Ximo Minguez",
+    # El organigrama anterior le dio de alta como «TOM KIM» porque la ficha de
+    # «Tomkin Deng Mai 12 AÑOS» estaba inactiva; se sigue usando la activa.
+    "TOMKIN DENG": "TOM KIM",
 }
 
 
@@ -143,9 +156,33 @@ class Command(BaseCommand):
                 return obj
         return None
 
+    def _coach_del_bloque(self, head, crear=True):
+        """El coach de un bloque, y los duplicados que hay que retirar.
+
+        Conviven coaches creados con su usuario («PABLO») y otros que creaba
+        este mismo comando con el nombre del head («PABLO GIL»). Se queda el que
+        tiene usuario, que es con el que se entra a la app.
+        """
+        tk = set(clave(head).split())
+        candidatos = []
+        for c in Coach.objects.all():
+            tc = set(clave(c.nombre).split())
+            if tc and (tc <= tk or tk <= tc):
+                candidatos.append(c)
+        candidatos.sort(key=lambda c: (c.user_id is None, not c.activo, c.id))
+        if not candidatos:
+            return (Coach.objects.create(nombre=head, activo=True) if crear else None), []
+        return candidatos[0], [c for c in candidatos[1:] if c.activo]
+
     def _run(self, **opts):
         w = self.stdout.write
         seco = opts["dry_run"]
+        # La escala la marca el organigrama, no la base: si la dirección añade
+        # un nivel (la 9, en septiembre de 2026) se crea aquí.
+        niveles = {n for b in BLOQUES for n in b["divisiones"]}
+        niveles |= {d for b in BLOQUES for _c, d, _j in b["columnas"]}
+        for n in sorted(niveles):
+            Division.objects.get_or_create(nivel=n, defaults={"nombre": f"División {n}"})
         divs = {d.nivel: d for d in Division.objects.all()}
         jidx, eidx = {}, {}
         for j in Jugador.objects.all():
@@ -154,6 +191,7 @@ class Command(BaseCommand):
             eidx.setdefault(clave(e.nombre), e)
 
         altas_e, altas_j, sin_div, redivs, resp_nuevos = [], [], [], [], []
+        coaches_retirados = []
         capacidades = defaultdict(set)
         vistos = set()
         # Cuántos alumnos lleva ya cada entrenador como responsable de ficha.
@@ -182,12 +220,21 @@ class Command(BaseCommand):
                     ent.disponible_semana = nom not in NO_DISPONIBLES
                     ent.save(update_fields=["activo", "disponible_semana"])
 
-            # 2) Coach del bloque, con su equipo colgando.
+            # 2) Coach del bloque, con su equipo colgando. Se reusa el que ya
+            #    exista con ese nombre —el que tiene usuario, que es con el que
+            #    se entra— y los duplicados se retiran: si no, el bloque sale
+            #    partido en dos en la pestaña de grupos.
+            coach, duplicados = self._coach_del_bloque(head, crear=not seco)
+            coaches_retirados.extend(
+                (d.nombre, coach.nombre if coach else head) for d in duplicados
+            )
             if not seco:
-                head_ent = self._buscar(Entrenador, head, eidx)
-                coach, _ = Coach.objects.update_or_create(
-                    nombre=head, defaults={"activo": True}
-                )
+                for dup in duplicados:
+                    dup.entrenadores.clear()
+                    dup.activo = False
+                    dup.save(update_fields=["activo"])
+                coach.activo = True
+                coach.save(update_fields=["activo"])
                 equipo = [self._buscar(Entrenador, n, eidx) for n in plantel]
                 coach.entrenadores.set([e for e in equipo if e])
 
@@ -217,7 +264,10 @@ class Command(BaseCommand):
                         if e is not None
                     ]
                     if candidatos:
-                        dueno = min(candidatos, key=lambda e: (carga[e.pk], e.nombre))
+                        # Quien está fuera de servicio (Jorge Ibáñez, en China)
+                        # sigue en el bloque pero no responde por nadie.
+                        dueno = min(candidatos, key=lambda e: (
+                            e.nombre in NO_DISPONIBLES, carga[e.pk], e.nombre))
                         carga[dueno.pk] += 1
                     if not seco:
                         jug.division = divs.get(div)
@@ -252,8 +302,18 @@ class Command(BaseCommand):
                         jugador=jug, entrenador=ent, defaults={"activo": True}
                     )
 
-        fuera = [j.nombre for j in Jugador.objects.filter(activo=True)
-                 if j.pk not in vistos]
+        fuera_jug = [j for j in Jugador.objects.filter(activo=True)
+                     if j.pk not in vistos]
+        fuera = [j.nombre for j in fuera_jug]
+        # Quien tenía grupo y ya no aparece en el organigrama deja el grupo: si
+        # no, la pestaña de grupos le seguiría enseñando con su entrenador de
+        # antes. No se le da de baja ni se le toca la división.
+        salen = sorted(j.nombre for j in fuera_jug if j.entrenador_responsable_id)
+        for j in fuera_jug:
+            if j.entrenador_responsable_id:
+                ResponsableJugador.objects.filter(jugador=j).delete()
+                j.entrenador_responsable = None
+                j.save(update_fields=["entrenador_responsable"])
 
         # -- informe ---------------------------------------------------------
         w(self.style.MIGRATE_HEADING("\nCAPACIDAD DE ENTRENAR (por división)"))
@@ -281,8 +341,15 @@ class Command(BaseCommand):
         w(self.style.WARNING(
             f"\nACTIVOS QUE NO ESTÁN EN EL ORGANIGRAMA ({len(fuera)})"))
         w("  " + ", ".join(sorted(fuera)))
-        w("  → no se tocan: probablemente son Junior Program o bajas que se\n"
-          "    confirmarán con la recogida de ausencias.")
+        w("  → ni se les da de baja ni se les cambia la división.")
+        w(self.style.WARNING(f"\nSALEN DE SU GRUPO ({len(salen)})"))
+        w("  " + (", ".join(salen) or "—"))
+        w("  → tenían responsable y no están en el organigrama: pasan a «Sin grupo».")
+        if coaches_retirados:
+            w(self.style.WARNING(
+                f"\nCOACHES DUPLICADOS RETIRADOS ({len(coaches_retirados)})"))
+            for viejo, queda in coaches_retirados:
+                w(f"  {viejo}  → el bloque queda en «{queda}»")
         if seco:
             w(self.style.WARNING("\n(dry-run: no se ha escrito nada)"))
             transaction.set_rollback(True)
