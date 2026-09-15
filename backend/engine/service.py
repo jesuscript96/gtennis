@@ -687,6 +687,25 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     coach_share: Counter = Counter()      # (jugador_id, coach_id) -> nº sesiones
     player_sessions: Counter = Counter()  # jugador_id -> nº sesiones
 
+    # Si se regeneran solo ciertos días o bloques (p. ej. a mitad de semana tras una lesión),
+    # precargar las sesiones ya jugadas en los días/turnos que NO se van a tocar para
+    # no exceder los cupos semanales ni desbalancear las rotaciones.
+    qs_prev = Asignacion.objects.filter(semana=semana)
+    if dias is not None:
+        if bloques:
+            qs_prev = qs_prev.exclude(dia__in=dias, turno__bloque__in=bloques)
+        else:
+            qs_prev = qs_prev.exclude(dia__in=dias)
+    elif bloques:
+        qs_prev = qs_prev.exclude(turno__bloque__in=bloques)
+    else:
+        qs_prev = qs_prev.none()
+
+    for a in qs_prev:
+        player_sessions[a.jugador_id] += 1
+        if a.entrenador_id:
+            coach_share[(a.jugador_id, a.entrenador_id)] += 1
+
     # Días de la semana en que cada jugador NO está excluido por una ausencia
     # declarada. Es lo que permite repartirle su cupo solo entre los días que
     # de verdad viene.

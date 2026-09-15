@@ -12,6 +12,7 @@ import {
   generarSemana,
   regenerarTarde,
   publicarSemana,
+  despublicarSemana,
   swapAsignacion,
   manualAssign,
   setCoach,
@@ -73,6 +74,7 @@ function Inner() {
   const isMobile = useIsMobile();
   const [turnoIdx, setTurnoIdx] = useState(0);
   const [sel, setSel] = useState(null); // selección táctil (móvil): {k, jugador?, entrenador?, asignacion?, label}
+  const [showRehacerMenu, setShowRehacerMenu] = useState(false);
 
   async function load(id, d) {
     setError(null);
@@ -204,15 +206,99 @@ function Inner() {
           ))}
         </div>
         <div className="controls">
-          <button className="btn ghost sm" disabled={busy} onClick={() => run("gen", () => generarSemana(semanaId))}>
-            {busy === "gen" ? "Generando…" : "Generar"}
-          </button>
-          <button className="btn ghost sm" disabled={busy} onClick={() => run("tarde", () => regenerarTarde(semanaId, dia))}>
-            {busy === "tarde" ? "…" : "Regen. tarde"}
-          </button>
-          <button className="btn sm" disabled={busy || publicado} onClick={() => run("pub", () => publicarSemana(semanaId))}>
-            {publicado ? "Publicado" : "Publicar"}
-          </button>
+          <div style={{ position: "relative", display: "inline-block" }}>
+            <button
+              className="btn ghost sm"
+              disabled={!!busy}
+              onClick={() => setShowRehacerMenu(!showRehacerMenu)}
+            >
+              {busy?.startsWith("gen") || busy === "tarde" ? "…" : "⚙️ Rehacer ▾"}
+            </button>
+            {showRehacerMenu && (
+              <>
+                <div
+                  style={{ position: "fixed", inset: 0, zIndex: 99 }}
+                  onClick={() => setShowRehacerMenu(false)}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: "100%",
+                    marginTop: 4,
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                    zIndex: 100,
+                    minWidth: 220,
+                    padding: "4px 0",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <button
+                    className="btn ghost sm"
+                    style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "6px 12px", border: "none" }}
+                    onClick={() => {
+                      setShowRehacerMenu(false);
+                      if (window.confirm("¿Rehacer toda la semana?")) run("gen-all", () => generarSemana(semanaId));
+                    }}
+                  >
+                    🔄 Toda la semana
+                  </button>
+                  {dia > 0 && dia < 5 && (
+                    <button
+                      className="btn ghost sm"
+                      style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "6px 12px", border: "none" }}
+                      onClick={() => {
+                        setShowRehacerMenu(false);
+                        if (window.confirm(`¿Rehacer desde el ${DIAS[dia]}?`)) run(`gen-desde-${dia}`, () => generarSemana(semanaId, { desde_dia: dia }));
+                      }}
+                    >
+                      ⏩ Desde {DIAS[dia]}
+                    </button>
+                  )}
+                  {dia < 5 && (
+                    <button
+                      className="btn ghost sm"
+                      style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "6px 12px", border: "none" }}
+                      onClick={() => {
+                        setShowRehacerMenu(false);
+                        if (window.confirm(`¿Rehacer solo ${DIAS[dia]}?`)) run(`gen-solo-${dia}`, () => generarSemana(semanaId, { solo_dia: dia }));
+                      }}
+                    >
+                      📅 Solo {DIAS[dia]}
+                    </button>
+                  )}
+                  <button
+                    className="btn ghost sm"
+                    style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "6px 12px", border: "none" }}
+                    onClick={() => {
+                      setShowRehacerMenu(false);
+                      run("tarde", () => regenerarTarde(semanaId, dia));
+                    }}
+                  >
+                    🌤️ Tarde ({DIAS[dia]})
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          {publicado ? (
+            <>
+              <button className="btn ghost sm" disabled={!!busy} onClick={() => run("despub", () => despublicarSemana(semanaId))}>
+                {busy === "despub" ? "…" : "Borrador"}
+              </button>
+              <button className="btn sm" disabled={!!busy} onClick={() => run("pub", () => publicarSemana(semanaId))}>
+                {busy === "pub" ? "…" : "Republicar"}
+              </button>
+            </>
+          ) : (
+            <button className="btn sm" disabled={!!busy} onClick={() => run("pub", () => publicarSemana(semanaId))}>
+              {busy === "pub" ? "…" : "Publicar"}
+            </button>
+          )}
         </div>
 
         {error && <p className="err">{error}</p>}
@@ -327,15 +413,124 @@ function Inner() {
           <button key={i} className={i === dia ? "active" : ""} onClick={() => setDia(i)}>{d}</button>
         ))}
         <span style={{ flex: 1 }} />
-        <button className="btn ghost sm" disabled={busy} onClick={() => run("gen", () => generarSemana(semanaId))}>
-          {busy === "gen" ? "Generando…" : "Generar semana"}
-        </button>
-        <button className="btn ghost sm" disabled={busy} onClick={() => run("tarde", () => regenerarTarde(semanaId, dia))}>
-          {busy === "tarde" ? "Regenerando…" : "Regenerar tarde"}
-        </button>
-        <button className="btn sm" disabled={busy || publicado} onClick={() => run("pub", () => publicarSemana(semanaId))}>
-          {publicado ? "Publicado" : "Publicar"}
-        </button>
+        <div style={{ position: "relative", display: "inline-block" }}>
+          <button
+            className="btn ghost sm"
+            disabled={!!busy}
+            onClick={() => setShowRehacerMenu(!showRehacerMenu)}
+            title="Opciones para rehacer o actualizar el cuadrante con las ausencias actuales"
+          >
+            {busy?.startsWith("gen") || busy === "tarde" ? "Actualizando…" : "⚙️ Rehacer / Actualizar ▾"}
+          </button>
+          {showRehacerMenu && (
+            <>
+              <div
+                style={{ position: "fixed", inset: 0, zIndex: 99 }}
+                onClick={() => setShowRehacerMenu(false)}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "100%",
+                  marginTop: 4,
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                  zIndex: 100,
+                  minWidth: 260,
+                  padding: "6px 0",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <button
+                  className="btn ghost sm"
+                  style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "8px 14px", border: "none" }}
+                  onClick={() => {
+                    setShowRehacerMenu(false);
+                    if (window.confirm("¿Rehacer la semana completa (Lunes a Viernes)? Se recalcularán las asignaciones considerando todas las ausencias y disponibilidades actuales.")) {
+                      run("gen-all", () => generarSemana(semanaId));
+                    }
+                  }}
+                >
+                  🔄 <b>Toda la semana</b> (Lunes a Viernes)
+                </button>
+
+                {dia > 0 && dia < 5 && (
+                  <button
+                    className="btn ghost sm"
+                    style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "8px 14px", border: "none" }}
+                    onClick={() => {
+                      setShowRehacerMenu(false);
+                      if (window.confirm(`¿Rehacer desde el ${DIAS[dia]} hasta el Viernes? Los días anteriores se mantendrán intactos.`)) {
+                        run(`gen-desde-${dia}`, () => generarSemana(semanaId, { desde_dia: dia }));
+                      }
+                    }}
+                  >
+                    ⏩ <b>Desde {DIAS[dia]}</b> (hasta Viernes)
+                  </button>
+                )}
+
+                {dia < 5 && (
+                  <button
+                    className="btn ghost sm"
+                    style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "8px 14px", border: "none" }}
+                    onClick={() => {
+                      setShowRehacerMenu(false);
+                      if (window.confirm(`¿Rehacer solo el ${DIAS[dia]} (mañana y tarde)?`)) {
+                        run(`gen-solo-${dia}`, () => generarSemana(semanaId, { solo_dia: dia }));
+                      }
+                    }}
+                  >
+                    📅 <b>Solo {DIAS[dia]}</b> (día completo)
+                  </button>
+                )}
+
+                <button
+                  className="btn ghost sm"
+                  style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "8px 14px", border: "none" }}
+                  onClick={() => {
+                    setShowRehacerMenu(false);
+                    run("tarde", () => regenerarTarde(semanaId, dia));
+                  }}
+                >
+                  🌤️ <b>Regenerar tarde</b> ({DIAS[dia]})
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {publicado ? (
+          <>
+            <button
+              className="btn ghost sm"
+              disabled={!!busy}
+              title="Volver a borrador para realizar ajustes"
+              onClick={() => run("despub", () => despublicarSemana(semanaId))}
+            >
+              {busy === "despub" ? "…" : "A borrador"}
+            </button>
+            <button
+              className="btn sm"
+              disabled={!!busy}
+              title="Actualizar fecha de publicación"
+              onClick={() => run("pub", () => publicarSemana(semanaId))}
+            >
+              {busy === "pub" ? "…" : "Republicar"}
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn sm"
+            disabled={!!busy}
+            onClick={() => run("pub", () => publicarSemana(semanaId))}
+          >
+            {busy === "pub" ? "Publicando…" : "Publicar"}
+          </button>
+        )}
       </div>
 
       {error && <p className="err">{error}</p>}

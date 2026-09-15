@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { resource, generarSemana, publicarSemana } from "../../../lib/api";
+import { resource, generarSemana, publicarSemana, despublicarSemana } from "../../../lib/api";
 
 const api = resource("semanas");
 
@@ -84,12 +84,44 @@ export default function SemanasPage() {
                   <td>{s.publicado_at ? "Sí" : "—"}</td>
                   <td>
                     <div className="row-actions">
-                      <button className="btn ghost sm" disabled={busy} onClick={() => run(s.id, "gen", () => generarSemana(s.id))}>
-                        {busy === `${s.id}-gen` ? "…" : "Generar"}
+                      <button
+                        className="btn ghost sm"
+                        disabled={busy}
+                        onClick={() => {
+                          if (s.generado_at && !window.confirm(`¿Rehacer la semana del ${s.fecha_inicio}? Se recalculará el cuadrante con las ausencias y disponibilidades actuales.`)) return;
+                          run(s.id, "gen", () => generarSemana(s.id));
+                        }}
+                      >
+                        {busy === `${s.id}-gen` ? "…" : (s.generado_at ? "Rehacer" : "Generar")}
                       </button>
-                      <button className="btn ghost sm" disabled={busy || s.estado === "PUBLICADO"} onClick={() => run(s.id, "pub", () => publicarSemana(s.id))}>
-                        Publicar
-                      </button>
+                      {s.estado === "PUBLICADO" ? (
+                        <>
+                          <button
+                            className="btn ghost sm"
+                            disabled={busy}
+                            title="Actualizar fecha de publicación"
+                            onClick={() => run(s.id, "pub", () => publicarSemana(s.id))}
+                          >
+                            {busy === `${s.id}-pub` ? "…" : "Republicar"}
+                          </button>
+                          <button
+                            className="btn ghost sm"
+                            disabled={busy}
+                            title="Volver a borrador para realizar ajustes"
+                            onClick={() => run(s.id, "despub", () => despublicarSemana(s.id))}
+                          >
+                            {busy === `${s.id}-despub` ? "…" : "A borrador"}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="btn ghost sm"
+                          disabled={busy}
+                          onClick={() => run(s.id, "pub", () => publicarSemana(s.id))}
+                        >
+                          {busy === `${s.id}-pub` ? "…" : "Publicar"}
+                        </button>
+                      )}
                       <Link className="btn sm" href={`/cuadrante?semana=${s.id}`}>Ver</Link>
                     </div>
                   </td>

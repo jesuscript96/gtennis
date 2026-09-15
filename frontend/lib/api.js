@@ -100,12 +100,14 @@ export const getLatestSemana = async () => {
   return r[0] || null;
 };
 export const getCuadrante = (id, dia) => req(`/semanas/${id}/cuadrante/?dia=${dia}`);
-export const generarSemana = (id) =>
-  req(`/semanas/${id}/generar/`, { method: "POST", body: "{}" });
+export const generarSemana = (id, opts = {}) =>
+  req(`/semanas/${id}/generar/`, { method: "POST", body: JSON.stringify(opts) });
 export const regenerarTarde = (id, dia) =>
   req(`/semanas/${id}/regenerar_tarde/`, { method: "POST", body: JSON.stringify({ dia }) });
 export const publicarSemana = (id) =>
   req(`/semanas/${id}/publicar/`, { method: "POST", body: "{}" });
+export const despublicarSemana = (id) =>
+  req(`/semanas/${id}/despublicar/`, { method: "POST", body: "{}" });
 
 export const getConfig = () => req("/configuracion/");
 export const saveConfig = (body) =>

@@ -197,9 +197,27 @@ class SemanaViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def generar(self, request, pk=None):
-        """Run the pairing engine for the whole week (the Sunday job)."""
+        """Run the pairing engine for the whole week or a subset of days (PRD §02).
+        Admite:
+          - dias: lista de días [0, 1, 2, ...]
+          - desde_dia: entero (ej. 2 = miércoles a viernes)
+          - solo_dia: entero (ej. 2 = solo miércoles)
+          - bloques: lista de bloques ["MANANA", "TARDE"]
+        """
         semana = self.get_object()
-        report = generate(semana)
+        dias = request.data.get("dias")
+        desde_dia = request.data.get("desde_dia")
+        solo_dia = request.data.get("solo_dia")
+        bloques = request.data.get("bloques")
+
+        if solo_dia is not None:
+            dias = [int(solo_dia)]
+        elif desde_dia is not None:
+            dias = [d for d, _ in DIAS if int(desde_dia) <= d < 5]
+        elif dias is not None:
+            dias = [int(d) for d in dias]
+
+        report = generate(semana, dias=dias, bloques=bloques)
         return Response(report)
 
     @action(detail=True, methods=["post"])
@@ -216,6 +234,14 @@ class SemanaViewSet(viewsets.ModelViewSet):
         semana.estado = Semana.EstadoSemana.PUBLICADO
         semana.publicado_at = datetime.now(timezone.utc)
         semana.save(update_fields=["estado", "publicado_at"])
+        return Response(SemanaSerializer(semana).data)
+
+    @action(detail=True, methods=["post"])
+    def despublicar(self, request, pk=None):
+        """Cambiar la semana de PUBLICADO a BORRADOR para revisión o ajustes."""
+        semana = self.get_object()
+        semana.estado = Semana.EstadoSemana.BORRADOR
+        semana.save(update_fields=["estado"])
         return Response(SemanaSerializer(semana).data)
 
     @action(detail=True, methods=["get"])
