@@ -90,7 +90,7 @@ export default function SemanasPage() {
                       <button className="btn ghost sm" disabled={busy || s.estado === "PUBLICADO"} onClick={() => run(s.id, "pub", () => publicarSemana(s.id))}>
                         Publicar
                       </button>
-                      <Link className="btn sm" href="/cuadrante">Ver</Link>
+                      <Link className="btn sm" href={`/cuadrante?semana=${s.id}`}>Ver</Link>
                     </div>
                   </td>
                 </tr>

@@ -171,6 +171,11 @@ export const jugadorExtra = (id, body) =>
 export const quitarExtra = (id, { fecha, turno }) =>
   req(`/jugadores/${id}/extra/?fecha=${fecha}&turno=${turno}`, { method: "DELETE" });
 
+export const getEntrenadoresJugador = (jugadorId) =>
+  req(`/jugadores/${jugadorId}/entrenadores/`);
+export const guardarEntrenadoresJugador = (jugadorId, body) =>
+  req(`/jugadores/${jugadorId}/entrenadores/`, { method: "POST", body: JSON.stringify(body) });
+
 // --- Grupos de entrenamiento (entrenador ↔ alumnos) ------------------------
 export const getGrupos = () => req("/grupos/");
 export const grupoAnadir = (jugador, entrenador) =>

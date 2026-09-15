@@ -442,6 +442,74 @@ class JugadorViewSet(viewsets.ModelViewSet):
         self._assert_direccion()
         instance.delete()
 
+    @action(detail=True, methods=["get", "post"])
+    def entrenadores(self, request, pk=None):
+        """Quién gestiona al alumno (responsable) y con quién entrena (porcentajes).
+
+        GET  → {jugador, responsable, entrenadores, minimo_secundario, propuesta}
+        POST → {responsable, entrenadores: [{entrenador, prioridad, porcentaje}]}
+        """
+        from .models import ResponsableJugador
+        from .pesos import MINIMO_SECUNDARIO, errores, guardar, propuesta
+
+        jugador = self.get_object()
+        if request.method == "POST":
+            responsable_id = request.data.get("responsable")
+            filas_in = request.data.get("entrenadores") or []
+            filas = [
+                (
+                    int(f["entrenador"]),
+                    int(f["prioridad"]),
+                    float(f.get("porcentaje") or 0),
+                )
+                for f in filas_in
+            ]
+            fallos = errores(filas)
+            if fallos:
+                return Response({"detail": " ".join(fallos)}, status=400)
+
+            jugador.entrenador_responsable_id = (
+                int(responsable_id) if responsable_id else None
+            )
+            jugador.save(update_fields=["entrenador_responsable"])
+            guardar(jugador, filas)
+
+        filas_db = list(
+            ResponsableJugador.objects.filter(jugador=jugador, activo=True)
+            .select_related("entrenador")
+            .order_by("prioridad", "-porcentaje_objetivo", "id")
+        )
+        prop = propuesta(jugador.entrenador_responsable)
+
+        ent_ids = [e for e, _p, _c in prop]
+        ent_nombres = dict(
+            Entrenador.objects.filter(pk__in=ent_ids).values_list("id", "nombre")
+        )
+
+        return Response({
+            "jugador": {"id": jugador.id, "nombre": jugador.nombre},
+            "responsable": jugador.entrenador_responsable_id,
+            "entrenadores": [
+                {
+                    "entrenador": r.entrenador_id,
+                    "nombre": r.entrenador.nombre,
+                    "prioridad": r.prioridad,
+                    "porcentaje": r.porcentaje_objetivo,
+                }
+                for r in filas_db
+            ],
+            "minimo_secundario": MINIMO_SECUNDARIO,
+            "propuesta": [
+                {
+                    "entrenador": e,
+                    "nombre": ent_nombres.get(e, ""),
+                    "prioridad": p,
+                    "porcentaje": c,
+                }
+                for e, p, c in prop
+            ],
+        })
+
     def perform_create(self, serializer):
         self._assert_direccion()
         serializer.save()

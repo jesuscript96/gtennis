@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Avatar from "../../../components/Avatar";
 import { useIsMobile } from "../../../lib/useIsMobile";
 import { SUPERFICIE_LABEL, SUPERFICIE_COLOR } from "../../../lib/format";
@@ -60,7 +61,9 @@ function benchPlayers(panel) {
   return out;
 }
 
-export default function CuadrantePage() {
+function Inner() {
+  const searchParams = useSearchParams();
+  const qpSemana = searchParams.get("semana");
   const [semanaId, setSemanaId] = useState(null);
   const [dia, setDia] = useState(0);
   const [data, setData] = useState(null);
@@ -86,9 +89,9 @@ export default function CuadrantePage() {
   }
 
   useEffect(() => {
-    load(null, dia);
+    load(qpSemana ? Number(qpSemana) : null, dia);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dia]);
+  }, [dia, qpSemana]);
 
   async function run(label, fn) {
     setBusy(label);
@@ -442,5 +445,13 @@ function Cell({ items, ctx, onDropCell, onDropPlayer, onDropCoach }) {
       ) : null}
       {empty ? <span className="cell-empty-hint">—</span> : null}
     </td>
+  );
+}
+
+export default function CuadrantePage() {
+  return (
+    <Suspense fallback={<p className="msg">Cargando…</p>}>
+      <Inner />
+    </Suspense>
   );
 }
