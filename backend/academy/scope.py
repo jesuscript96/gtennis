@@ -58,11 +58,13 @@ def jugadores_visibles(user, base=None):
     if ent is not None:
         if ent.gestiona_todos_jugadores:
             return qs
-        # Fuente única de la verdad: ResponsableJugador (donde el entrenador
-        # figura como responsable, con cualquier prioridad). Se mantiene la
-        # unión con `entrenadores_gestores` por compatibilidad (hoy vacío).
+        # Los que gestiona (es su responsable) y los que entrena (tiene
+        # porcentaje con ellos). `entrenadores_gestores` se mantiene por
+        # compatibilidad (hoy vacío).
         return qs.filter(
-            Q(responsables__entrenador=ent) | Q(entrenadores_gestores=ent)
+            Q(entrenador_responsable=ent)
+            | Q(responsables__entrenador=ent)
+            | Q(entrenadores_gestores=ent)
         ).distinct()
     return qs.none()
 

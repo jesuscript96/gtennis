@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Value, When
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
@@ -5,6 +6,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from . import pesos
 from .models import (
     Aviso,
     Coach,
@@ -192,8 +194,6 @@ class JugadorViewSet(viewsets.ModelViewSet):
             base = base.filter(escuela_id=escuela)
         user = self.request.user
         if not user.is_authenticated:
-            return base
-        if self.action == "entrenadores":
             return base
         return jugadores_visibles(user, base=base)
 
@@ -456,25 +456,36 @@ class JugadorViewSet(viewsets.ModelViewSet):
 
         jugador = self.get_object()
         if request.method == "POST":
-            responsable_id = request.data.get("responsable")
-            filas_in = request.data.get("entrenadores") or []
-            filas = [
-                (
-                    int(f["entrenador"]),
-                    int(f["prioridad"]),
-                    float(f.get("porcentaje") or 0),
+            from .permissions import es_coach, es_direccion
+
+            if not (es_direccion(request.user) or es_coach(request.user)):
+                raise PermissionDenied(
+                    "Los porcentajes los ponen dirección y los coaches."
                 )
-                for f in filas_in
-            ]
+            try:
+                responsable_id = request.data.get("responsable")
+                responsable_id = int(responsable_id) if responsable_id else None
+                filas = [
+                    (int(f["entrenador"]), int(f["prioridad"]),
+                     int(f.get("porcentaje") or 0))
+                    for f in request.data.get("entrenadores") or []
+                ]
+            except (KeyError, TypeError, ValueError):
+                return Response(
+                    {"detail": "Cada entrenador necesita papel y porcentaje."},
+                    status=400,
+                )
             fallos = errores(filas)
+            ids = {e for e, _p, _c in filas} | ({responsable_id} if responsable_id else set())
+            if Entrenador.objects.filter(pk__in=ids).count() != len(ids):
+                fallos.append("Algún entrenador no existe.")
             if fallos:
                 return Response({"detail": " ".join(fallos)}, status=400)
-
-            jugador.entrenador_responsable_id = (
-                int(responsable_id) if responsable_id else None
-            )
-            jugador.save(update_fields=["entrenador_responsable"])
-            guardar(jugador, filas)
+            # Responsable y porcentajes van juntos: o se guardan los dos o nada.
+            with transaction.atomic():
+                jugador.entrenador_responsable_id = responsable_id
+                jugador.save(update_fields=["entrenador_responsable"])
+                guardar(jugador, filas)
 
         filas_db = list(
             ResponsableJugador.objects.filter(jugador=jugador, activo=True)
@@ -1083,11 +1094,10 @@ class GrupoViewSet(viewsets.ViewSet):
     gente por la que responde. Eso es lo que dirección reparte y lo que se
     edita aquí.
 
-    Aparte están los vínculos de `ResponsableJugador`, que son más anchos: el
-    reparto va por bloques y todos los entrenadores capacitados para una
-    división pueden entrenar a sus alumnos. Esos salen aparte, en "también
-    entrena", porque si se mezclan con los propios todos los grupos de un mismo
-    bloque parecen el mismo grupo repetido.
+    Aparte están sus porcentajes (`ResponsableJugador`): con quién entrena, el
+    principal y el resto de su bloque de secundarios. Esos salen aparte, en
+    "también entrena", porque si se mezclan con los propios todos los grupos de
+    un mismo bloque parecen el mismo grupo repetido.
 
     Los bloques (Dani Gimeno, Pablo Gil, Santi Panzarasa…) son los `Coach`.
     """
@@ -1126,7 +1136,7 @@ class GrupoViewSet(viewsets.ViewSet):
         entrenadores = list(
             entrenadores_visibles(request.user)
             .filter(activo=True)
-            .prefetch_related("divisiones_habilitadas", "coaches")
+            .prefetch_related("coaches")
             .order_by("nombre")
         )
         ids = {e.id for e in entrenadores}
@@ -1160,15 +1170,15 @@ class GrupoViewSet(viewsets.ViewSet):
         por_bloque = defaultdict(list)
         for e in entrenadores:
             coach = e.coaches.filter(activo=True).first()
-            niveles = sorted(e.divisiones_habilitadas.values_list("nivel", flat=True))
+            # Los niveles de sus alumnos, para situarse: la división ya no dice
+            # a quién puede entrenar.
+            niveles = sorted({f["division"] for f in propios[e.id] if f["division"]})
             por_bloque[coach.id if coach else None].append({
                 "entrenador": {
                     "id": e.id,
                     "nombre": e.nombre,
                     "foto": e.foto_url or "",
-                    "divisiones": "Todas" if not niveles else ", ".join(
-                        f"D{n}" for n in niveles
-                    ),
+                    "divisiones": " · ".join(f"D{n}" for n in niveles) or "—",
                 },
                 "jugadores": propios[e.id],
                 "tambien": tambien[e.id],
@@ -1216,19 +1226,17 @@ class GrupoViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["post"])
     def mover(self, request):
-        """Mete al alumno en el grupo de este entrenador: pasa a ser su
-        responsable. El entrenador de antes deja de responder por él, pero si
-        sigue en su bloque puede seguir entrenándole (queda en "también")."""
+        """Mete al alumno en el grupo de este entrenador.
+
+        Pasa a ser su responsable y su principal, y el resto del bloque, sus
+        secundarios al 10%: la misma regla del organigrama. Los retoques, luego,
+        en su ficha."""
         self._assert_direccion()
         jugador, entrenador = self._jugador(request), self._entrenador(request)
-        # Quien responde por un alumno tiene que poder entrenarle: el vínculo
-        # de bloque se crea si no estaba.
-        ResponsableJugador.objects.get_or_create(
-            jugador=jugador, entrenador=entrenador,
-            defaults={"prioridad": 1, "activo": True},
-        )
-        jugador.entrenador_responsable = entrenador
-        jugador.save(update_fields=["entrenador_responsable"])
+        with transaction.atomic():
+            pesos.guardar(jugador, pesos.propuesta(entrenador))
+            jugador.entrenador_responsable = entrenador
+            jugador.save(update_fields=["entrenador_responsable"])
         return Response({"ok": True})
 
     @action(detail=False, methods=["post"])
@@ -1247,8 +1255,8 @@ class GrupoViewSet(viewsets.ViewSet):
         """Cambia a un entrenador de bloque: pasa al equipo de ese coach.
 
         Sus alumnos van con él —siguen siendo suyos— así que la columna entera
-        se muda de sitio. Lo que NO cambia son las divisiones que está
-        capacitado para entrenar: eso se decide aparte, en su ficha.
+        se muda de sitio. Los porcentajes de sus alumnos no cambian: se
+        retocan en la ficha de cada uno.
 
         Sin `coach`, se queda fuera de todos los bloques (independiente).
         """
@@ -1268,14 +1276,18 @@ class GrupoViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["post"])
     def quitar(self, request):
-        """Este entrenador deja de llevar a este alumno: ni responsable ni
-        vínculo de entreno. Si era su grupo, el alumno se queda sin asignar."""
+        """Este entrenador deja de llevar a este alumno.
+
+        Si era su grupo (su responsable), el alumno sale del grupo entero: sin
+        responsable ni porcentajes, a «Sin grupo». Si solo le entrenaba, se le
+        quita a él y su parte pasa al principal."""
         self._assert_direccion()
         jugador, entrenador = self._jugador(request), self._entrenador(request)
-        ResponsableJugador.objects.filter(
-            jugador=jugador, entrenador=entrenador
-        ).delete()
-        if jugador.entrenador_responsable_id == entrenador.id:
-            jugador.entrenador_responsable = None
-            jugador.save(update_fields=["entrenador_responsable"])
+        with transaction.atomic():
+            if jugador.entrenador_responsable_id == entrenador.id:
+                pesos.guardar(jugador, [])
+                jugador.entrenador_responsable = None
+                jugador.save(update_fields=["entrenador_responsable"])
+            else:
+                pesos.quitar(jugador, entrenador.id)
         return Response({"ok": True})

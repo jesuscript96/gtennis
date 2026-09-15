@@ -347,125 +347,148 @@ def _recent_partners(semana, before_dia) -> dict[frozenset[int], int]:
     return dict(counts)
 
 
-def _coach_capacita(coach, coach_niveles, court_niveles):
-    """¿El entrenador está capacitado para las divisiones de esta pista? (#3)"""
-    habil = coach_niveles.get(coach.id)
-    if habil is None:
-        return True
-    return all(n is None or n in habil for n in court_niveles)
+# El resolvedor trabaja con enteros: un 1% de peso son 100 unidades, y la carga
+# de cada entrenador (unas pocas sesiones) solo desempata.
+ESCALA_AFINIDAD = 10_000
+# Cubrir una pista vale más que cualquier afinidad: primero que no quede
+# ninguna sin entrenador, y luego quién va a cada una.
+VALOR_CUBRIR = 10**8
 
 
-def _assign_coaches(
-    members, sponsors, elegibles, coach_niveles, player_div, load,
-    ocupados=None, aviso=None,
-):
-    """Elige el entrenador de una pista.
+def pesos_de_entrenamiento():
+    """{jugador: {entrenador: fracción}}: con quién entrena cada alumno.
 
-    Dos ejes que NO son el mismo, y antes estaban mezclados:
-
-      * quién PUEDE entrenar a esta pista lo marca la división — cualquier
-        entrenador del bloque que cubra las divisiones de los jugadores;
-      * quién ADMINISTRA a un jugador en la app (`ResponsableJugador`) es otra
-        cosa y no entra aquí.
-
-    Por eso ya no se puntúa por responsable ni por porcentaje objetivo: entre
-    los capacitados y disponibles, manda el contrato de patrocinio si lo hay y,
-    si no, el menos cargado. El reparto por porcentajes que había antes
-    concentraba el trabajo en tres o cuatro entrenadores, porque devolvía al
-    primero con déficit y nunca llegaba a equilibrar.
-
-    Y nadie cubre dos pistas a la vez: en el cuadrante real de Iván, de 189
-    asignaciones en las bandas de alto rendimiento (8:30, 10:30, JP y 14:15) no
-    hay una sola repetida. `ocupados` son los que ya tienen pista en este turno.
-    Si no queda ninguno libre y capacitado se repite —mejor eso que dejar la
-    pista sin entrenador— y queda anotado en el informe.
+    Salen de sus porcentajes (`ResponsableJugador`), normalizados por si a mano
+    no suman 100. Un alumno sin porcentajes entrena con su responsable, y sin
+    responsable, con quien toque.
     """
-    ocupados = ocupados if ocupados is not None else set()
-    court_niveles = {player_div.get(jid) for jid in members}
-    capaces = [c for c in elegibles if _coach_capacita(c, coach_niveles, court_niveles)]
-    if not capaces:
-        return None
-    libres = [c for c in capaces if c.id not in ocupados]
+    from academy.models import Jugador, ResponsableJugador
 
-    # 1) Contrato de patrocinio: el jugador tiene entrenador fijo. Manda salvo
-    #    que ese entrenador ya esté en otra pista de este mismo turno.
-    libre_ids = {c.id for c in libres}
-    for jid in members:
-        for cid in sponsors.get(jid, set()):
-            if cid in libre_ids:
-                load[cid] += 1
-                return cid
+    brutos = defaultdict(dict)
+    for jid, cid, pct in ResponsableJugador.objects.filter(
+        activo=True, entrenador__activo=True, porcentaje_objetivo__gt=0,
+    ).values_list("jugador_id", "entrenador_id", "porcentaje_objetivo"):
+        brutos[jid][cid] = pct
+    pesos = {
+        jid: {cid: pct / sum(suyos.values()) for cid, pct in suyos.items()}
+        for jid, suyos in brutos.items()
+    }
+    for jid, cid in Jugador.objects.filter(
+        activo=True, entrenador_responsable__isnull=False,
+    ).values_list("id", "entrenador_responsable_id"):
+        pesos.setdefault(jid, {cid: 1.0})
+    return pesos
 
-    # 2) El menos cargado de los que quedan libres (rotación equilibrada).
-    if libres:
-        elegido = min(libres, key=lambda e: (load[e.id], e.id))
-        load[elegido.id] += 1
-        return elegido.id
 
-    # 3) No queda nadie libre: se repite, pero se avisa.
-    elegido = min(capaces, key=lambda e: (load[e.id], e.id))
-    load[elegido.id] += 1
-    if aviso is not None:
-        aviso.append(elegido.id)
-    return elegido.id
+def _afinidad(miembros, cid, pesos, con_quien, sesiones):
+    """Cuánto le toca a este entrenador llevar esta pista ahora.
+
+    Por cada alumno: lo que le correspondería con él contando esta sesión,
+    menos lo que ya lleva hecho con él esta semana. Con Víctor al 60%, la
+    primera sesión es de Víctor (0,6 frente a 0,1); si ya ha hecho dos de dos
+    con él, le toca a un secundario. Así cada uno se acerca a su porcentaje sin
+    que se concentre nadie. Un alumno sin porcentajes no tira hacia nadie.
+    """
+    total = 0.0
+    for jid in miembros:
+        suyos = pesos.get(jid)
+        if suyos:
+            total += suyos.get(cid, 0.0) * (sesiones[jid] + 1) - con_quien[(jid, cid)]
+    return total
+
+
+def _mejor_asignacion(pistas, entrenadores, valor):
+    """{pista: entrenador}: el máximo de pistas cubiertas y, entre esos
+    repartos, el de más valor. Nadie va a dos pistas.
+
+    Es el problema de asignación y lo resuelve OR-Tools. Para que admita pistas
+    sin entrenador (si faltan) y entrenadores sin pista (si sobran), cada pista
+    tiene además un hueco «sin entrenador» y cada entrenador uno «sin pista»,
+    los dos a coste cero.
+    """
+    from ortools.graph.python import linear_sum_assignment
+
+    if not pistas or not entrenadores:
+        return {}
+    n_p, n_e = len(pistas), len(entrenadores)
+    lsa = linear_sum_assignment.SimpleLinearSumAssignment()
+    for i, pista in enumerate(pistas):
+        for k, cid in enumerate(entrenadores):
+            lsa.add_arc_with_cost(i, k, -(VALOR_CUBRIR + valor(pista, cid)))
+        for k in range(n_e, n_e + n_p):
+            lsa.add_arc_with_cost(i, k, 0)
+    for i in range(n_p, n_p + n_e):
+        for k in range(n_e + n_p):
+            lsa.add_arc_with_cost(i, k, 0)
+    if lsa.solve() != lsa.OPTIMAL:
+        return {}
+    return {
+        pistas[i]: entrenadores[lsa.right_mate(i)]
+        for i in range(n_p) if lsa.right_mate(i) < n_e
+    }
 
 
 def _emparejar_entrenadores(
-    courts, sponsors, elegibles, coach_niveles, player_div, load,
-    blandos=None, info_pistas=None,
+    courts, sponsors, elegibles, load, pesos=None, con_quien=None,
+    sesiones=None, blandos=None, info_pistas=None,
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
     Devuelve `({pista: entrenador}, [entrenadores repetidos])`.
 
-    Asignar pista a pista se atasca: las divisiones bajas tienen tres o cuatro
-    entrenadores capacitados y las altas el doble, así que una pista fácil se
-    lleva al único que servía para una difícil y esa se queda sin nadie libre.
-    Es un emparejamiento bipartito, y se resuelve con caminos aumentantes
-    (Kuhn): cuando una pista no encuentra hueco, se le pide a quien ocupa a su
-    candidato que se mueva a otro suyo.
+    Quién va a cada pista lo deciden los porcentajes de sus alumnos (`pesos`,
+    {jugador: {entrenador: fracción}}) y lo que llevan hecho esta semana con
+    cada uno (`con_quien`, `sesiones`); ver `_afinidad`. La división no
+    limita: sirve para emparejar alumnos, no para elegir entrenador, así que si
+    no queda libre ninguno de los suyos la cubre otro antes que nadie. Es un
+    problema de asignación: primero cubrir todas las pistas posibles y, entre
+    esos repartos, el que más se acerca a los porcentajes.
 
     Contratos. El duro ata al entrenador con la pista de su jugador antes de
-    emparejar. El blando no ata: primero se reparte como si no existiera, y
+    repartir. El blando no ata: primero se reparte como si no existiera, y
     después se prueba a llevar al entrenador a la pista del jugador; se queda
     así solo si no se pierde ninguna pista cubierta — «primero su grupo, y con
-    ese jugador cuando pueda». Con contrato, de un tipo u otro, el entrenador
-    vale para esa pista aunque no cubra su división: el contrato es el permiso.
+    ese jugador cuando pueda».
 
     Pocos entrenadores. Si `info_pistas` dice dónde está cada pista
     ({pista: (sede, número, orden de llenado)}) y hay menos entrenadores que
     pistas ocupadas, primero se eligen las pistas que llevan entrenador de modo
-    que cada una sin él tenga una vecina con él (`reparto_pistas`), y el
-    emparejamiento trabaja sobre esas. A las que vigila el de al lado no se les
-    repite a nadie; solo a las que se quedan sin vecina que las cubra.
+    que cada una sin él tenga una vecina con él (`reparto_pistas`), y el reparto
+    trabaja sobre esas. A las que vigila el de al lado no se les repite a nadie;
+    solo a las que se quedan sin vecina que las cubra.
     """
     from .reparto_pistas import opciones_de_pistas, repartir_entre_sedes
 
     blandos = blandos or {}
+    pesos = pesos or {}
+    con_quien = con_quien if con_quien is not None else Counter()
+    sesiones = sesiones if sesiones is not None else Counter()
 
     def contratados(miembros, mapa):
         return {cid for j in miembros for cid in mapa.get(j, set())}
 
-    # Candidatos por pista: capacitados por división, o con contrato con
-    # alguno de sus jugadores. Primero el contrato duro, luego el menos cargado.
-    candidatos = {}
-    for pista, miembros in courts.items():
-        niveles = {player_div.get(j) for j in miembros}
-        duros = contratados(miembros, sponsors)
-        con_contrato = duros | contratados(miembros, blandos)
-        capaces = [c for c in elegibles
-                   if c.id in con_contrato
-                   or _coach_capacita(c, coach_niveles, niveles)]
-        candidatos[pista] = [
-            c.id for c in sorted(
-                capaces, key=lambda e: (e.id not in duros, load[e.id], e.id),
-            )
-        ]
     ids_elegibles = {c.id for c in elegibles}
     todas = list(courts)
+    afin = {
+        (pista, cid): _afinidad(miembros, cid, pesos, con_quien, sesiones)
+        for pista, miembros in courts.items() for cid in ids_elegibles
+    }
+
+    def valor(pista, cid):
+        return round(ESCALA_AFINIDAD * afin[(pista, cid)]) - load[cid]
+
+    # Candidatos por pista: todos los disponibles, primero el del contrato duro
+    # y después por afinidad.
+    candidatos = {}
+    for pista, miembros in courts.items():
+        duros = contratados(miembros, sponsors)
+        candidatos[pista] = sorted(
+            ids_elegibles,
+            key=lambda c: (c not in duros, -afin[(pista, c)], load[c], c),
+        )
 
     def emparejar(pistas, atados_extra=None, ocupados=frozenset()):
-        """Máximo emparejamiento sobre `pistas`. `atados_extra` son ataduras
+        """El mejor reparto sobre `pistas`. `atados_extra` son ataduras
         forzadas {entrenador: pista}; `ocupados`, entrenadores ya colocados."""
         de_entrenador = {}
         # El contrato duro se ata antes: si no, el emparejamiento le da ese
@@ -482,26 +505,13 @@ def _emparejar_entrenadores(
             de_entrenador = {c: p for c, p in de_entrenador.items()
                              if c != cid and p != pista}
             de_entrenador[cid] = pista
-        atados = set(de_entrenador)
         tomadas = set(de_entrenador.values())
-        # Las pistas con menos candidatos, primero: sufren antes la escasez.
-        orden = sorted((p for p in pistas if p not in tomadas),
-                       key=lambda p: (len(candidatos[p]), p))
-
-        def acomodar(pista, vistos):
-            for cid in candidatos[pista]:
-                if cid in vistos or cid in atados or cid in ocupados:
-                    continue
-                vistos.add(cid)
-                ocupada = de_entrenador.get(cid)
-                if ocupada is None or acomodar(ocupada, vistos):
-                    de_entrenador[cid] = pista
-                    return True
-            return False
-
-        for pista in orden:
-            acomodar(pista, set())
-        return {pista: cid for cid, pista in de_entrenador.items()}
+        libres = [c for c in sorted(ids_elegibles)
+                  if c not in de_entrenador and c not in ocupados]
+        asignado = {pista: cid for cid, pista in de_entrenador.items()}
+        asignado.update(_mejor_asignacion(
+            [p for p in pistas if p not in tomadas], libres, valor))
+        return asignado
 
     # --- Pocos entrenadores: qué pistas llevan uno -----------------------
     permitidas = set(todas)
@@ -531,11 +541,11 @@ def _emparejar_entrenadores(
                     list(por_sede[x]), reparto[x], fijas=fijas,
                 )
             ]
-        # El reparto geométricamente mejor no sirve si en alguna de sus pistas
-        # no hay nadie capacitado para esa división: esa pista se queda sin
-        # entrenador y su vecina, huérfana. Se prueba cada sede, en orden de
-        # llenado, con sus repartos de mejor a peor, y se queda el primero que
-        # el emparejamiento cubre entero (si ninguno, el que más cubre).
+        # El reparto geométricamente mejor puede no cubrirse entero (un
+        # contrato duro ata a quien ata): esa pista se queda sin entrenador y su
+        # vecina, huérfana. Se prueba cada sede, en orden de llenado, con sus
+        # repartos de mejor a peor, y se queda el primero que se cubre entero
+        # (si ninguno, el que más cubre).
         elegido = {x: opciones[x][0] for x in sedes}
         for x in sedes:
             mejor, mejor_n = elegido[x], -1
@@ -594,9 +604,9 @@ def _emparejar_entrenadores(
     for pista in sorted(todas, key=lambda p: (len(candidatos[p]), p)):
         if not candidatos[pista] or not huerfana(pista, asignado):
             continue
-        # No hay ningún capacitado libre a esta hora y ninguna vecina la
-        # cubre: se repite al menos cargado, mejor que dejarla sin nadie.
-        cid = min(candidatos[pista], key=lambda c: (load[c], c))
+        # No queda nadie libre a esta hora y ninguna vecina la cubre: se repite
+        # a quien más le toca, mejor que dejarla sin nadie.
+        cid = min(candidatos[pista], key=lambda c: (-afin[(pista, c)], load[c], c))
         asignado[pista] = cid
         repetidos.append(cid)
     for cid in asignado.values():
@@ -647,34 +657,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     load: Counter = Counter()
     report = {"dias": {}, "overflow": [], "unassigned": []}
 
-    # --- Entrenadores: capacidad por división (#3) y disponibilidad (#10/#11) --
+    # --- Entrenadores disponibles (#10/#11) y con quién entrena cada alumno --
     from academy.models import Jugador
 
     all_coaches = list(
         Entrenador.objects.filter(activo=True, disponible_semana=True)
-        .prefetch_related("divisiones_habilitadas")
     )
-    coach_niveles = {c.id: c.niveles_habilitados() for c in all_coaches}
-    player_div = dict(
-        Jugador.objects.filter(activo=True).values_list("id", "division__nivel")
-    )
-
-    # Responsables ponderados por jugador (#2/#12): prioridad y % objetivo.
-    from academy.models import ResponsableJugador
-
-    player_responsables: dict[int, list] = defaultdict(list)
-    for rj in ResponsableJugador.objects.filter(activo=True).order_by(
-        "jugador_id", "prioridad"
-    ):
-        player_responsables[rj.jugador_id].append(
-            (rj.entrenador_id, rj.prioridad, rj.porcentaje_objetivo)
-        )
-    # Fallback: jugadores sin fila usan su entrenador_responsable como principal.
-    for jid, cid in Jugador.objects.filter(
-        activo=True, entrenador_responsable__isnull=False
-    ).values_list("id", "entrenador_responsable_id"):
-        if jid not in player_responsables:
-            player_responsables[jid].append((cid, 1, 0))
+    pesos = pesos_de_entrenamiento()
 
     # Preferencias de superficie estrictas por jugador (#1).
     from academy.models import PreferenciaSuperficie
@@ -847,12 +836,12 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             Asignacion.objects.filter(
                 semana=semana, dia=dia, turno=turno
             ).delete()
-            # Un entrenador, una pista. Repartir pista a pista no basta: una
-            # pista fácil se lleva al único capacitado para una difícil y esa
-            # se queda sin nadie. Es un emparejamiento, y se resuelve como tal.
+            # Un entrenador por pista, y a cada una quien más les toca a sus
+            # alumnos según sus porcentajes y lo que llevan hecho esta semana.
             entrenador_de, repetidos = _emparejar_entrenadores(
-                result.courts, sponsors, elegibles, coach_niveles, player_div,
-                load, blandos=blandos,
+                result.courts, sponsors, elegibles, load,
+                pesos=pesos, con_quien=coach_share, sesiones=player_sessions,
+                blandos=blandos,
                 info_pistas={c.id: (c.venue_id, c.number, c.fill_rank)
                              for c in turno_courts},
             )

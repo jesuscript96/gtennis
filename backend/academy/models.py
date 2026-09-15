@@ -144,8 +144,9 @@ class Entrenador(models.Model):
         blank=True,
         related_name="entrenadores_gestores",
     )
-    # Divisiones que este entrenador está capacitado para entrenar (#3).
-    # Vacío = habilitado para todas las divisiones.
+    # Histórico: las divisiones que entrenaba. Desde septiembre de 2026 la
+    # división solo empareja alumnos y con quién entrena cada uno lo dicen sus
+    # porcentajes (`ResponsableJugador`); el motor ya no lo mira.
     divisiones_habilitadas = models.ManyToManyField(
         "Division",
         blank=True,
@@ -176,19 +177,6 @@ class Entrenador(models.Model):
     def __str__(self):
         return self.nombre
 
-    def niveles_habilitados(self):
-        """Set de niveles de división que puede entrenar; None = todas."""
-        niveles = set(self.divisiones_habilitadas.values_list("nivel", flat=True))
-        return niveles or None
-
-    def puede_entrenar_niveles(self, niveles):
-        """¿Cubre este entrenador todos los niveles dados? (None en la pista =
-        jugador sin clasificar, no restringe)."""
-        habil = self.niveles_habilitados()
-        if habil is None:
-            return True
-        return all(n is None or n in habil for n in niveles)
-
     def jugadores_permitidos(self):
         """Queryset de jugadores activos que este entrenador puede gestionar.
         Fuente única: ResponsableJugador (cualquier prioridad). Se mantiene la
@@ -199,7 +187,9 @@ class Entrenador(models.Model):
         if self.gestiona_todos_jugadores:
             return activos
         return activos.filter(
-            Q(responsables__entrenador=self) | Q(entrenadores_gestores=self)
+            Q(entrenador_responsable=self)
+            | Q(responsables__entrenador=self)
+            | Q(entrenadores_gestores=self)
         ).distinct()
 
     def puede_gestionar(self, jugador):
@@ -411,32 +401,23 @@ class Jugador(models.Model):
         return True
 
     def repartir_porcentajes(self):
-        """Reparte el % objetivo por rol (#12): el grupo PRINCIPAL (prioridad 1,
-        los entrenadores de la sub-columna del jugador) se lleva el 70% y los
-        SECUNDARIOS (prioridad ≥2, otras sub-columnas del bloque) el 30%; dentro
-        de cada grupo, a partes iguales. Si solo hay principales, se llevan 100%."""
+        """Devuelve sus porcentajes a la regla de dirección (`academy.pesos`):
+        los secundarios (prioridad ≥ 2) con el mínimo y los principales a partes
+        iguales con lo que queda."""
+        from .pesos import reparto_por_defecto
+
         resp = list(self.responsables.filter(activo=True).order_by("prioridad", "id"))
-        if not resp:
-            return
-        principales = [r for r in resp if r.prioridad <= 1]
-        secundarios = [r for r in resp if r.prioridad > 1]
-        if not principales:  # todos secundarios → se tratan como principales
-            principales, secundarios = secundarios, []
-        cuota_p = 100 if not secundarios else 70
-
-        def reparte(grupo, total):
-            n = len(grupo)
-            if n == 0:
-                return
-            base, resto = divmod(total, n)
-            for i, r in enumerate(grupo):
-                val = base + (1 if i < resto else 0)
-                if r.porcentaje_objetivo != val:
-                    r.porcentaje_objetivo = val
-                    r.save(update_fields=["porcentaje_objetivo"])
-
-        reparte(principales, cuota_p)
-        reparte(secundarios, 100 - cuota_p)
+        reparto = {
+            e: (p, c) for e, p, c in reparto_por_defecto(
+                [r.entrenador_id for r in resp if r.prioridad <= 1],
+                [r.entrenador_id for r in resp if r.prioridad > 1],
+            )
+        }
+        for r in resp:
+            prioridad, pct = reparto[r.entrenador_id]
+            if (r.prioridad, r.porcentaje_objetivo) != (prioridad, pct):
+                r.prioridad, r.porcentaje_objetivo = prioridad, pct
+                r.save(update_fields=["prioridad", "porcentaje_objetivo"])
 
 
 class HorarioJugador(models.Model):
@@ -514,10 +495,13 @@ class HorarioJugador(models.Model):
 
 
 class ResponsableJugador(models.Model):
-    """Relación ponderada jugador–entrenador (#2/#12). Un jugador puede tener
-    varios entrenadores responsables con una prioridad y un % objetivo de
-    entrenos deseado con cada uno. Complementa (y prevalece sobre) el campo
-    simple `Jugador.entrenador_responsable`."""
+    """Con quién entrena un alumno y en qué proporción (`academy.pesos`).
+
+    Prioridad 1 es su principal y 2 un secundario, que lleva como mínimo un
+    10%. El porcentaje es la parte de sus entrenamientos con este entrenador, y
+    el motor se acerca a él a lo largo de la semana. Quién le gestiona es otra
+    cosa: `Jugador.entrenador_responsable`. Sin porcentajes, entrena con su
+    responsable."""
 
     jugador = models.ForeignKey(
         Jugador, on_delete=models.CASCADE, related_name="responsables"
@@ -525,7 +509,7 @@ class ResponsableJugador(models.Model):
     entrenador = models.ForeignKey(
         Entrenador, on_delete=models.CASCADE, related_name="jugadores_responsable"
     )
-    # 1 = principal; números mayores = menor prioridad.
+    # 1 = principal; 2 = secundario.
     prioridad = models.PositiveSmallIntegerField(default=1)
     # % de entrenos que se desea que este jugador haga con este entrenador.
     porcentaje_objetivo = models.PositiveSmallIntegerField(

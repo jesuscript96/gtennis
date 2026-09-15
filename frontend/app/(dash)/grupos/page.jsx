@@ -25,9 +25,9 @@ import {
  * que ahí se toca a quien se mueve y luego "Traer aquí" en el destino. Eso
  * funciona también con ratón, para quien lo prefiera.
  *
- * Un alumno sale además en el "también entrena" de otros entrenadores de su
- * bloque: todos los capacitados para su división pueden entrenarle. Va plegado
- * para que no parezca el mismo grupo repetido.
+ * Un alumno sale además en el "también entrena" de los otros entrenadores de
+ * su bloque, que le entrenan como secundarios. Va plegado para que no parezca
+ * el mismo grupo repetido.
  */
 export default function Page() {
   const [datos, setDatos] = useState(null);
@@ -89,7 +89,7 @@ export default function Page() {
         if (!q.desde) return;
         return accion(
           () => grupoQuitar(q.id, q.desde),
-          `${q.nombre} se queda sin responsable.`
+          `${q.nombre} sale de su grupo.`
         );
       }
       if (zona.entrenador === q.desde) return;
@@ -313,8 +313,9 @@ export default function Page() {
       </div>
       <p className="help">
         Arrastra un <b>alumno</b> a la columna de otro entrenador, o una
-        <b> columna entera</b> (por su cabecera) a otro bloque: el alumno cambia
-        de responsable y el entrenador se lleva a los suyos. En el móvil, toca a
+        <b> columna entera</b> (por su cabecera) a otro bloque. El alumno pasa a
+        ese grupo: responsable y principal el de la columna, y un 10% al resto
+        del bloque (se retoca en Jugadores → Entrenadores). En el móvil, toca a
         quien mueves y luego <b>Traer aquí</b>.
       </p>
 

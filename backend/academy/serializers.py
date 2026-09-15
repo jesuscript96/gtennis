@@ -58,25 +58,19 @@ class DivisionSerializer(serializers.ModelSerializer):
 
 
 class EntrenadorSerializer(serializers.ModelSerializer):
-    divisiones_habilitadas_display = serializers.SerializerMethodField()
     turnos_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Entrenador
         fields = [
             "id", "nombre", "activo", "disponibilidad_notas", "disponible_semana",
-            "foto_url", "gestiona_todos_jugadores", "divisiones_habilitadas",
-            "divisiones_habilitadas_display", "turno_manana", "turno_tarde",
+            "foto_url", "gestiona_todos_jugadores", "turno_manana", "turno_tarde",
             "turnos_display",
         ]
 
     def get_turnos_display(self, obj):
         codigos = [t.codigo for t in (obj.turno_manana, obj.turno_tarde) if t]
         return " + ".join(codigos) if codigos else "Cualquiera"
-
-    def get_divisiones_habilitadas_display(self, obj):
-        niveles = sorted(obj.divisiones_habilitadas.values_list("nivel", flat=True))
-        return "Todas" if not niveles else ", ".join(f"D{n}" for n in niveles)
 
 
 class CoachSerializer(serializers.ModelSerializer):

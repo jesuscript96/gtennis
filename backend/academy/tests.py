@@ -9,8 +9,10 @@ from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 
 from academy.models import (
-    Entrenador, HorarioJugador, Jugador, Turno, VacacionesEntrenador,
+    Entrenador, HorarioJugador, Jugador, ResponsableJugador, Turno,
+    VacacionesEntrenador,
 )
+from academy.pesos import errores, reparto_por_defecto
 from engine.service import _available_players, entrenador_en_franja
 from scheduling.models import Disponibilidad, Estado, Semana
 
@@ -254,7 +256,135 @@ class OrganigramaFueraDeServicioTests(TestCase):
         self.assertTrue(Jugador.objects.filter(entrenador_responsable=mario).exists())
         jorge.refresh_from_db()
         self.assertFalse(jorge.disponible_semana)
+        # Sigue en su bloque, pero no entrena a nadie: no tiene porcentajes.
+        self.assertFalse(ResponsableJugador.objects.filter(entrenador=jorge).exists())
+
+
+class RepartoPorDefectoTests(SimpleTestCase):
+    """La regla de dirección: los secundarios con un 10% cada uno como mínimo
+    y el principal, lo que queda."""
+
+    def test_el_ejemplo_de_carlos_taberner(self):
         self.assertEqual(
-            sorted(jorge.divisiones_habilitadas.values_list("nivel", flat=True)),
-            [4, 5, 6],
+            reparto_por_defecto(["Víctor"], ["Dani", "Javi", "Blas", "Emilio"]),
+            [("Víctor", 1, 60), ("Dani", 2, 10), ("Javi", 2, 10),
+             ("Blas", 2, 10), ("Emilio", 2, 10)],
         )
+
+    def test_si_la_columna_la_firman_varios_se_reparten_el_principal(self):
+        self.assertEqual(
+            reparto_por_defecto(["Javi", "Blas", "Emilio"], ["Dani", "Víctor"]),
+            [("Javi", 1, 27), ("Blas", 1, 27), ("Emilio", 1, 26),
+             ("Dani", 2, 10), ("Víctor", 2, 10)],
+        )
+
+    def test_lo_que_no_se_puede_guardar(self):
+        self.assertEqual(errores([("V", 1, 90), ("D", 2, 10)]), [])
+        self.assertIn("mínimo", " ".join(errores([("V", 1, 95), ("D", 2, 5)])))
+        self.assertIn("suman 90", " ".join(errores([("V", 1, 80), ("D", 2, 10)])))
+        self.assertIn("principal", " ".join(errores([("D", 2, 100)])))
+
+
+class OrganigramaPorcentajesTests(TestCase):
+    """Del organigrama salen por separado el nivel, quién gestiona y con quién
+    entrena cada alumno."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("aplicar_grupos", stdout=StringIO())
+
+    def _ficha(self, modelo, nombre):
+        """La ficha que el comando le da a un nombre de la tabla: la base de
+        pruebas ya trae alumnos y entrenadores con su nombre completo."""
+        from academy.management.commands.aplicar_grupos import Command, clave
+
+        idx = {clave(o.nombre): o for o in modelo.objects.order_by("activo", "id")}
+        return Command()._buscar(modelo, nombre, idx)
+
+    def _entrenador(self, nombre):
+        return self._ficha(Entrenador, nombre).pk
+
+    def _porcentajes(self, nombre):
+        return {r.entrenador_id: (r.prioridad, r.porcentaje_objetivo)
+                for r in self._ficha(Jugador, nombre).responsables.all()}
+
+    def test_carlos_taberner_con_victor_de_principal(self):
+        victor = self._entrenador("VICTOR REDONDO")
+        esperado = {victor: (1, 60)}
+        for n in ("DANI GIMENO", "JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO"):
+            esperado[self._entrenador(n)] = (2, 10)
+        self.assertEqual(self._porcentajes("Carlos Taberner"), esperado)
+        j = self._ficha(Jugador, "Carlos Taberner")
+        self.assertEqual((j.entrenador_responsable_id, j.division.nivel), (victor, 1))
+
+    def test_el_nivel_no_decide_el_grupo(self):
+        # Maria Adrienko es de nivel 4, pero va en la columna de Javi / Blas / Emilio.
+        j = self._ficha(Jugador, "Maria Adrienko")
+        self.assertEqual(j.division.nivel, 4)
+        principales = {e for e, (p, _c) in self._porcentajes("Maria Adrienko").items() if p == 1}
+        self.assertEqual(principales, {self._entrenador(n) for n in
+                                       ("JAVI GIMENEZ", "BLAS GALLEGO", "EMILIO SORIO")})
+        self.assertIn(j.entrenador_responsable_id, principales)
+
+    def test_elina_con_su_entrenador_particular(self):
+        self.assertEqual(self._porcentajes("Elina Avanesyan"),
+                         {self._entrenador("JORGE GARCIA"): (1, 100)})
+
+    def test_el_organigrama_suma_cien_y_el_resto_sale_del_grupo(self):
+        totales = [sum(j.responsables.values_list("porcentaje_objetivo", flat=True))
+                   for j in Jugador.objects.filter(activo=True)]
+        self.assertEqual(totales.count(100), 57)
+        self.assertLessEqual(set(totales), {0, 100})
+
+
+class PorcentajesDelJugadorApiTests(TestCase):
+    """Los porcentajes se ponen a mano y se guardan todos a la vez."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        self.User = User
+        self.api = APIClient()
+        self.api.force_authenticate(User.objects.create_user(
+            username="direccion", password="x", role=User.Role.SUPERADMIN))
+        self.victor = Entrenador.objects.create(nombre="Víctor")
+        self.dani = Entrenador.objects.create(nombre="Dani")
+        self.jugador = Jugador.objects.create(nombre="Carlos")
+        self.url = f"/api/jugadores/{self.jugador.id}/entrenadores/"
+
+    def _cuerpo(self, victor, dani):
+        return {"responsable": self.victor.id, "entrenadores": [
+            {"entrenador": self.victor.id, "prioridad": 1, "porcentaje": victor},
+            {"entrenador": self.dani.id, "prioridad": 2, "porcentaje": dani},
+        ]}
+
+    def test_guarda_los_porcentajes_y_el_responsable(self):
+        r = self.api.post(self.url, self._cuerpo(90, 10), format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            [(f["nombre"], f["porcentaje"]) for f in r.json()["entrenadores"]],
+            [("Víctor", 90), ("Dani", 10)],
+        )
+        self.jugador.refresh_from_db()
+        self.assertEqual(self.jugador.entrenador_responsable, self.victor)
+
+    def test_no_guarda_un_secundario_por_debajo_del_minimo(self):
+        r = self.api.post(self.url, self._cuerpo(95, 5), format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(self.jugador.responsables.exists())
+
+    def test_un_entrenador_no_los_cambia(self):
+        from rest_framework.test import APIClient
+
+        usuario = self.User.objects.create_user(
+            username="dani", password="x", role=self.User.Role.ENTRENADOR)
+        Entrenador.objects.filter(pk=self.dani.pk).update(user=usuario)
+        ResponsableJugador.objects.create(
+            jugador=self.jugador, entrenador=self.dani, prioridad=1,
+            porcentaje_objetivo=100)
+        api = APIClient()
+        api.force_authenticate(usuario)
+        r = api.post(self.url, self._cuerpo(90, 10), format="json")
+        self.assertEqual(r.status_code, 403)

@@ -6,10 +6,9 @@ entrenador tenga al lado una pista con entrenador: así cada uno abarca la suya
 y la contigua. Con las ocho pistas del Resort y cinco entrenadores, Iván los
 pone en las pistas 1-3-4-6-7.
 
-Esto solo decide QUÉ pistas se cubren. Quién va a cada una lo sigue decidiendo
-el emparejamiento por división de `service._emparejar_entrenadores`, que además
-descarta los repartos en los que alguna pista elegida no tiene a nadie
-capacitado para sus divisiones.
+Esto solo decide QUÉ pistas se cubren. Quién va a cada una lo decide
+`service._emparejar_entrenadores` con los porcentajes de sus alumnos, que
+además descarta los repartos que no puede cubrir enteros.
 """
 from itertools import combinations
 
@@ -34,8 +33,8 @@ def opciones_de_pistas(numeros, k, fijas=()):
          1-3-4-6-7 de Iván; cualquier otra que empate en 1-3 vale igual.
 
     Se devuelven todas y no solo la primera porque la geométricamente mejor
-    puede no servir: si en una de sus pistas no hay nadie capacitado para esa
-    división, esa pista se queda sin entrenador y su vecina, huérfana.
+    puede no cubrirse entera, y entonces esa pista se queda sin entrenador y su
+    vecina, huérfana.
     """
     numeros = sorted(set(numeros))
     fijas = set(fijas) & set(numeros)

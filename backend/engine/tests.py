@@ -97,62 +97,83 @@ class _Ent:
         self.id = id
 
 
+def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
+               info=None, con_quien=None, sesiones=None, load=None):
+    from collections import Counter
+
+    from .service import _emparejar_entrenadores
+
+    return _emparejar_entrenadores(
+        courts, duros or {}, [_Ent(i) for i in entrenadores],
+        load if load is not None else Counter(),
+        pesos=pesos, con_quien=con_quien, sesiones=sesiones,
+        blandos=blandos, info_pistas=info,
+    )
+
+
 class EmparejarEntrenadoresTests(SimpleTestCase):
     """Nadie cubre dos pistas a la vez.
 
     En el cuadrante real de Iván, de 189 asignaciones en las bandas de alto
     rendimiento no hay una sola repetida, así que el motor tampoco repite
-    mientras queden entrenadores capacitados libres.
+    mientras queden entrenadores libres.
     """
 
-    def _emparejar(self, courts, niveles, divisiones, sponsors=None):
-        from collections import Counter
-
-        from .service import _emparejar_entrenadores
-
-        elegibles = [_Ent(i) for i in sorted(niveles)]
-        return _emparejar_entrenadores(
-            courts, sponsors or {}, elegibles, niveles, divisiones, Counter()
-        )
-
     def test_no_repite_cuando_hay_de_sobra(self):
-        courts = {10: [1, 2], 11: [3, 4], 12: [5, 6]}
-        divisiones = {1: 2, 2: 2, 3: 5, 4: 5, 5: 7, 6: 7}
-        niveles = {100: None, 101: None, 102: None}   # None = todas
-        asignado, repetidos = self._emparejar(courts, niveles, divisiones)
+        asignado, repetidos = _emparejar(
+            {10: [1, 2], 11: [3, 4], 12: [5, 6]}, [100, 101, 102])
         self.assertEqual(len(set(asignado.values())), 3)
         self.assertEqual(repetidos, [])
 
-    def test_encuentra_el_reparto_aunque_el_avido_falle(self):
-        # La pista fácil (div 2) la puede llevar cualquiera; la difícil (div 7)
-        # solo el 101. Repartiendo por orden, la fácil se llevaría al 101 y la
-        # difícil se quedaría sin nadie.
-        courts = {10: [1, 2], 11: [3, 4]}
-        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
-        niveles = {100: {2}, 101: {2, 7}}
-        asignado, repetidos = self._emparejar(courts, niveles, divisiones)
-        self.assertEqual(asignado, {10: 100, 11: 101})
-        self.assertEqual(repetidos, [])
-
     def test_repite_solo_si_no_queda_nadie(self):
-        courts = {10: [1], 11: [2]}
-        divisiones = {1: 7, 2: 7}
-        niveles = {100: {7}}                          # un solo capacitado
-        asignado, repetidos = self._emparejar(courts, niveles, divisiones)
+        asignado, repetidos = _emparejar({10: [1], 11: [2]}, [100])
         self.assertEqual(set(asignado.values()), {100})
         self.assertEqual(len(repetidos), 1)
 
-    def test_el_contrato_manda_sobre_el_emparejamiento(self):
-        # El 101 sirve para todo y es el que la pista difícil se rifaría, pero
-        # tiene contrato con el jugador 1, que está en la pista fácil.
-        courts = {10: [1, 2], 11: [3, 4]}
-        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
-        niveles = {100: {2, 7}, 101: None}
-        asignado, _ = self._emparejar(
-            courts, niveles, divisiones, sponsors={1: {101}}
-        )
-        self.assertEqual(asignado[10], 101)
-        self.assertEqual(asignado[11], 100)
+    def test_el_contrato_manda_sobre_los_porcentajes(self):
+        # Por porcentajes el 101 iría a la pista 11, pero tiene contrato con el 1.
+        pesos = {3: {101: 1.0}, 4: {101: 1.0}}
+        asignado, _ = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos, duros={1: {101}})
+        self.assertEqual(asignado, {10: 101, 11: 100})
+
+
+class PorcentajesDeEntrenamientoTests(SimpleTestCase):
+    """Con quién entrena cada alumno lo dicen sus porcentajes; la división solo
+    empareja alumnos."""
+
+    def test_cada_pista_con_el_suyo(self):
+        pesos = {1: {101: 1.0}, 2: {101: 1.0}, 3: {100: 1.0}, 4: {100: 1.0}}
+        asignado, _ = _emparejar({10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos)
+        self.assertEqual(asignado, {10: 101, 11: 100})
+
+    def test_gana_quien_mas_les_toca_a_todos(self):
+        pesos = {1: {100: 1.0}, 2: {101: 1.0}, 3: {101: 1.0}, 4: {101: 1.0}}
+        asignado, _ = _emparejar({10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos)
+        self.assertEqual(asignado, {10: 100, 11: 101})
+
+    def test_si_el_suyo_esta_ocupado_entrena_otro(self):
+        pesos = {j: {100: 1.0} for j in (1, 2, 3, 4)}
+        asignado, repetidos = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos)
+        self.assertEqual(sorted(asignado.values()), [100, 101])
+        self.assertEqual(repetidos, [])
+
+    def test_a_lo_largo_de_la_semana_se_acerca_a_los_porcentajes(self):
+        # Carlos Taberner: Víctor 60% y Dani, Javi, Blas y Emilio 10% cada uno.
+        from collections import Counter
+
+        victor, secundarios = 100, [101, 102, 103, 104]
+        pesos = {1: {victor: 0.6, **{x: 0.1 for x in secundarios}}}
+        con_quien, sesiones, load = Counter(), Counter(), Counter()
+        for _ in range(10):
+            asignado, _r = _emparejar(
+                {10: [1]}, [victor, *secundarios], pesos=pesos,
+                con_quien=con_quien, sesiones=sesiones, load=load)
+            con_quien[(1, asignado[10])] += 1
+            sesiones[1] += 1
+        self.assertEqual(con_quien[(1, victor)], 6)
+        self.assertEqual([con_quien[(1, x)] for x in secundarios], [1, 1, 1, 1])
 
 
 class MediaJornadaCerradaTests(SimpleTestCase):
@@ -259,42 +280,23 @@ class ContratoBlandoTests(SimpleTestCase):
     """Blando: primero su grupo; con el jugador del contrato solo si no deja
     ninguna otra pista sin entrenador."""
 
-    def _emp(self, courts, niveles, divisiones, duros=None, blandos=None, info=None):
-        from collections import Counter
-
-        from .service import _emparejar_entrenadores
-
-        elegibles = [_Ent(i) for i in sorted(niveles)]
-        return _emparejar_entrenadores(
-            courts, duros or {}, elegibles, niveles, divisiones, Counter(),
-            blandos=blandos or {}, info_pistas=info,
-        )
-
-    def test_no_deja_otra_pista_sin_entrenador(self):
-        # El 100 tiene contrato blando con el 3 (pista 11), pero es el único
-        # capaz de llevar la pista 10: se queda en la 10.
-        courts = {10: [1, 2], 11: [3, 4]}
-        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
-        niveles = {100: {2}, 101: {7}}
-        asignado, repetidos = self._emp(courts, niveles, divisiones, blandos={3: {100}})
-        self.assertEqual(asignado, {10: 100, 11: 101})
+    def test_no_deja_otra_pista_huerfana(self):
+        # Tres pistas seguidas y un entrenador: va a la del medio y vigila las
+        # dos. Con su jugador, en la 1, la 3 se quedaría sin nadie al lado.
+        courts = {201: [1, 2], 202: [3, 4], 203: [5, 6]}
+        info = {200 + n: ("resort", n, 0) for n in (1, 2, 3)}
+        asignado, repetidos = _emparejar(courts, [100], blandos={1: {100}}, info=info)
+        self.assertEqual(asignado, {202: 100})
         self.assertEqual(repetidos, [])
 
     def test_va_con_su_jugador_cuando_puede(self):
-        courts = {10: [1, 2], 11: [3, 4]}
-        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
-        niveles = {100: {2}, 101: {7}, 102: None}
-        asignado, _ = self._emp(courts, niveles, divisiones, blandos={3: {102}})
+        # Por porcentajes el 102 iría a la 10, pero tiene contrato blando con el 3.
+        pesos = {1: {102: 1.0}, 2: {102: 1.0}}
+        asignado, _ = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100, 101, 102], pesos=pesos,
+            blandos={3: {102}})
         self.assertEqual(asignado[11], 102)
-        self.assertEqual(asignado[10], 100)
-
-    def test_el_contrato_es_el_permiso_para_esa_division(self):
-        # Víctor entrena la D1 y Carla es D5: con contrato puede ir con ella.
-        courts = {10: [1, 2]}
-        divisiones = {1: 5, 2: 5}
-        niveles = {100: {1}}
-        asignado, _ = self._emp(courts, niveles, divisiones, blandos={1: {100}})
-        self.assertEqual(asignado, {10: 100})
+        self.assertIn(asignado[10], {100, 101})
 
 
 class RepartoConPocosEntrenadoresTests(SimpleTestCase):
@@ -302,59 +304,23 @@ class RepartoConPocosEntrenadoresTests(SimpleTestCase):
     lado, y a esas no se les repite a nadie."""
 
     def test_ocho_pistas_cinco_entrenadores(self):
-        from collections import Counter
-
-        from .service import _emparejar_entrenadores
-
         courts = {200 + n: [n * 10, n * 10 + 1] for n in range(1, 9)}
-        divisiones = {j: 2 for m in courts.values() for j in m}
-        niveles = {100 + i: None for i in range(5)}
         info = {200 + n: ("resort", n, 0) for n in range(1, 9)}
-        asignado, repetidos = _emparejar_entrenadores(
-            courts, {}, [_Ent(i) for i in sorted(niveles)], niveles, divisiones,
-            Counter(), info_pistas=info,
-        )
+        asignado, repetidos = _emparejar(courts, [100 + i for i in range(5)], info=info)
         self.assertEqual({p - 200 for p in asignado}, {1, 3, 4, 6, 7})
         self.assertEqual(len(set(asignado.values())), 5)
         self.assertEqual(repetidos, [])
 
     def test_sin_numeros_de_pista_repite_como_antes(self):
-        from collections import Counter
-
-        from .service import _emparejar_entrenadores
-
-        courts = {10: [1], 11: [2], 12: [3]}
-        divisiones = {1: 7, 2: 7, 3: 7}
-        niveles = {100: {7}}
-        asignado, repetidos = _emparejar_entrenadores(
-            courts, {}, [_Ent(100)], niveles, divisiones, Counter(),
-        )
+        asignado, repetidos = _emparejar({10: [1], 11: [2], 12: [3]}, [100])
         self.assertEqual(set(asignado), {10, 11, 12})
         self.assertEqual(len(repetidos), 2)
 
-
-class PistasAlternasConDivisionesTests(SimpleTestCase):
-    """El mejor reparto de pistas no vale si en una de ellas no hay nadie
-    capacitado: se busca otro que se pueda cubrir entero y sin huérfanas."""
-
-    def test_si_la_mejor_no_se_puede_cubrir_busca_otra(self):
-        from collections import Counter
-
-        from .service import _emparejar_entrenadores
-
-        courts = {200 + n: [n * 10, n * 10 + 1] for n in range(1, 9)}
-        # La pista 1 es de la D9 y ninguno de los cinco la entrena, así que el
-        # 1-3-4-6-7 dejaría la 1 sin entrenador y la 2 huérfana.
-        divisiones = {j: (9 if p == 201 else 2) for p, m in courts.items() for j in m}
-        niveles = {100 + i: {2} for i in range(5)}
-        info = {200 + n: ("resort", n, 0) for n in range(1, 9)}
-        asignado, repetidos = _emparejar_entrenadores(
-            courts, {}, [_Ent(i) for i in sorted(niveles)], niveles, divisiones,
-            Counter(), info_pistas=info,
-        )
-        con = {p - 200 for p in asignado}
-        sin = [n for n in range(1, 9) if n not in con]
-        self.assertEqual(len(con), 5)
-        self.assertNotIn(1, con)
-        self.assertTrue(all((n - 1) in con or (n + 1) in con for n in sin), (con, sin))
-        self.assertEqual(repetidos, [])
+    def test_los_porcentajes_deciden_quien_va_a_cada_pista_elegida(self):
+        # Tres pistas y dos entrenadores: van a la 1 y la 3, cada uno a la de
+        # sus alumnos.
+        courts = {201: [1], 202: [2], 203: [3]}
+        info = {200 + n: ("resort", n, 0) for n in (1, 2, 3)}
+        pesos = {1: {101: 1.0}, 3: {100: 1.0}}
+        asignado, _ = _emparejar(courts, [100, 101], pesos=pesos, info=info)
+        self.assertEqual(asignado, {201: 101, 203: 100})

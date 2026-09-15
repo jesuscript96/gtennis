@@ -36,7 +36,6 @@ from academy.pesos import guardar as guardar_pesos, reparto_por_defecto
 BLOQUES = [
     {
         "head": "DANI GIMENO",
-        "divisiones": [1, 2, 3],
         "columnas": [
             (["VICTOR REDONDO"],
              ["Carlos Taberner", "Carlos Sanchez", "Raúl Brancaccio"]),
@@ -51,7 +50,6 @@ BLOQUES = [
     },
     {
         "head": "PABLO GIL",
-        "divisiones": [4, 5, 6],
         "columnas": [
             (["PABLO GIL"], ["Javi Ballester", "Eric Badenes", "Carla Guerrero"]),
             (["MARIO MUNIESA", "JORGE IBAÑEZ"],
@@ -64,7 +62,6 @@ BLOQUES = [
     },
     {
         "head": "SANTI PANZARASA",
-        "divisiones": [7, 8],
         "columnas": [
             (["PATRICIO"], ["Dani Martins", "Eugenia Álvarez", "Victoria Schneider"]),
             (["NACHO CALVO"],
@@ -74,7 +71,6 @@ BLOQUES = [
     },
     {
         "head": "ALVARO MANTOAN",
-        "divisiones": [9],
         "columnas": [
             (["ALVARO MANTOAN", "ALBERTO", "JORGE MILLA"],
              ["Ruohan Xu", "Jennie Zhang", "Yuantian Gao", "Kevin (zunwen wang)",
@@ -344,14 +340,6 @@ class Command(BaseCommand):
                                  .values_list("nombre", flat=True))
 
         if not seco:
-            for b in BLOQUES:
-                divs_b = b.get("divisiones", [])
-                plantel = list(dict.fromkeys([b["head"]] + [n for arriba, _a in b["columnas"] for n in arriba]))
-                for nom in plantel:
-                    ent = self._buscar(Entrenador, nom, eidx)
-                    if ent:
-                        ent.divisiones_habilitadas.set([divs[n] for n in divs_b if n in divs])
-
             for ent_nom, jug_nom in CONTRATOS:
                 ent = self._buscar(Entrenador, ent_nom, eidx)
                 jug = self._buscar(Jugador, jug_nom, jidx)

@@ -148,14 +148,12 @@ export const RESOURCES = {
     search: true,
     columns: [
       { key: "nombre", label: "Nombre" },
-      { key: "divisiones_habilitadas_display", label: "Entrena divisiones" },
       { key: "turnos_display", label: "Franjas" },
       { key: "activo", label: "Activo", type: "bool" },
       { key: "disponible_semana", label: "Disp. semana", type: "bool" },
     ],
     fields: [
       { name: "nombre", label: "Nombre", type: "text", required: true },
-      { name: "divisiones_habilitadas", label: "Divisiones que puede entrenar (vacío = todas)", type: "mfk", endpoint: "divisiones", optionLabel: divLabel, help: "Si no marcas ninguna, el entrenador puede entrenar a cualquier división." },
       { name: "turno_manana", label: "Da clase por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
       { name: "turno_tarde", label: "Da clase por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },
@@ -168,7 +166,7 @@ export const RESOURCES = {
     endpoint: "responsables",
     title: "Responsables de jugador",
     singular: "responsable",
-    help: "Asigna a cada jugador uno o varios entrenadores responsables, con prioridad (1 = principal). El % de entrenos se reparte automáticamente al añadir o quitar responsables (1→100, 2→70/30, 3→70/15/15); puedes ajustarlo a mano si hace falta. El motor lo respeta al asignar entrenador.",
+    help: "Con quién entrena cada jugador y en qué proporción: prioridad 1 = principal, 2 = secundario (mínimo 10%). Mejor desde Jugadores → «Entrenadores», que comprueba que sumen 100. Al añadir o quitar aquí se reparte solo: los secundarios al 10% y el principal, lo que queda.",
     columns: [
       { key: "jugador_nombre", label: "Jugador" },
       { key: "entrenador_nombre", label: "Entrenador" },
