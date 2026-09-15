@@ -136,7 +136,8 @@ class HorarioJugadorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = HorarioJugador
-        fields = ["dia", "turno_manana", "turno_tarde"]
+        fields = ["dia", "turno_manana", "turno_tarde",
+                  "entrena_manana", "entrena_tarde"]
 
 
 class JugadorSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
@@ -160,6 +161,7 @@ class JugadorSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
             "entrenador_responsable", "entrenador_nombre", "escuela",
             "escuela_nombre", "foto_url", "activo", "notas",
             "fecha_alta", "fecha_baja", "turno_manana", "turno_tarde", "horario",
+            "pareja_division",
         ]
         # `edad` sigue siendo escribible por los alumnos antiguos de los que
         # solo consta el número, pero en cuanto hay `fecha_nacimiento` manda la

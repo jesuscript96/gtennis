@@ -357,6 +357,20 @@ class Jugador(models.Model):
         limit_choices_to={"codigo__in": ["T1", "T2"]},
         help_text="T1 (14:15) o T2 (15:30). Vacío = cualquiera.",
     )
+    # La regla de vecindad (±1 división) no cambia; esto decide hacia qué lado
+    # tira cuando puede elegir. OJO al sentido: la División 1 es la MÁS ALTA,
+    # así que «hacia arriba» es emparejarle con la división de número menor.
+    class ParejaDivision(models.TextChoices):
+        ARRIBA = "ARRIBA", "Hacia arriba (división mejor, D-1)"
+        ABAJO = "ABAJO", "Hacia abajo (división de debajo, D+1)"
+
+    # Nulo = le da igual. Se deja nulo y no vacío porque el formulario de la
+    # app manda «—» como null.
+    pareja_division = models.CharField(
+        max_length=6, choices=ParejaDivision.choices, null=True, blank=True,
+        verbose_name="Se empareja preferentemente",
+        help_text="Siempre dentro de ±1 división. Vacío = le da igual.",
+    )
 
     class Meta:
         verbose_name = "Jugador"
@@ -461,6 +475,20 @@ class HorarioJugador(models.Model):
         limit_choices_to={"bloque": "TARDE", "activo": True,
                           "codigo__in": ["T1", "T2"]},
         verbose_name="Turno de tarde",
+    )
+    # Hay tres respuestas por bloque, no dos, y el turno a nulo solo sabía decir
+    # una: "ese día no entrena por la tarde" y "ese día entrena por la tarde en
+    # la franja que salga" se escribían igual. Así, declarar que un alumno no
+    # viene un martes por la tarde le sacaba también de las mañanas del martes.
+    entrena_manana = models.BooleanField(
+        default=True, verbose_name="Entrena por la mañana",
+        help_text="Si no, ese día no entrena por la mañana. Con el turno vacío, "
+                  "entrena en la franja que mejor encaje.",
+    )
+    entrena_tarde = models.BooleanField(
+        default=True, verbose_name="Entrena por la tarde",
+        help_text="Si no, ese día no entrena por la tarde. Con el turno vacío, "
+                  "entrena en la franja que mejor encaje.",
     )
 
     class Meta:

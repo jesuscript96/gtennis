@@ -2,7 +2,7 @@
 from django.test import SimpleTestCase
 
 from .pairing import Court, PairingInput, Player, solve_pairing
-from .service import hay_entrenamiento
+from .service import cupo_por_horario, hay_entrenamiento
 
 
 def central(n):
@@ -167,3 +167,43 @@ class MediaJornadaCerradaTests(SimpleTestCase):
     def test_el_resto_de_tardes_si(self):
         for dia in (0, 1, 3, 4, 5):
             self.assertTrue(hay_entrenamiento(dia, "TARDE"), dia)
+
+
+class PreferenciaDivisionTests(SimpleTestCase):
+    """Dentro del ±1, quien lo pide tira hacia su lado. La D1 es la más alta:
+    «hacia arriba» es la división de número menor."""
+
+    def _pista_de(self, res, jid):
+        return next(m for m in res.courts.values() if jid in m)
+
+    def test_hacia_arriba_prefiere_la_division_mejor(self):
+        players = [Player(1, division=4, division_pref=-1), Player(2, division=3),
+                   Player(3, division=5), Player(4, division=4)]
+        res = solve_pairing(PairingInput(players=players, courts=central(2)))
+        self.assertIn(2, self._pista_de(res, 1))
+
+    def test_hacia_abajo_prefiere_la_division_de_debajo(self):
+        players = [Player(1, division=4, division_pref=1), Player(2, division=3),
+                   Player(3, division=5), Player(4, division=4)]
+        res = solve_pairing(PairingInput(players=players, courts=central(2)))
+        self.assertIn(3, self._pista_de(res, 1))
+
+    def test_nunca_salta_la_vecindad(self):
+        # Pedir arriba no le empareja a dos divisiones de distancia.
+        players = [Player(1, division=5, division_pref=-1), Player(2, division=3)]
+        res = solve_pairing(PairingInput(players=players, courts=central(2)))
+        for miembros in res.courts.values():
+            self.assertFalse({1, 2} <= set(miembros))
+
+
+class CupoPorHorarioTests(SimpleTestCase):
+    """El cupo sale del horario solo si el horario describe la semana entera."""
+
+    def test_una_excepcion_suelta_no_fija_el_cupo(self):
+        horario = {(7, 1): (None, None, True, False)}
+        self.assertNotIn(7, cupo_por_horario(horario, [0, 1, 2, 3, 4]))
+
+    def test_semana_entera_sin_la_tarde_del_miercoles(self):
+        horario = {(7, d): (None, None, True, True) for d in range(5)}
+        # Cinco mañanas y cuatro tardes: el miércoles por la tarde no abre.
+        self.assertEqual(cupo_por_horario(horario, [0, 1, 2, 3, 4])[7], 9)

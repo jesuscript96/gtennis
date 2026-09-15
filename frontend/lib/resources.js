@@ -90,6 +90,11 @@ export const RESOURCES = {
       { name: "entrenador_responsable", label: "Entrenador responsable (principal)", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre },
       { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO },
       { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO },
+      // La D1 es la división más alta: «hacia arriba» es con la de número menor.
+      { name: "pareja_division", label: "Se empareja preferentemente", type: "select", options: [
+        { value: "ARRIBA", label: "Hacia arriba · con la división mejor (D−1)" },
+        { value: "ABAJO", label: "Hacia abajo · con la división de debajo (D+1)" },
+      ], help: "Siempre dentro de ±1 división. «—» = le da igual. La D1 es la más alta." },
       { name: "fecha_alta", label: "Fecha de alta", type: "date", help: "El día que empieza a entrenar. Hasta esa fecha no entra en los entrenamientos. Vacío = desde siempre." },
       { name: "fecha_baja", label: "Fecha de baja", type: "date", help: "Último día que entrena. Vacío = sigue en activo." },
       { name: "consentimiento_rgpd", label: "Consentimiento RGPD (datos de salud)", type: "bool" },

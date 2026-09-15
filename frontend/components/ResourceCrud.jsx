@@ -332,6 +332,7 @@ function Field({ field, value, options, onChange }) {
             <option key={String(o.value)} value={o.value}>{o.label}</option>
           ))}
         </select>
+        {field.help && <small className="mfk-help">{field.help}</small>}
       </label>
     );
   }

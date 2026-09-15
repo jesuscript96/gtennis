@@ -793,6 +793,10 @@ body.nav-locked { overflow: hidden; }
 }
 .tabla-dias td { padding: .18rem .4rem .18rem 0; border-top: 1px solid var(--border); }
 .tabla-dias tr.excepcion td { background: #fdf8ec; }
+/* «No entrena» tiene que leerse de un vistazo en la rejilla; «cerrado» es el
+   miércoles por la tarde, que no se elige. */
+.tabla-dias select.no-entrena { color: var(--st-ausencia); font-weight: 600; }
+.tabla-dias .cerrado { font-size: .78rem; color: var(--muted); font-style: italic; }
 .tabla-dias select { padding: .15rem .3rem; font-size: .82rem; width: 100%; max-width: 7rem; }
 .tabla-dias th:first-child, .tabla-dias td:first-child { width: 7rem; }
 .tabla-dias th:last-child, .tabla-dias td:last-child { width: 7rem; text-align: right; }

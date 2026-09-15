@@ -322,7 +322,11 @@ class Command(BaseCommand):
                     continue
                 HorarioJugador.objects.update_or_create(
                     jugador=jug, dia=d,
-                    defaults={"turno_manana": man, "turno_tarde": tar},
+                    # Lo que la plantilla dice sin franja ya viene deducido
+                    # arriba, así que aquí un bloque vacío es «no entrena».
+                    defaults={"turno_manana": man, "turno_tarde": tar,
+                              "entrena_manana": man is not None,
+                              "entrena_tarde": tar is not None},
                 )
                 res["dias"] += 1
                 if marca == "no_entrena":

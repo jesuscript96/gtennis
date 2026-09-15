@@ -150,6 +150,29 @@ def hay_entrenamiento(dia, bloque):
     return (dia, bloque) not in CERRADO
 
 
+def cupo_por_horario(horario, dias):
+    """Sesiones de la semana que salen del horario declarado, por jugador.
+
+    Solo cuenta a quien tiene fila para TODOS los días: eso es declarar la
+    semana. Una fila suelta es una excepción («el martes por la tarde no») y no
+    dice nada de cuántas sesiones hace; si contara, esa única fila le dejaría
+    el cupo en una sesión a la semana. La tarde de un día cerrado no suma.
+    """
+    filas = defaultdict(dict)
+    for (jid, d), fila in horario.items():
+        filas[jid][d] = fila
+    cupo = Counter()
+    for jid, por_dia in filas.items():
+        if not set(dias) <= set(por_dia):
+            continue
+        for d in dias:
+            _m, _t, entrena_m, entrena_t = por_dia[d]
+            cupo[jid] += bool(entrena_m) + (
+                bool(entrena_t) and hay_entrenamiento(d, "TARDE")
+            )
+    return cupo
+
+
 def entrenador_en_franja(entrenador, turno):
     """¿Entra este entrenador en esta franja?
 
@@ -213,12 +236,18 @@ def _available_players(
         # Franja del jugador para este bloque. Manda el horario del día si lo
         # tiene (puede entrar a primera hora los lunes y a segunda los
         # miércoles); si no, el turno fijo de su ficha; y si tampoco, el motor
-        # elige. Una fila de horario con el turno a nulo significa que ese día
-        # no entrena en ese bloque.
+        # elige. En la fila de un día cada bloque tiene tres respuestas: no
+        # entrena, entrena en la franja que salga (turno vacío) o entrena en
+        # esa franja. Antes el turno vacío valía por «no entrena», y decir que
+        # un martes por la tarde no venía le sacaba también de las mañanas.
         fila = horario.get((j.id, dia))
         if fila is not None:
-            elegido = fila[0] if turno.bloque == "MANANA" else fila[1]
-            if elegido != turno.id:
+            man, tar, entrena_m, entrena_t = fila
+            es_manana = turno.bloque == "MANANA"
+            if not (entrena_m if es_manana else entrena_t):
+                continue
+            elegido = man if es_manana else tar
+            if elegido is not None and elegido != turno.id:
                 continue
         else:
             elegido = (j.turno_manana_id if turno.bloque == "MANANA"
@@ -274,6 +303,7 @@ def _available_players(
                 break
         players.append(
             Player(
+                division_pref={"ARRIBA": -1, "ABAJO": 1}.get(j.pareja_division, 0),
                 id=j.id,
                 division=division,
                 sponsor_coach_id=coach,
@@ -545,7 +575,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     from academy.models import HorarioJugador
 
     horario = {
-        (h.jugador_id, h.dia): (h.turno_manana_id, h.turno_tarde_id)
+        (h.jugador_id, h.dia): (h.turno_manana_id, h.turno_tarde_id,
+                                h.entrena_manana, h.entrena_tarde)
         for h in HorarioJugador.objects.all()
     }
     # Quien tiene horario declarado ya está diciendo cuántas sesiones hace:
@@ -559,9 +590,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         (h.entrenador_id, h.dia): (h.manana, h.tarde)
         for h in HorarioEntrenador.objects.all()
     }
-    cupo_horario: Counter = Counter()
-    for (jid, _d), (m, t) in horario.items():
-        cupo_horario[jid] += bool(m) + bool(t)
+    cupo_horario = cupo_por_horario(horario, dias)
     dias_presente: Counter = Counter()
     dias_del_jugador: dict[int, list[int]] = defaultdict(list)
     for d in dias:

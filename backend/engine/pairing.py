@@ -37,6 +37,10 @@ class Player:
     surface_pref: str | None = None
     # #6: si True, solo puede jugar en el Resort (nunca en sedes satélite).
     solo_central: bool = False
+    # Hacia dónde prefiere emparejarse dentro del ±1: -1 = con la división de
+    # número menor (la D1 es la más alta, así que eso es «hacia arriba»),
+    # +1 = hacia abajo, 0 = le da igual.
+    division_pref: int = 0
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,10 @@ class PairingInput:
     pairs_hard: set[frozenset[int]] = field(default_factory=set)
     pairs_soft: set[frozenset[int]] = field(default_factory=set)
     w_pair: int = 300
+    # Premio por emparejar a quien lo pide hacia su lado de división, y la
+    # mitad en contra si cae hacia el otro. Pequeño frente a colocar a todos:
+    # es un desempate, nunca una razón para dejar a nadie sin pista.
+    w_div_pref: int = 30
 
 
 @dataclass
@@ -214,6 +222,29 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             model.Add(both <= x[a, c.id])
             model.Add(both <= x[b, c.id])
             terms.append(data.w_pair * both)
+
+    # 6) Preferencia de división: quien pide jugar hacia arriba (o abajo)
+    #    cobra un premio si comparte pista con alguien de ese lado, y paga la
+    #    mitad si le toca alguien del lado contrario. Es un desempate: la
+    #    vecindad de ±1 sigue siendo la regla dura.
+    for p in players:
+        if not p.division_pref or p.division is None:
+            continue
+        lado = [q for q in players
+                if q.id != p.id and q.division == p.division + p.division_pref]
+        contrario = [q for q in players
+                     if q.id != p.id and q.division == p.division - p.division_pref]
+        for c in courts:
+            if lado:
+                y = model.NewBoolVar(f"divpref_{p.id}_{c.id}")
+                model.Add(y <= x[p.id, c.id])
+                model.Add(y <= sum(x[q.id, c.id] for q in lado))
+                terms.append(data.w_div_pref * y)
+            if contrario:
+                z = model.NewBoolVar(f"divcontra_{p.id}_{c.id}")
+                for q in contrario:
+                    model.Add(z >= x[p.id, c.id] + x[q.id, c.id] - 1)
+                terms.append(-(data.w_div_pref // 2) * z)
 
     model.Maximize(sum(terms))
 

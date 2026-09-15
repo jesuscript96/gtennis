@@ -6,7 +6,7 @@ from datetime import date, time
 
 from django.test import SimpleTestCase, TestCase
 
-from academy.models import Entrenador, Jugador, Turno
+from academy.models import Entrenador, HorarioJugador, Jugador, Turno
 from engine.service import _available_players, entrenador_en_franja
 from scheduling.models import Semana
 
@@ -103,3 +103,62 @@ class FranjaDelEntrenadorTests(SimpleTestCase):
         # Declarar M2 no le saca de las tardes: cada bloque va por su cuenta.
         e = Entrenador(nombre="X", turno_manana_id=2)
         self.assertTrue(entrenador_en_franja(e, self.t1))
+
+
+class DiaDistintoTests(TestCase):
+    """Cada bloque de un día tiene tres respuestas. «El martes por la tarde no»
+    no puede sacarle también de las mañanas del martes, que es lo que pasaba
+    cuando un turno vacío valía por «no entrena»."""
+
+    FRANJAS = {
+        "M1": (Turno.Bloque.MANANA, time(8, 30), time(10, 0), 1),
+        "M2": (Turno.Bloque.MANANA, time(10, 30), time(12, 30), 2),
+        "T1": (Turno.Bloque.TARDE, time(14, 15), time(15, 30), 4),
+        "T2": (Turno.Bloque.TARDE, time(15, 30), time(17, 30), 5),
+    }
+
+    def setUp(self):
+        self.turnos = {}
+        for codigo, (bloque, ini, fin, orden) in self.FRANJAS.items():
+            self.turnos[codigo], _ = Turno.objects.get_or_create(
+                codigo=codigo,
+                defaults={"nombre": codigo, "bloque": bloque, "hora_inicio": ini,
+                          "hora_fin": fin, "orden": orden},
+            )
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        self.jug = Jugador.objects.create(
+            nombre="Sin franja fija", activo=True, sesiones_semana=10,
+        )
+
+    def _donde(self, dia):
+        mapa = {
+            (h.jugador_id, h.dia): (h.turno_manana_id, h.turno_tarde_id,
+                                    h.entrena_manana, h.entrena_tarde)
+            for h in HorarioJugador.objects.all()
+        }
+        return {
+            codigo for codigo, t in self.turnos.items()
+            if any(p.id == self.jug.id for p in _available_players(
+                self.semana, dia, t, {}, idx_dia=dia, horario=mapa))
+        }
+
+    def test_la_tarde_no_deja_las_mananas_como_estaban(self):
+        HorarioJugador.objects.create(jugador=self.jug, dia=1, entrena_tarde=False)
+        self.assertEqual(self._donde(1), {"M1", "M2"})
+
+    def test_no_entrena_ese_dia(self):
+        HorarioJugador.objects.create(
+            jugador=self.jug, dia=1, entrena_manana=False, entrena_tarde=False,
+        )
+        self.assertEqual(self._donde(1), set())
+
+    def test_franja_concreta_por_la_manana_y_tarde_no(self):
+        HorarioJugador.objects.create(
+            jugador=self.jug, dia=1, turno_manana=self.turnos["M2"],
+            entrena_tarde=False,
+        )
+        self.assertEqual(self._donde(1), {"M2"})
+
+    def test_el_resto_de_dias_no_cambian(self):
+        HorarioJugador.objects.create(jugador=self.jug, dia=1, entrena_tarde=False)
+        self.assertEqual(self._donde(3), {"M1", "M2", "T1", "T2"})
