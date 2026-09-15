@@ -115,6 +115,8 @@ ALIAS = {
     # El organigrama anterior le dio de alta como «TOM KIM» porque la ficha de
     # «Tomkin Deng Mai 12 AÑOS» estaba inactiva; se sigue usando la activa.
     "TOMKIN DENG": "TOM KIM",
+    # En producción la ficha del head coach lleva el nombre completo.
+    "DANI GIMENO": "Daniel Gimeno",
 }
 
 
@@ -146,14 +148,33 @@ class Command(BaseCommand):
 
     # -- localizadores -----------------------------------------------------
     def _buscar(self, modelo, nombre, idx):
-        k = clave(ALIAS.get(clave(nombre), nombre))
-        if k in idx:
-            return idx[k]
-        tk = set(k.split())
-        for kk, obj in idx.items():
-            tv = set(kk.split())
-            if tk and tv and (tk <= tv or tv <= tk) and len(tk & tv) >= 1:
-                return obj
+        """La ficha que corresponde a un nombre de la tabla de dirección.
+
+        Primero el nombre tal cual y, solo si no aparece, su alias: los alias
+        son variantes de una base concreta («Ximo» en una, «Chimo Minguez
+        Ribera» en otra) y no pueden tapar a una ficha que ya se llama como en
+        la tabla. Y entre las que casan gana la activa: una ficha vieja dada de
+        baja no puede quedarse con el nombre de una que está en activo.
+        """
+        textos = [nombre]
+        alias = ALIAS.get(clave(nombre))
+        if alias:
+            textos.append(alias)
+        for solo_activas in (True, False):
+            for texto in textos:
+                k = clave(texto)
+                tk = set(k.split())
+                if not tk:
+                    continue
+                exacta = idx.get(k)
+                if exacta is not None and (exacta.activo or not solo_activas):
+                    return exacta
+                for kk, obj in idx.items():
+                    if solo_activas and not obj.activo:
+                        continue
+                    tv = set(kk.split())
+                    if tv and (tk <= tv or tv <= tk):
+                        return obj
         return None
 
     def _coach_del_bloque(self, head, crear=True):
@@ -184,14 +205,18 @@ class Command(BaseCommand):
         for n in sorted(niveles):
             Division.objects.get_or_create(nivel=n, defaults={"nombre": f"División {n}"})
         divs = {d.nivel: d for d in Division.objects.all()}
+        # Con dos fichas del mismo nombre, se queda la activa (va la última).
         jidx, eidx = {}, {}
-        for j in Jugador.objects.all():
-            jidx.setdefault(clave(j.nombre), j)
-        for e in Entrenador.objects.all():
-            eidx.setdefault(clave(e.nombre), e)
+        for j in Jugador.objects.order_by("activo", "id"):
+            jidx[clave(j.nombre)] = j
+        for e in Entrenador.objects.order_by("activo", "id"):
+            eidx[clave(e.nombre)] = e
 
         altas_e, altas_j, sin_div, redivs, resp_nuevos = [], [], [], [], []
         coaches_retirados = []
+        # Nombres de la tabla que no coinciden letra a letra con su ficha: es
+        # donde se cuela un emparejamiento equivocado, así que se enseñan.
+        aproximados = []
         capacidades = defaultdict(set)
         vistos = set()
         # Cuántos alumnos lleva ya cada entrenador como responsable de ficha.
@@ -207,6 +232,8 @@ class Command(BaseCommand):
             # 1) Capacidad de entrenar = las divisiones del bloque, para todos.
             for nom in plantel:
                 ent = self._buscar(Entrenador, nom, eidx)
+                if ent is not None and clave(ent.nombre) != clave(nom):
+                    aproximados.append(("entrenador", nom, ent.nombre))
                 if ent is None:
                     altas_e.append(nom)
                     if not seco:
@@ -242,6 +269,8 @@ class Command(BaseCommand):
             for cols, div, jugadores in bloque["columnas"]:
                 for nom in jugadores:
                     jug = self._buscar(Jugador, nom, jidx)
+                    if jug is not None and clave(jug.nombre) != clave(nom):
+                        aproximados.append(("jugador", nom, jug.nombre))
                     if jug is None:
                         altas_j.append((nom, div, head))
                         if seco:
@@ -333,6 +362,11 @@ class Command(BaseCommand):
         w(self.style.MIGRATE_HEADING(f"\nDIVISIONES CORREGIDAS ({len(redivs)})"))
         for n, a, b in sorted(redivs, key=lambda x: x[2]):
             w(f"  {str(a):>4} → {b}   {n}")
+        vistos_aprox = sorted(set(aproximados))
+        w(self.style.MIGRATE_HEADING(
+            f"\nNOMBRES QUE CASAN POR PARECIDO ({len(vistos_aprox)})"))
+        for tipo, en_tabla, en_ficha in vistos_aprox:
+            w(f"  {tipo:10s} {en_tabla:28s} → {en_ficha}")
         w(self.style.MIGRATE_HEADING(f"\nALTAS ({len(altas_j)} jugadores, {len(altas_e)} entrenadores)"))
         for n, d, b in altas_j:
             w(f"  jugador  div {d}  {n:28s} [{b}]")
