@@ -207,3 +207,154 @@ class CupoPorHorarioTests(SimpleTestCase):
         horario = {(7, d): (None, None, True, True) for d in range(5)}
         # Cinco mañanas y cuatro tardes: el miércoles por la tarde no abre.
         self.assertEqual(cupo_por_horario(horario, [0, 1, 2, 3, 4])[7], 9)
+
+
+class PistasAlternasTests(SimpleTestCase):
+    """Con menos entrenadores que pistas, cada pista sin entrenador tiene uno
+    al lado. El ejemplo de Iván: ocho pistas y cinco entrenadores, 1-3-4-6-7."""
+
+    def _sin_vecina(self, numeros, con):
+        return [n for n in numeros
+                if n not in con and (n - 1) not in con and (n + 1) not in con]
+
+    def test_el_ejemplo_de_ivan(self):
+        from .reparto_pistas import pistas_con_entrenador
+
+        self.assertEqual(pistas_con_entrenador(range(1, 9), 5), {1, 3, 4, 6, 7})
+
+    def test_con_entrenadores_de_sobra_van_todas(self):
+        from .reparto_pistas import pistas_con_entrenador
+
+        self.assertEqual(pistas_con_entrenador(range(1, 9), 8), set(range(1, 9)))
+
+    def test_ninguna_huerfana_mientras_se_pueda(self):
+        from .reparto_pistas import pistas_con_entrenador
+
+        for k in (3, 4, 5, 6, 7):
+            con = pistas_con_entrenador(range(1, 9), k)
+            self.assertEqual(len(con), k)
+            self.assertEqual(self._sin_vecina(range(1, 9), con), [], k)
+
+    def test_una_pista_vacia_corta_la_contiguidad(self):
+        from .reparto_pistas import pistas_con_entrenador
+
+        # La 4 no tiene jugadores: la 3 y la 5 no son vecinas.
+        ocupadas = [1, 2, 3, 5, 6]
+        con = pistas_con_entrenador(ocupadas, 2)
+        self.assertEqual(self._sin_vecina(ocupadas, con), [])
+        self.assertTrue({2, 5} <= con or {2, 6} <= con or {1, 5} <= con
+                        or {3, 5} <= con or {2, 5} == con)
+
+    def test_reparto_entre_sedes(self):
+        from .reparto_pistas import repartir_entre_sedes
+
+        # Resort con 8 pistas y un satélite con 3, y 5 entrenadores: el
+        # satélite necesita al menos uno; el resto, al Resort.
+        reparto = repartir_entre_sedes({"R": list(range(1, 9)), "S": [1, 2, 3]},
+                                       5, ["R", "S"])
+        self.assertEqual(reparto, {"R": 4, "S": 1})
+
+
+class ContratoBlandoTests(SimpleTestCase):
+    """Blando: primero su grupo; con el jugador del contrato solo si no deja
+    ninguna otra pista sin entrenador."""
+
+    def _emp(self, courts, niveles, divisiones, duros=None, blandos=None, info=None):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        elegibles = [_Ent(i) for i in sorted(niveles)]
+        return _emparejar_entrenadores(
+            courts, duros or {}, elegibles, niveles, divisiones, Counter(),
+            blandos=blandos or {}, info_pistas=info,
+        )
+
+    def test_no_deja_otra_pista_sin_entrenador(self):
+        # El 100 tiene contrato blando con el 3 (pista 11), pero es el único
+        # capaz de llevar la pista 10: se queda en la 10.
+        courts = {10: [1, 2], 11: [3, 4]}
+        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
+        niveles = {100: {2}, 101: {7}}
+        asignado, repetidos = self._emp(courts, niveles, divisiones, blandos={3: {100}})
+        self.assertEqual(asignado, {10: 100, 11: 101})
+        self.assertEqual(repetidos, [])
+
+    def test_va_con_su_jugador_cuando_puede(self):
+        courts = {10: [1, 2], 11: [3, 4]}
+        divisiones = {1: 2, 2: 2, 3: 7, 4: 7}
+        niveles = {100: {2}, 101: {7}, 102: None}
+        asignado, _ = self._emp(courts, niveles, divisiones, blandos={3: {102}})
+        self.assertEqual(asignado[11], 102)
+        self.assertEqual(asignado[10], 100)
+
+    def test_el_contrato_es_el_permiso_para_esa_division(self):
+        # Víctor entrena la D1 y Carla es D5: con contrato puede ir con ella.
+        courts = {10: [1, 2]}
+        divisiones = {1: 5, 2: 5}
+        niveles = {100: {1}}
+        asignado, _ = self._emp(courts, niveles, divisiones, blandos={1: {100}})
+        self.assertEqual(asignado, {10: 100})
+
+
+class RepartoConPocosEntrenadoresTests(SimpleTestCase):
+    """Con menos entrenadores que pistas, las que no llevan uno lo tienen al
+    lado, y a esas no se les repite a nadie."""
+
+    def test_ocho_pistas_cinco_entrenadores(self):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        courts = {200 + n: [n * 10, n * 10 + 1] for n in range(1, 9)}
+        divisiones = {j: 2 for m in courts.values() for j in m}
+        niveles = {100 + i: None for i in range(5)}
+        info = {200 + n: ("resort", n, 0) for n in range(1, 9)}
+        asignado, repetidos = _emparejar_entrenadores(
+            courts, {}, [_Ent(i) for i in sorted(niveles)], niveles, divisiones,
+            Counter(), info_pistas=info,
+        )
+        self.assertEqual({p - 200 for p in asignado}, {1, 3, 4, 6, 7})
+        self.assertEqual(len(set(asignado.values())), 5)
+        self.assertEqual(repetidos, [])
+
+    def test_sin_numeros_de_pista_repite_como_antes(self):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        courts = {10: [1], 11: [2], 12: [3]}
+        divisiones = {1: 7, 2: 7, 3: 7}
+        niveles = {100: {7}}
+        asignado, repetidos = _emparejar_entrenadores(
+            courts, {}, [_Ent(100)], niveles, divisiones, Counter(),
+        )
+        self.assertEqual(set(asignado), {10, 11, 12})
+        self.assertEqual(len(repetidos), 2)
+
+
+class PistasAlternasConDivisionesTests(SimpleTestCase):
+    """El mejor reparto de pistas no vale si en una de ellas no hay nadie
+    capacitado: se busca otro que se pueda cubrir entero y sin huérfanas."""
+
+    def test_si_la_mejor_no_se_puede_cubrir_busca_otra(self):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        courts = {200 + n: [n * 10, n * 10 + 1] for n in range(1, 9)}
+        # La pista 1 es de la D9 y ninguno de los cinco la entrena, así que el
+        # 1-3-4-6-7 dejaría la 1 sin entrenador y la 2 huérfana.
+        divisiones = {j: (9 if p == 201 else 2) for p, m in courts.items() for j in m}
+        niveles = {100 + i: {2} for i in range(5)}
+        info = {200 + n: ("resort", n, 0) for n in range(1, 9)}
+        asignado, repetidos = _emparejar_entrenadores(
+            courts, {}, [_Ent(i) for i in sorted(niveles)], niveles, divisiones,
+            Counter(), info_pistas=info,
+        )
+        con = {p - 200 for p in asignado}
+        sin = [n for n in range(1, 9) if n not in con]
+        self.assertEqual(len(con), 5)
+        self.assertNotIn(1, con)
+        self.assertTrue(all((n - 1) in con or (n + 1) in con for n in sin), (con, sin))
+        self.assertEqual(repetidos, [])

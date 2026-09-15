@@ -1102,3 +1102,22 @@ ul.cal-lista .quitar {
   color: var(--border-strong); padding: .1rem .3rem; border-radius: 5px;
 }
 ul.cal-lista .quitar:hover { color: var(--st-ausencia); background: var(--surface); }
+
+/* ---- «Viene además»: excepción puntual apuntada por el entrenador ---- */
+ul.sesiones .sesion.extra { border-left-color: #0f8b8d; }
+.chip-sesion.extra { background: #e3f3f3; color: #0f6f71; }
+.chip-extra {
+  display: inline-flex; align-items: center; gap: .2rem; white-space: nowrap;
+  font-size: .74rem; padding: .12rem .2rem .12rem .5rem; border-radius: 999px;
+  border: 1px dashed #0f8b8d; color: #0f6f71;
+}
+.chip-extra button {
+  background: none; border: 0; cursor: pointer; color: inherit;
+  font-size: .72rem; padding: 0 .25rem;
+}
+.agenda-extra {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  margin-top: .55rem; font-size: .8rem;
+}
+.agenda-extra .etiqueta { color: var(--muted); }
+.agenda-extra select { width: auto; font-size: .8rem; padding: .2rem .35rem; }

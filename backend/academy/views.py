@@ -211,7 +211,9 @@ class JugadorViewSet(viewsets.ModelViewSet):
         from collections import defaultdict
         from datetime import date, timedelta
 
-        from scheduling.models import Asignacion, AusenciaJugador, Semana
+        from scheduling.models import (
+            Asignacion, AusenciaJugador, Disponibilidad, Estado, Semana,
+        )
 
         jugador = self.get_object()
         try:
@@ -285,6 +287,15 @@ class JugadorViewSet(viewsets.ModelViewSet):
                     "previsto": True,
                 })
 
+        # Lo que su entrenador ha apuntado de más: «el jueves viene también a
+        # M2». Si ya está colocado sale además como sesión; si no, sale aquí.
+        extras = defaultdict(list)
+        if semana is not None:
+            for dsp in Disponibilidad.objects.filter(
+                semana=semana, jugador=jugador, estado=Estado.EXTRA
+            ):
+                extras[dsp.dia].append(dsp.ambito)
+
         bajas = list(
             AusenciaJugador.objects.filter(
                 jugador=jugador,
@@ -306,6 +317,7 @@ class JugadorViewSet(viewsets.ModelViewSet):
                 "es_hoy": dia_fecha == hoy,
                 "sesiones": sesiones[d],
                 "alta": jugador.en_alta(dia_fecha),
+                "extras": sorted(extras[d]),
                 "ausencia": None if baja is None else {
                     "estado": baja.get_estado_display(),
                     "ambito": baja.get_ambito_display(),
@@ -329,6 +341,102 @@ class JugadorViewSet(viewsets.ModelViewSet):
             "hoy": next((d for d in dias if d["es_hoy"]), None),
             "dias": dias,
         })
+
+    @action(detail=True, methods=["post", "delete"])
+    def extra(self, request, pk=None):
+        """Excepción puntual: ese día, en esa franja, el alumno viene aunque su
+        horario no lo diga.
+
+        La apunta su entrenador (o dirección). Queda como un parte de la semana
+        con estado «viene además», que el motor lee como «entra sí o sí» cada
+        vez que genera. Si la semana ya está generada, además se le busca sitio
+        ahora mismo: una pista de esa franja con hueco, sin vetos y con
+        compañeros a ±1 división. Si no cabe, se dice; no se le cuela.
+
+        POST {fecha, turno, nota?}  ·  DELETE ?fecha=…&turno=…
+        """
+        from collections import defaultdict
+        from datetime import date, timedelta
+
+        from engine.service import hay_entrenamiento
+        from scheduling.models import Asignacion, Disponibilidad, Estado, Semana
+
+        jugador = self.get_object()
+        datos = request.data if request.method == "POST" else request.query_params
+        try:
+            fecha = date.fromisoformat(str(datos.get("fecha")))
+        except ValueError:
+            return Response({"error": "Falta la fecha."}, status=400)
+        turno = Turno.objects.filter(codigo=datos.get("turno"), activo=True).first()
+        if turno is None:
+            return Response({"error": "Esa franja no existe."}, status=400)
+        dia = fecha.weekday()
+        if dia > 5 or not hay_entrenamiento(dia, turno.bloque):
+            return Response({"error": "Ese día no se entrena en esa franja."}, status=400)
+        lunes = fecha - timedelta(days=dia)
+
+        if request.method == "DELETE":
+            semana = Semana.objects.filter(fecha_inicio=lunes).first()
+            if semana is not None:
+                Disponibilidad.objects.filter(
+                    semana=semana, jugador=jugador, dia=dia,
+                    ambito=turno.codigo, estado=Estado.EXTRA,
+                ).delete()
+                Asignacion.objects.filter(
+                    semana=semana, jugador=jugador, dia=dia, turno=turno,
+                    estado=Estado.EXTRA,
+                ).delete()
+            return Response(status=204)
+
+        semana, _ = Semana.objects.get_or_create(fecha_inicio=lunes)
+        Disponibilidad.objects.update_or_create(
+            semana=semana, jugador=jugador, dia=dia, ambito=turno.codigo,
+            defaults={"estado": Estado.EXTRA,
+                      "nota": str(datos.get("nota", ""))[:200]},
+        )
+        if Asignacion.objects.filter(
+            semana=semana, jugador=jugador, dia=dia, turno=turno
+        ).exists():
+            return Response({"ok": True, "colocado": True,
+                             "mensaje": "Ya tenía sesión en esa franja."})
+        if not semana.generado_at:
+            return Response({"ok": True, "colocado": False,
+                             "mensaje": "Apuntado. Entrará cuando se genere la semana."})
+
+        # La semana ya está hecha: se le busca hueco ahora.
+        vetos = set()
+        for r in Rencilla.objects.filter(activa=True).filter(
+            Q(jugador_a=jugador) | Q(jugador_b=jugador)
+        ):
+            vetos.add(r.jugador_b_id if r.jugador_a_id == jugador.id else r.jugador_a_id)
+        mi_div = jugador.division.nivel if jugador.division_id else None
+        por_pista = defaultdict(list)
+        for a in (Asignacion.objects.filter(semana=semana, dia=dia, turno=turno)
+                  .select_related("pista__sede", "jugador__division")):
+            por_pista[a.pista].append(a)
+        opciones = []
+        for pista, filas in por_pista.items():
+            tope = pista.sede.densidad_max or pista.sede.densidad_default
+            if len(filas) >= tope or any(f.jugador_id in vetos for f in filas):
+                continue
+            divs = [f.jugador.division.nivel for f in filas if f.jugador.division_id]
+            if mi_div is not None and any(abs(mi_div - d) > 1 for d in divs):
+                continue
+            opciones.append(((len(filas), pista.sede.es_satelite, pista.numero),
+                             pista, filas))
+        if not opciones:
+            return Response({"ok": True, "colocado": False,
+                             "mensaje": "Apuntado, pero ahora mismo no cabe en ninguna "
+                                        "pista de esa franja: dirección tendrá que "
+                                        "hacerle hueco."})
+        _clave, pista, filas = min(opciones, key=lambda o: o[0])
+        entrenador_id = next((f.entrenador_id for f in filas if f.entrenador_id), None)
+        Asignacion.objects.create(
+            semana=semana, dia=dia, turno=turno, pista=pista, jugador=jugador,
+            entrenador_id=entrenador_id, estado=Estado.EXTRA, manual=True,
+        )
+        return Response({"ok": True, "colocado": True,
+                         "mensaje": f"Colocado en {pista.sede.nombre} · pista {pista.numero}."})
 
     def perform_destroy(self, instance):
         self._assert_direccion()
@@ -833,16 +941,20 @@ class MiAgendaViewSet(viewsets.ViewSet):
         ent = self._entrenador()
         hoy = date.today()
         fila = next((d for d in self._semana(ent) if d["dia"] == hoy.weekday()), None)
-        vac = VacacionesEntrenador.objects.filter(
+        vacs = list(VacacionesEntrenador.objects.filter(
             entrenador=ent, fecha_inicio__lte=hoy, fecha_fin__gte=hoy
-        ).first()
+        ))
+        # Una ausencia de una franja (solo M1) no le quita la mañana entera.
+        fuera = {v.ambito for v in vacs}
+        vac = next((v for v in vacs if v.ambito == "DIA"), vacs[0] if vacs else None)
         return Response({
             "fecha": hoy,
             "dia": fila["nombre"] if fila else None,
-            "manana": bool(fila and fila["manana"]) and not vac,
-            "tarde": bool(fila and fila["tarde"]) and not vac,
-            "ausente": bool(vac),
+            "manana": bool(fila and fila["manana"]) and not (fuera & {"DIA", "MANANA"}),
+            "tarde": bool(fila and fila["tarde"]) and not (fuera & {"DIA", "TARDE"}),
+            "ausente": "DIA" in fuera,
             "motivo": vac.motivo if vac else "",
+            "franjas_fuera": sorted(fuera - {"DIA", "MANANA", "TARDE"}),
         })
 
     @action(detail=False, methods=["put", "patch"])
@@ -868,11 +980,15 @@ class MiAgendaViewSet(viewsets.ViewSet):
         """Periodos largos con fecha de ida y de vuelta (el calendario anual)."""
         ent = self._entrenador()
         if request.method == "POST":
+            ambito = request.data.get("ambito") or VacacionesEntrenador.Ambito.DIA
+            if ambito not in VacacionesEntrenador.Ambito.values:
+                return Response({"error": "Esa franja no existe."}, status=400)
             VacacionesEntrenador.objects.create(
                 entrenador=ent,
                 fecha_inicio=request.data["fecha_inicio"],
                 fecha_fin=request.data["fecha_fin"],
                 motivo=request.data.get("motivo", ""),
+                ambito=ambito,
             )
         return Response(VacacionesEntrenadorSerializer(
             ent.vacaciones.order_by("fecha_inicio"), many=True).data)

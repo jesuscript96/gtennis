@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import CalendarioAusencias, { MOTIVOS_ENTRENADOR } from "../../../components/CalendarioAusencias";
 import CourtCard from "../../../components/CourtCard";
 import { isCentral, modeForSurface, surfaceOf } from "../../../lib/clublayout";
 import {
@@ -36,7 +37,6 @@ export default function MiAgenda() {
   const [aviso, setAviso] = useState("");
   const [error, setError] = useState("");
   const [anio, setAnio] = useState(new Date().getFullYear());
-  const [nueva, setNueva] = useState({ fecha_inicio: "", fecha_fin: "", motivo: "" });
   // Dirección mira (y rellena) la agenda de cualquiera; el coach, la de los
   // entrenadores de su bloque. Sin elegir a nadie se abre la que toque por
   // defecto: la propia si la hay, y si no la del primero de la lista.
@@ -78,7 +78,8 @@ export default function MiAgenda() {
     const m = new Map();
     for (const a of ausencias) {
       for (let d = new Date(a.fecha_inicio); iso(d) <= a.fecha_fin; d.setDate(d.getDate() + 1)) {
-        m.set(iso(d), a.motivo || "Ausencia");
+        const parte = a.ambito && a.ambito !== "DIA" ? ` (${a.ambito})` : "";
+        m.set(iso(d), `${a.motivo || "Ausencia"}${parte}`);
       }
     }
     return m;
@@ -96,19 +97,7 @@ export default function MiAgenda() {
     } catch (e) { setError(e.message); cargar(); }
   }
 
-  async function crearAusencia(e) {
-    e.preventDefault();
-    if (!nueva.fecha_inicio || !nueva.fecha_fin) return;
-    try {
-      await addMiAusencia(nueva, quien);
-      setNueva({ fecha_inicio: "", fecha_fin: "", motivo: "" });
-      setAusencias(await getMisAusencias(quien));
-      setHoy(await getMiDia(quien));
-    } catch (e) { setError(e.message); }
-  }
-
-  async function borrar(id) {
-    await delMiAusencia(id, quien);
+  async function refrescarAusencias() {
     setAusencias(await getMisAusencias(quien));
     setHoy(await getMiDia(quien));
   }
@@ -227,37 +216,25 @@ export default function MiAgenda() {
       <section className="card">
         <h2>Calendario del año</h2>
         <p className="hint">
-          Para bajas, viajes o vueltas con meses de antelación. Los días marcados
-          salen en rojo y el motor no te pondrá en pista.
+          Marca los días que faltas —el día entero, un bloque o solo una
+          franja— y el motor no te pondrá en pista en lo que marques.
         </p>
 
-        <form className="fila-form" onSubmit={crearAusencia}>
-          <label>Desde
-            <input type="date" required value={nueva.fecha_inicio}
-              onChange={(e) => setNueva({ ...nueva, fecha_inicio: e.target.value })} />
-          </label>
-          <label>Hasta
-            <input type="date" required value={nueva.fecha_fin}
-              onChange={(e) => setNueva({ ...nueva, fecha_fin: e.target.value })} />
-          </label>
-          <label className="crece">Motivo
-            <input type="text" placeholder="operación, viaje, curso…" value={nueva.motivo}
-              onChange={(e) => setNueva({ ...nueva, motivo: e.target.value })} />
-          </label>
-          <button type="submit" className="btn">Añadir</button>
-        </form>
-
-        {ausencias.length > 0 && (
-          <ul className="lista-ausencias">
-            {ausencias.map((a) => (
-              <li key={a.id}>
-                <span>{a.fecha_inicio} → {a.fecha_fin}</span>
-                <span className="motivo">{a.motivo}</span>
-                <button className="link-danger" onClick={() => borrar(a.id)}>Quitar</button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <CalendarioAusencias
+          fuente={{
+            clave: `entrenador-${quien || "yo"}`,
+            cargar: () => getMisAusencias(quien),
+            crear: ({ desde, hasta, ambito, motivo, nota }) => addMiAusencia({
+              fecha_inicio: desde, fecha_fin: hasta, ambito,
+              motivo: [motivo.label, nota].filter(Boolean).join(" · "),
+            }, quien),
+            borrar: (a) => delMiAusencia(a.id, quien),
+            describir: (a) => a.motivo,
+            colorDe: () => "#7b54e0",
+          }}
+          motivos={MOTIVOS_ENTRENADOR}
+          onCambio={refrescarAusencias}
+        />
 
         <div className="anio-nav">
           <button className="btn-sm" onClick={() => setAnio(anio - 1)}>←</button>

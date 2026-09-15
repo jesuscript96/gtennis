@@ -592,6 +592,19 @@ class Contrato(models.Model):
     )
     activo = models.BooleanField(default=True)
 
+    class Tipo(models.TextChoices):
+        # Duro: el entrenador va con ese jugador siempre que coincidan.
+        DURO = "DURO", "Duro · siempre con él"
+        # Blando: primero su grupo; con el jugador del contrato solo cuando
+        # hacerlo no deja otra pista sin entrenador.
+        BLANDO = "BLANDO", "Blando · cuando pueda"
+
+    tipo = models.CharField(
+        max_length=6, choices=Tipo.choices, default=Tipo.DURO,
+        help_text="Duro: siempre con él. Blando: primero su grupo, y con este "
+                  "jugador cuando no deje ninguna pista sin entrenador.",
+    )
+
     class Meta:
         verbose_name = "Contrato de patrocinio"
         verbose_name_plural = "Contratos de patrocinio"
@@ -611,6 +624,27 @@ class VacacionesEntrenador(models.Model):
     fecha_inicio = models.DateField()
     fecha_fin = models.DateField()
     motivo = models.CharField(max_length=200, blank=True)
+
+    # Qué se pierde: el día entero, un bloque o una franja. Espejo de
+    # `scheduling.models.Ambito` (no se importa: scheduling depende de academy).
+    class Ambito(models.TextChoices):
+        DIA = "DIA", "Todo el día"
+        MANANA = "MANANA", "Toda la mañana"
+        TARDE = "TARDE", "Toda la tarde"
+        M1 = "M1", "Turno M1"
+        M2 = "M2", "Turno M2"
+        JP = "JP", "Junior Program"
+        T1 = "T1", "Turno T1"
+        T2 = "T2", "Turno T2"
+
+    ambito = models.CharField(
+        max_length=10, choices=Ambito.choices, default=Ambito.DIA,
+        help_text="Todo el día, un bloque o una franja concreta.",
+    )
+
+    def afecta_turno(self, turno):
+        """¿Deja al entrenador fuera de este turno?"""
+        return self.ambito in (self.Ambito.DIA, turno.bloque, turno.codigo)
 
     class Meta:
         verbose_name = "Vacaciones de entrenador"

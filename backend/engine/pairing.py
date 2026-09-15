@@ -56,6 +56,10 @@ class Court:
     fill_rank: int = 0
     # Superficie de la pista (#1): "TIERRA" / "RESINA".
     surface: str | None = None
+    # Número de la pista dentro de su sede. Dos pistas son contiguas si son de
+    # la misma sede y sus números se llevan uno: es lo que permite que un
+    # entrenador abarque la suya y la de al lado.
+    number: int | None = None
 
 
 @dataclass

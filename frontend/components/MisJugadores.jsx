@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { getAgendaJugador, resource } from "../lib/api";
+import { getAgendaJugador, jugadorExtra, quitarExtra, resource } from "../lib/api";
 import CalendarioAusencias from "./CalendarioAusencias";
 import PanelTurnos from "./PanelTurnos";
 
@@ -105,22 +105,51 @@ export default function MisJugadores() {
 function AgendaJugador({ jugador }) {
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
+  const [extraDia, setExtraDia] = useState("");
+  const [extraTurno, setExtraTurno] = useState("M1");
+  const [mensaje, setMensaje] = useState("");
+  const [ocupado, setOcupado] = useState(false);
 
-  useEffect(() => {
-    let vivo = true;
-    setDatos(null);
-    setError("");
-    getAgendaJugador(jugador.id)
-      .then((d) => vivo && setDatos(d))
-      .catch((e) => vivo && setError(e.message));
-    return () => { vivo = false; };
+  const cargar = useCallback(async () => {
+    try {
+      setDatos(await getAgendaJugador(jugador.id));
+    } catch (e) { setError(e.message); }
   }, [jugador.id]);
 
-  if (error) return <p className="error">{error}</p>;
+  useEffect(() => { setDatos(null); setError(""); cargar(); }, [cargar]);
+
+  if (error && !datos) return <p className="error">{error}</p>;
   if (!datos) return <p className="hint">Cargando su agenda…</p>;
 
   const hoy = datos.hoy;
-  const conSesiones = datos.dias.filter((d) => d.sesiones.length);
+  const conAlgo = datos.dias.some((d) => d.sesiones.length || (d.extras || []).length);
+  // El miércoles por la tarde el club no abre: ese día solo hay mañanas.
+  const franjasDe = (d) => (d.dia === 2 ? ["M1", "M2"] : ["M1", "M2", "T1", "T2"]);
+  const diasPosibles = datos.dias.filter((d) => d.alta && d.dia <= 4);
+  const diaElegido = diasPosibles.find((d) => String(d.dia) === extraDia) || diasPosibles[0];
+
+  async function apuntarExtra(e) {
+    e.preventDefault();
+    if (!diaElegido) return;
+    const posibles = franjasDe(diaElegido);
+    const turno = posibles.includes(extraTurno) ? extraTurno : posibles[0];
+    setOcupado(true); setMensaje(""); setError("");
+    try {
+      const r = await jugadorExtra(jugador.id, { fecha: diaElegido.fecha, turno });
+      setMensaje(r.mensaje || "Apuntado.");
+      await cargar();
+    } catch (err) { setError(err.message); }
+    setOcupado(false);
+  }
+
+  async function quitar(d, turno) {
+    setOcupado(true); setMensaje(""); setError("");
+    try {
+      await quitarExtra(jugador.id, { fecha: d.fecha, turno });
+      await cargar();
+    } catch (err) { setError(err.message); }
+    setOcupado(false);
+  }
 
   return (
     <div className="agenda-jugador">
@@ -149,7 +178,7 @@ function AgendaJugador({ jugador }) {
             La semana todavía no está hecha: esto es lo previsto por su horario.
           </p>
         )}
-        {conSesiones.length === 0 ? (
+        {!conAlgo ? (
           <p className="hint">Sin entrenamientos esta semana.</p>
         ) : (
           <ul className="semana-jugador">
@@ -159,14 +188,23 @@ function AgendaJugador({ jugador }) {
                 <div className="celdas">
                   {d.ausencia && <span className="chip-baja">{d.ausencia.estado}</span>}
                   {!d.alta && <span className="chip-baja">aún no está de alta</span>}
-                  {d.sesiones.length === 0 && !d.ausencia && d.alta && (
+                  {d.sesiones.length === 0 && !(d.extras || []).length && !d.ausencia && d.alta && (
                     <span className="vacio">—</span>
                   )}
                   {d.sesiones.map((s, i) => (
-                    <span key={i} className={s.previsto ? "chip-sesion previsto" : "chip-sesion"}>
+                    <span key={i} className={[
+                      "chip-sesion", s.previsto ? "previsto" : "", s.estado === "EXTRA" ? "extra" : "",
+                    ].filter(Boolean).join(" ")}>
                       {s.hora_inicio} {s.turno}
                       {s.pista ? ` · P${s.pista}` : ""}
                       {s.entrenador ? ` · ${s.entrenador}` : ""}
+                    </span>
+                  ))}
+                  {(d.extras || []).map((t) => (
+                    <span key={`x-${t}`} className="chip-extra">
+                      viene además · {t}
+                      <button type="button" disabled={ocupado} title="Quitar"
+                        onClick={() => quitar(d, t)}>✕</button>
                     </span>
                   ))}
                 </div>
@@ -174,6 +212,26 @@ function AgendaJugador({ jugador }) {
             ))}
           </ul>
         )}
+
+        {diasPosibles.length > 0 && (
+          <form className="agenda-extra" onSubmit={apuntarExtra}>
+            <span className="etiqueta">¿Viene además algún día?</span>
+            <select value={diaElegido ? String(diaElegido.dia) : ""}
+              onChange={(e) => setExtraDia(e.target.value)}>
+              {diasPosibles.map((d) => <option key={d.dia} value={d.dia}>{d.nombre}</option>)}
+            </select>
+            <select value={extraTurno} onChange={(e) => setExtraTurno(e.target.value)}>
+              {(diaElegido ? franjasDe(diaElegido) : []).map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <button type="submit" className="btn sm" disabled={ocupado || !diaElegido}>
+              Apuntar
+            </button>
+          </form>
+        )}
+        {mensaje && <p className="ok-msg">{mensaje}</p>}
+        {error && datos && <p className="error">{error}</p>}
       </div>
     </div>
   );
@@ -181,7 +239,8 @@ function AgendaJugador({ jugador }) {
 
 function Sesion({ s }) {
   return (
-    <li className={s.previsto ? "sesion previsto" : "sesion"}>
+    <li className={["sesion", s.previsto ? "previsto" : "", s.estado === "EXTRA" ? "extra" : ""]
+      .filter(Boolean).join(" ")}>
       <span className="hora">{s.hora_inicio}–{s.hora_fin}</span>
       <span className="donde">
         {s.pista ? `${s.sede} · Pista ${s.pista}` : `${s.turno} · previsto`}

@@ -104,7 +104,7 @@ class VacacionesEntrenadorSerializer(serializers.ModelSerializer):
         model = VacacionesEntrenador
         fields = [
             "id", "entrenador", "entrenador_nombre", "fecha_inicio", "fecha_fin",
-            "motivo",
+            "motivo", "ambito",
         ]
 
 
@@ -340,5 +340,5 @@ class ContratoSerializer(serializers.ModelSerializer):
         model = Contrato
         fields = [
             "id", "jugador", "jugador_nombre", "entrenador",
-            "entrenador_nombre", "activo",
+            "entrenador_nombre", "activo", "tipo",
         ]

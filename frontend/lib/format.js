@@ -23,8 +23,10 @@ export const SUPERFICIE_COLOR = { TIERRA: "#B65C3A", RESINA: "#3B6EA5" };
 export const ESTADO_COLOR = {
   DISPONIBLE: "#1f9d57", AUSENCIA_JUGADOR: "#d33b3b", CALENTAMIENTO: "#c08a00",
   EN_TORNEO: "#d9772b", CLIMATOLOGIA: "#2f7fd1", AUSENCIA_COACH: "#7b54e0",
+  EXTRA: "#0f8b8d",
 };
 export const ESTADO_LABEL = {
   DISPONIBLE: "Disponible", AUSENCIA_JUGADOR: "Ausencia", CALENTAMIENTO: "Calentamiento",
   EN_TORNEO: "En torneo", CLIMATOLOGIA: "Lluvia", AUSENCIA_COACH: "Sin coach",
+  EXTRA: "Viene además",
 };

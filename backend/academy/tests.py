@@ -6,9 +6,11 @@ from datetime import date, time
 
 from django.test import SimpleTestCase, TestCase
 
-from academy.models import Entrenador, HorarioJugador, Jugador, Turno
+from academy.models import (
+    Entrenador, HorarioJugador, Jugador, Turno, VacacionesEntrenador,
+)
 from engine.service import _available_players, entrenador_en_franja
-from scheduling.models import Semana
+from scheduling.models import Disponibilidad, Estado, Semana
 
 LUNES = date(2026, 9, 14)
 
@@ -162,3 +164,74 @@ class DiaDistintoTests(TestCase):
     def test_el_resto_de_dias_no_cambian(self):
         HorarioJugador.objects.create(jugador=self.jug, dia=1, entrena_tarde=False)
         self.assertEqual(self._donde(3), {"M1", "M2", "T1", "T2"})
+
+
+class AusenciaEntrenadorPorFranjaTests(SimpleTestCase):
+    """El entrenador falta el día entero, un bloque o una sola franja."""
+
+    def _t(self, codigo, bloque):
+        return Turno(codigo=codigo, bloque=bloque)
+
+    def test_todo_el_dia(self):
+        v = VacacionesEntrenador(ambito="DIA")
+        self.assertTrue(v.afecta_turno(self._t("M1", "MANANA")))
+        self.assertTrue(v.afecta_turno(self._t("T2", "TARDE")))
+
+    def test_solo_una_franja(self):
+        v = VacacionesEntrenador(ambito="M1")
+        self.assertTrue(v.afecta_turno(self._t("M1", "MANANA")))
+        self.assertFalse(v.afecta_turno(self._t("M2", "MANANA")))
+
+    def test_un_bloque_no_toca_el_otro(self):
+        v = VacacionesEntrenador(ambito="TARDE")
+        self.assertFalse(v.afecta_turno(self._t("M2", "MANANA")))
+        self.assertTrue(v.afecta_turno(self._t("T1", "TARDE")))
+
+
+class VieneAdemasTests(TestCase):
+    """El entrenador apunta que un día viene a una franja que no le toca: entra
+    en esa, y solo en esa, aunque su horario, su cupo o sus topes digan que no."""
+
+    def setUp(self):
+        self.turnos = {}
+        for codigo, (bloque, ini, fin, orden) in DiaDistintoTests.FRANJAS.items():
+            self.turnos[codigo], _ = Turno.objects.get_or_create(
+                codigo=codigo,
+                defaults={"nombre": codigo, "bloque": bloque, "hora_inicio": ini,
+                          "hora_fin": fin, "orden": orden},
+            )
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        self.jug = Jugador.objects.create(nombre="Excepción", activo=True, sesiones_semana=4)
+        # Según su horario, los martes no viene por la mañana.
+        HorarioJugador.objects.create(jugador=self.jug, dia=1, entrena_manana=False)
+
+    def _entra(self, codigo, **extra):
+        mapa = {
+            (h.jugador_id, h.dia): (h.turno_manana_id, h.turno_tarde_id,
+                                    h.entrena_manana, h.entrena_tarde)
+            for h in HorarioJugador.objects.all()
+        }
+        return any(p.id == self.jug.id for p in _available_players(
+            self.semana, 1, self.turnos[codigo], {}, idx_dia=1, horario=mapa, **extra))
+
+    def _apuntar(self, ambito="M2"):
+        Disponibilidad.objects.create(
+            semana=self.semana, jugador=self.jug, dia=1, ambito=ambito,
+            estado=Estado.EXTRA,
+        )
+
+    def test_sin_excepcion_manda_el_horario(self):
+        self.assertFalse(self._entra("M2"))
+
+    def test_viene_ademas_solo_a_esa_franja(self):
+        self._apuntar("M2")
+        self.assertTrue(self._entra("M2"))
+        self.assertFalse(self._entra("M1"))
+
+    def test_aunque_ya_haya_cubierto_cupo_y_topes(self):
+        self._apuntar("M2")
+        self.assertTrue(self._entra(
+            "M2", hechas_semana={self.jug.id: 99},
+            hechas_bloque={(self.jug.id, "MANANA"): 5},
+            hechas_dia={self.jug.id: 5},
+        ))

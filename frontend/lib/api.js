@@ -165,6 +165,11 @@ export const getEntrenadoresAgenda = () => req("/mi-agenda/entrenadores/");
 // quién. Si la semana aún no está generada devuelve lo previsto por su horario.
 export const getAgendaJugador = (id, fecha) =>
   req(`/jugadores/${id}/agenda/${fecha ? `?fecha=${fecha}` : ""}`);
+// «Viene además»: ese día, en esa franja, aunque su horario no lo diga.
+export const jugadorExtra = (id, body) =>
+  req(`/jugadores/${id}/extra/`, { method: "POST", body: JSON.stringify(body) });
+export const quitarExtra = (id, { fecha, turno }) =>
+  req(`/jugadores/${id}/extra/?fecha=${fecha}&turno=${turno}`, { method: "DELETE" });
 
 // --- Grupos de entrenamiento (entrenador ↔ alumnos) ------------------------
 export const getGrupos = () => req("/grupos/");

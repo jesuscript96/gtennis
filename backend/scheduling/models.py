@@ -12,6 +12,9 @@ class Estado(models.TextChoices):
     EN_TORNEO = "EN_TORNEO", "En torneo"              # orange
     CLIMATOLOGIA = "CLIMATOLOGIA", "Climatología"      # blue
     AUSENCIA_COACH = "AUSENCIA_COACH", "Ausencia coach"  # purple
+    # Lo contrario de una ausencia: el entrenador apunta que ese día, en esa
+    # franja, el alumno viene aunque su horario no lo diga.
+    EXTRA = "EXTRA", "Viene además"  # teal
 
 
 class SubtipoAusencia(models.TextChoices):

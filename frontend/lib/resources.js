@@ -306,11 +306,16 @@ export const RESOURCES = {
     columns: [
       { key: "jugador_nombre", label: "Jugador" },
       { key: "entrenador_nombre", label: "Entrenador" },
+      { key: "tipo", label: "Tipo", render: (v) => (v === "BLANDO" ? "Blando" : "Duro") },
       { key: "activo", label: "Activo", type: "bool" },
     ],
     fields: [
       { name: "jugador", label: "Jugador", type: "fk", endpoint: "jugadores", optionLabel: (o) => o.nombre, required: true },
       { name: "entrenador", label: "Entrenador", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre, required: true },
+      { name: "tipo", label: "Tipo de contrato", type: "select", required: true, default: "DURO", options: [
+        { value: "DURO", label: "Duro · siempre con él" },
+        { value: "BLANDO", label: "Blando · primero su grupo, y con él cuando pueda" },
+      ], help: "Blando: el entrenador atiende antes a su grupo y va con este jugador solo si no deja otra pista sin entrenador." },
       { name: "activo", label: "Activo", type: "bool", default: true },
     ],
   },

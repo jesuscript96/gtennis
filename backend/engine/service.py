@@ -52,6 +52,7 @@ def _build_courts(usar_satelites: bool = True) -> list[Court]:
                 is_satellite=pista.sede.es_satelite,
                 fill_rank=pista.sede.orden_desbordamiento,
                 surface=pista.superficie,
+                number=pista.numero,
             )
         )
     return courts
@@ -65,10 +66,14 @@ def _vetoes() -> set[tuple[int, int]]:
     return out
 
 
-def _sponsor_map() -> dict[int, set[int]]:
-    """jugador_id -> set of coach ids that sponsor them."""
+def _sponsor_map(tipo="DURO") -> dict[int, set[int]]:
+    """jugador_id -> entrenadores con contrato de ese tipo.
+
+    Los duros atan al entrenador con el jugador antes de repartir; los blandos
+    solo se aplican si no dejan ninguna otra pista sin entrenador.
+    """
     m: dict[int, set[int]] = defaultdict(set)
-    for c in Contrato.objects.filter(activo=True):
+    for c in Contrato.objects.filter(activo=True, tipo=tipo):
         m[c.jugador_id].add(c.entrenador_id)
     return m
 
@@ -117,7 +122,7 @@ def _effective_state(overrides, jugador_id, turno, fecha=None):
 
 # Nivel más bajo posible de división. La división 1 es la élite, así que la
 # prioridad de colocación se invierte respecto al nivel.
-NIVEL_MAX = 8
+NIVEL_MAX = 9  # nueve niveles desde septiembre de 2026 («GRUPOS TODOS»)
 
 
 def _player_priority(division, state, deficit=0):
@@ -213,6 +218,26 @@ def _available_players(
     fecha = semana.fecha_inicio + timedelta(days=dia)
     overrides = _overrides(semana, dia)
     players = []
+
+    def _nuevo(j, state, deficit, solo_central):
+        division = j.division.nivel if j.division else None
+        coach = next(iter(sponsors.get(j.id, set())), None)
+        # Superficie preferida activa en la fecha (#1).
+        pref = None
+        for sup, desde, hasta in surface_prefs.get(j.id, ()):
+            if (desde is None or fecha >= desde) and (hasta is None or fecha <= hasta):
+                pref = sup
+                break
+        return Player(
+            division_pref={"ARRIBA": -1, "ABAJO": 1}.get(j.pareja_division, 0),
+            id=j.id,
+            division=division,
+            sponsor_coach_id=coach,
+            priority=_player_priority(division, state, deficit),
+            surface_pref=pref,
+            solo_central=solo_central,
+        )
+
     qs = Jugador.objects.filter(activo=True).select_related("division")
     for j in qs:
         # Alta a mitad de mes: hasta el día que empieza, el alumno no entra en
@@ -232,6 +257,13 @@ def _available_players(
             continue
         state = _effective_state(overrides, j.id, turno, fecha)
         if state in ESTADOS_EXCLUYENTES:
+            continue
+        # Excepción del entrenador: ese día y en esa franja viene sí o sí, diga
+        # lo que diga su horario, su cupo o sus topes. Solo se respeta lo que no
+        # depende de él: el alta, la escuela y que el club abra. Con prioridad
+        # alta, para que no se quede en el banquillo justo el que se ha apuntado.
+        if state == Estado.EXTRA:
+            players.append(_nuevo(j, state, 99, solo_central))
             continue
         # Franja del jugador para este bloque. Manda el horario del día si lo
         # tiene (puede entrar a primera hora los lunes y a segunda los
@@ -293,25 +325,7 @@ def _available_players(
         if hechas >= permitidas_hoy:
             continue
         deficit = permitidas_hoy - hechas
-        division = j.division.nivel if j.division else None
-        coach = next(iter(sponsors.get(j.id, set())), None)
-        # Superficie preferida activa en la fecha (#1).
-        pref = None
-        for sup, desde, hasta in surface_prefs.get(j.id, ()):
-            if (desde is None or fecha >= desde) and (hasta is None or fecha <= hasta):
-                pref = sup
-                break
-        players.append(
-            Player(
-                division_pref={"ARRIBA": -1, "ABAJO": 1}.get(j.pareja_division, 0),
-                id=j.id,
-                division=division,
-                sponsor_coach_id=coach,
-                priority=_player_priority(division, state, deficit),
-                surface_pref=pref,
-                solo_central=solo_central,
-            )
-        )
+        players.append(_nuevo(j, state, deficit, solo_central))
     players.sort(key=lambda p: p.priority, reverse=True)
     return players
 
@@ -395,6 +409,7 @@ def _assign_coaches(
 
 def _emparejar_entrenadores(
     courts, sponsors, elegibles, coach_niveles, player_div, load,
+    blandos=None, info_pistas=None,
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
@@ -405,64 +420,179 @@ def _emparejar_entrenadores(
     lleva al único que servía para una difícil y esa se queda sin nadie libre.
     Es un emparejamiento bipartito, y se resuelve con caminos aumentantes
     (Kuhn): cuando una pista no encuentra hueco, se le pide a quien ocupa a su
-    candidato que se mueva a otro suyo. Así se llega al máximo de pistas con
-    entrenador propio; solo si de verdad no hay bastantes capacitados a esa
-    hora se repite a alguien, y eso queda anotado.
+    candidato que se mueva a otro suyo.
+
+    Contratos. El duro ata al entrenador con la pista de su jugador antes de
+    emparejar. El blando no ata: primero se reparte como si no existiera, y
+    después se prueba a llevar al entrenador a la pista del jugador; se queda
+    así solo si no se pierde ninguna pista cubierta — «primero su grupo, y con
+    ese jugador cuando pueda». Con contrato, de un tipo u otro, el entrenador
+    vale para esa pista aunque no cubra su división: el contrato es el permiso.
+
+    Pocos entrenadores. Si `info_pistas` dice dónde está cada pista
+    ({pista: (sede, número, orden de llenado)}) y hay menos entrenadores que
+    pistas ocupadas, primero se eligen las pistas que llevan entrenador de modo
+    que cada una sin él tenga una vecina con él (`reparto_pistas`), y el
+    emparejamiento trabaja sobre esas. A las que vigila el de al lado no se les
+    repite a nadie; solo a las que se quedan sin vecina que las cubra.
     """
-    # Candidatos por pista, en orden de preferencia: primero el contrato de
-    # patrocinio, luego el menos cargado.
+    from .reparto_pistas import opciones_de_pistas, repartir_entre_sedes
+
+    blandos = blandos or {}
+
+    def contratados(miembros, mapa):
+        return {cid for j in miembros for cid in mapa.get(j, set())}
+
+    # Candidatos por pista: capacitados por división, o con contrato con
+    # alguno de sus jugadores. Primero el contrato duro, luego el menos cargado.
     candidatos = {}
     for pista, miembros in courts.items():
         niveles = {player_div.get(j) for j in miembros}
+        duros = contratados(miembros, sponsors)
+        con_contrato = duros | contratados(miembros, blandos)
         capaces = [c for c in elegibles
-                   if _coach_capacita(c, coach_niveles, niveles)]
-        con_contrato = {cid for j in miembros for cid in sponsors.get(j, set())}
+                   if c.id in con_contrato
+                   or _coach_capacita(c, coach_niveles, niveles)]
         candidatos[pista] = [
             c.id for c in sorted(
-                capaces,
-                key=lambda e: (e.id not in con_contrato, load[e.id], e.id),
+                capaces, key=lambda e: (e.id not in duros, load[e.id], e.id),
             )
         ]
+    ids_elegibles = {c.id for c in elegibles}
+    todas = list(courts)
 
-    # El contrato de patrocinio se ata antes de emparejar. Si no, el
-    # emparejamiento le da ese entrenador a otra pista —un entrenador sin
-    # divisiones sirve para todas y es justo el que las pistas difíciles se
-    # rifan— y el contrato se rompe siempre.
-    de_entrenador = {}          # entrenador -> pista
-    for pista, miembros in courts.items():
-        contratados = {cid for j in miembros for cid in sponsors.get(j, set())}
-        for cid in candidatos[pista]:
-            if cid in contratados and cid not in de_entrenador:
-                de_entrenador[cid] = pista
+    def emparejar(pistas, atados_extra=None, ocupados=frozenset()):
+        """Máximo emparejamiento sobre `pistas`. `atados_extra` son ataduras
+        forzadas {entrenador: pista}; `ocupados`, entrenadores ya colocados."""
+        de_entrenador = {}
+        # El contrato duro se ata antes: si no, el emparejamiento le da ese
+        # entrenador a otra pista y el contrato se rompe siempre.
+        for pista in pistas:
+            duros = contratados(courts[pista], sponsors)
+            for cid in candidatos[pista]:
+                if cid in duros and cid not in de_entrenador and cid not in ocupados:
+                    de_entrenador[cid] = pista
+                    break
+        for cid, pista in (atados_extra or {}).items():
+            if pista not in pistas or cid not in candidatos[pista] or cid in ocupados:
+                continue
+            de_entrenador = {c: p for c, p in de_entrenador.items()
+                             if c != cid and p != pista}
+            de_entrenador[cid] = pista
+        atados = set(de_entrenador)
+        tomadas = set(de_entrenador.values())
+        # Las pistas con menos candidatos, primero: sufren antes la escasez.
+        orden = sorted((p for p in pistas if p not in tomadas),
+                       key=lambda p: (len(candidatos[p]), p))
+
+        def acomodar(pista, vistos):
+            for cid in candidatos[pista]:
+                if cid in vistos or cid in atados or cid in ocupados:
+                    continue
+                vistos.add(cid)
+                ocupada = de_entrenador.get(cid)
+                if ocupada is None or acomodar(ocupada, vistos):
+                    de_entrenador[cid] = pista
+                    return True
+            return False
+
+        for pista in orden:
+            acomodar(pista, set())
+        return {pista: cid for cid, pista in de_entrenador.items()}
+
+    # --- Pocos entrenadores: qué pistas llevan uno -----------------------
+    permitidas = set(todas)
+    modo_vecinas = bool(info_pistas) and 0 < len(ids_elegibles) < len(todas)
+    por_sede, orden_sede, ubicacion = defaultdict(dict), {}, {}
+    if modo_vecinas:
+        for pista in todas:
+            sede, numero, rango = info_pistas.get(pista, (None, None, 0))
+            if numero is None:
+                modo_vecinas = False
+                break
+            por_sede[sede][numero] = pista
+            orden_sede[sede] = rango
+            ubicacion[pista] = (sede, numero)
+    if modo_vecinas:
+        sedes = sorted(por_sede, key=lambda x: (orden_sede[x], str(x)))
+        reparto = repartir_entre_sedes(
+            {x: list(por_sede[x]) for x in sedes}, len(ids_elegibles), sedes,
+        )
+        opciones = {}
+        for x in sedes:
+            fijas = {n for n, p in por_sede[x].items()
+                     if contratados(courts[p], sponsors) & ids_elegibles}
+            opciones[x] = [
+                {por_sede[x][n] for n in elegidas}
+                for elegidas in opciones_de_pistas(
+                    list(por_sede[x]), reparto[x], fijas=fijas,
+                )
+            ]
+        # El reparto geométricamente mejor no sirve si en alguna de sus pistas
+        # no hay nadie capacitado para esa división: esa pista se queda sin
+        # entrenador y su vecina, huérfana. Se prueba cada sede, en orden de
+        # llenado, con sus repartos de mejor a peor, y se queda el primero que
+        # el emparejamiento cubre entero (si ninguno, el que más cubre).
+        elegido = {x: opciones[x][0] for x in sedes}
+        for x in sedes:
+            mejor, mejor_n = elegido[x], -1
+            for opcion in opciones[x][:200]:
+                prueba = set(opcion)
+                for y in sedes:
+                    if y != x:
+                        prueba |= elegido[y]
+                n = len(emparejar([p for p in todas if p in prueba]))
+                if n > mejor_n:
+                    mejor, mejor_n = opcion, n
+                if n == len(prueba):
+                    break
+            elegido[x] = mejor
+        permitidas = set().union(*elegido.values())
+
+    def huerfana(pista, asig):
+        """Sin entrenador y, con pocos, sin vecina que lo tenga."""
+        if pista in asig:
+            return False
+        if not modo_vecinas:
+            return True
+        sede, numero = ubicacion[pista]
+        return not any(por_sede[sede].get(v) in asig for v in (numero - 1, numero + 1))
+
+    def completar(asig):
+        """Lo previsto que no se pudo cubrir se intenta con los que sobran."""
+        if modo_vecinas and ids_elegibles - set(asig.values()):
+            resto = [p for p in todas if p not in asig]
+            asig.update(emparejar(resto, ocupados=set(asig.values())))
+        return asig
+
+    asignado = completar(emparejar([p for p in todas if p in permitidas]))
+
+    # --- Contratos blandos: solo si no cuesta ninguna pista --------------
+    duros_del_turno = set()
+    for pista in todas:
+        duros_del_turno |= contratados(courts[pista], sponsors)
+    for jid in sorted(blandos):
+        pista = next((p for p in todas if jid in courts[p]), None)
+        if pista is None:
+            continue
+        for cid in sorted(blandos[jid]):
+            if (cid not in ids_elegibles or cid in duros_del_turno
+                    or asignado.get(pista) == cid or cid not in candidatos[pista]):
+                continue
+            base = [p for p in todas if p in permitidas or p == pista]
+            prueba = completar(emparejar(base, atados_extra={cid: pista}))
+            if (len(prueba) >= len(asignado)
+                    and sum(huerfana(p, prueba) for p in todas)
+                    <= sum(huerfana(p, asignado) for p in todas)):
+                asignado = prueba
                 break
 
-    # Las pistas con menos candidatos, primero: sufren antes la escasez.
-    pendientes = [p for p in courts if p not in set(de_entrenador.values())]
-    orden = sorted(pendientes, key=lambda p: (len(candidatos[p]), p))
-
-    atados = set(de_entrenador)
-
-    def acomodar(pista, vistos):
-        for cid in candidatos[pista]:
-            if cid in vistos or cid in atados:
-                continue
-            vistos.add(cid)
-            ocupada = de_entrenador.get(cid)
-            if ocupada is None or acomodar(ocupada, vistos):
-                de_entrenador[cid] = pista
-                return True
-        return False
-
-    for pista in orden:
-        acomodar(pista, set())
-
-    asignado = {pista: cid for cid, pista in de_entrenador.items()}
     repetidos = []
-    for pista in sorted(courts, key=lambda p: (len(candidatos[p]), p)):
-        if pista in asignado or not candidatos[pista]:
+    for pista in sorted(todas, key=lambda p: (len(candidatos[p]), p)):
+        if not candidatos[pista] or not huerfana(pista, asignado):
             continue
-        # No hay ningún capacitado libre a esta hora: se repite al menos
-        # cargado, que es preferible a dejar la pista sin entrenador.
+        # No hay ningún capacitado libre a esta hora y ninguna vecina la
+        # cubre: se repite al menos cargado, mejor que dejarla sin nadie.
         cid = min(candidatos[pista], key=lambda c: (load[c], c))
         asignado[pista] = cid
         repetidos.append(cid)
@@ -510,6 +640,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     courts_by_id = {c.id: c for c in courts}
     vetoes = _vetoes()
     sponsors = _sponsor_map()
+    blandos = _sponsor_map("BLANDO")
     load: Counter = Counter()
     report = {"dias": {}, "overflow": [], "unassigned": []}
 
@@ -627,11 +758,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         }
         # Entrenadores fuera por vacaciones ese día (#11) y overrides del día (#10).
         fecha = semana.fecha_inicio + timedelta(days=dia)
-        vac_ids = set(
-            VacacionesEntrenador.objects.filter(
-                fecha_inicio__lte=fecha, fecha_fin__gte=fecha
-            ).values_list("entrenador_id", flat=True)
-        )
+        # Ausencias del entrenador ese día. Pueden ser de un bloque o de una
+        # franja («el martes no puede a las 8:30»): se miran turno a turno.
+        vac_de = defaultdict(list)
+        for v in VacacionesEntrenador.objects.filter(
+            fecha_inicio__lte=fecha, fecha_fin__gte=fecha
+        ):
+            vac_de[v.entrenador_id].append(v)
         coach_ovr = {
             d.entrenador_id: d
             for d in DisponibilidadEntrenador.objects.filter(semana=semana, dia=dia)
@@ -651,7 +784,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             ini_t, fin_t = turno.horas(fecha)
             elegibles = []
             for c in all_coaches:
-                if c.id in vac_ids:
+                if any(v.afecta_turno(turno) for v in vac_de.get(c.id, ())):
                     continue
                 # Jornada estable: quien no trabaja ese bloque ese día no
                 # entra. Sin fila se entiende jornada completa.
@@ -716,8 +849,15 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             # se queda sin nadie. Es un emparejamiento, y se resuelve como tal.
             entrenador_de, repetidos = _emparejar_entrenadores(
                 result.courts, sponsors, elegibles, coach_niveles, player_div,
-                load,
+                load, blandos=blandos,
+                info_pistas={c.id: (c.venue_id, c.number, c.fill_rank)
+                             for c in turno_courts},
             )
+            sin_entrenador = [p for p in result.courts if p not in entrenador_de]
+            if sin_entrenador:
+                report.setdefault("sin_entrenador", []).append(
+                    {"dia": dia, "turno": turno.codigo, "pistas": sin_entrenador}
+                )
             for court_id, member_ids in result.courts.items():
                 coach_id = entrenador_de.get(court_id)
                 for jid in member_ids:

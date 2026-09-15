@@ -31,9 +31,9 @@ const fmtCorta = (s) => {
   return `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
 };
 
-// Lo que se declara, en el idioma del entrenador. Por dentro son el estado y el
-// subtipo de la matriz de estados.
-const MOTIVOS = [
+// Lo que se declara, en el idioma de quien lo declara. Para el alumno, por
+// dentro son el estado y el subtipo de la matriz de estados.
+export const MOTIVOS_JUGADOR = [
   { value: "LESION", label: "Lesión", estado: "AUSENCIA_JUGADOR", subtipo: "LESION" },
   { value: "ENFERMEDAD", label: "Enfermedad", estado: "AUSENCIA_JUGADOR", subtipo: "ENFERMEDAD" },
   { value: "ESTUDIOS", label: "Estudios", estado: "AUSENCIA_JUGADOR", subtipo: "ESTUDIOS" },
@@ -41,6 +41,14 @@ const MOTIVOS = [
   { value: "VACACIONES", label: "Vacaciones", estado: "AUSENCIA_JUGADOR", subtipo: "VACACIONES" },
   { value: "TORNEO", label: "Torneo", estado: "EN_TORNEO", subtipo: "" },
   { value: "OTRO", label: "Otro", estado: "AUSENCIA_JUGADOR", subtipo: "" },
+];
+export const MOTIVOS_ENTRENADOR = [
+  { value: "VACACIONES", label: "Vacaciones" },
+  { value: "TORNEO", label: "Torneo" },
+  { value: "FORMACION", label: "Formación" },
+  { value: "ENFERMEDAD", label: "Enfermedad" },
+  { value: "PERSONAL", label: "Asunto personal" },
+  { value: "OTRO", label: "Otro" },
 ];
 const AMBITOS = [
   { value: "DIA", label: "Todo el día", corto: "día" },
@@ -51,20 +59,52 @@ const AMBITOS = [
   { value: "T1", label: "Solo T1 · 14:15", corto: "T1" },
   { value: "T2", label: "Solo T2 · 15:30", corto: "T2" },
 ];
+const SUBTIPO_CORTO = {
+  LESION: "lesión", ENFERMEDAD: "enfermedad", ESTUDIOS: "estudios",
+  PRUEBA_MEDICA: "prueba médica", VACACIONES: "vacaciones", MILONGA: "milonga",
+};
+
+// De dónde salen las faltas de un alumno y cómo se escriben.
+function fuenteDeJugador(jugador) {
+  return {
+    clave: `jugador-${jugador.id}`,
+    cargar: () => getAusenciasFechas(jugador.id),
+    crear: ({ desde, hasta, ambito, motivo, nota }) => addAusenciaFechas({
+      jugador: jugador.id, fecha_inicio: desde, fecha_fin: hasta, ambito,
+      estado: motivo.estado, subtipo: motivo.subtipo, nota,
+    }),
+    borrar: (a) => delAusenciaFechas(a.id),
+    describir: (a) => [
+      a.subtipo && SUBTIPO_CORTO[a.subtipo],
+      a.estado === "EN_TORNEO" && "torneo",
+      a.nota,
+    ].filter(Boolean).join(" · "),
+    colorDe: (a) => ESTADO_COLOR[a.estado] || "#999",
+  };
+}
 
 /**
- * Las faltas de un alumno sobre un calendario.
+ * Las faltas sobre un calendario: de un alumno, o de un entrenador.
  *
- * Antes esto era un formulario con dos campos de fecha, y declarar "no viene
- * del 2 al 15" obligaba a leer el calendario en otro sitio y teclear dos
- * fechas. Aquí se marcan los días —uno, varios sueltos o arrastrando un
- * rango—, se dice de qué va la falta y se declara; y una vez declarada se ve
- * pintada en el mismo sitio donde se miró.
+ * Se marcan los días —uno, varios sueltos o arrastrando un rango—, se dice si
+ * falta todo el día, un bloque o una franja y por qué, y se declara; y una vez
+ * declarada se ve pintada en el mismo sitio donde se miró.
  *
  * Los días seguidos se guardan como UNA ausencia con ida y vuelta, que es como
  * lo entiende el motor; los sueltos, como una por tramo.
+ *
+ * Con `jugador` trabaja sobre las faltas de ese alumno. Para otra cosa —las del
+ * entrenador en su agenda— se le pasa una `fuente` ({clave, cargar, crear,
+ * borrar, describir, colorDe}) y sus `motivos`.
  */
-export default function CalendarioAusencias({ jugador }) {
+export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio }) {
+  const origen = fuente || fuenteDeJugador(jugador);
+  const lista = motivos || MOTIVOS_JUGADOR;
+  // La fuente se rehace en cada render de quien la pasa: se lee de una ref y
+  // se recarga solo cuando cambia su clave.
+  const origenRef = useRef(origen);
+  origenRef.current = origen;
+
   const hoy = new Date();
   const [mes, setMes] = useState(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
   const [ausencias, setAusencias] = useState([]);
@@ -75,7 +115,7 @@ export default function CalendarioAusencias({ jugador }) {
   const selRef = useRef(new Set());
   const [sel, setSel] = useState(() => new Set());
   const [ambito, setAmbito] = useState("DIA");
-  const [motivo, setMotivo] = useState("LESION");
+  const [motivo, setMotivo] = useState(lista[0].value);
   const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -83,9 +123,9 @@ export default function CalendarioAusencias({ jugador }) {
 
   const cargar = useCallback(async () => {
     try {
-      setAusencias(await getAusenciasFechas(jugador.id));
+      setAusencias(await origenRef.current.cargar());
     } catch (e) { setError(e.message); }
-  }, [jugador.id]);
+  }, [origen.clave]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -142,19 +182,16 @@ export default function CalendarioAusencias({ jugador }) {
   async function declarar() {
     const dias = [...selRef.current].sort();
     if (!dias.length) return;
-    const m = MOTIVOS.find((x) => x.value === motivo);
+    const m = lista.find((x) => x.value === motivo) || lista[0];
     setGuardando(true); setError("");
     try {
       for (const [desde, hasta] of tramos(dias)) {
-        await addAusenciaFechas({
-          jugador: jugador.id,
-          fecha_inicio: desde, fecha_fin: hasta,
-          ambito, estado: m.estado, subtipo: m.subtipo, nota,
-        });
+        await origenRef.current.crear({ desde, hasta, ambito, motivo: m, nota });
       }
       marcar(new Set());
       setNota("");
       await cargar();
+      onCambio?.();
     } catch (e) { setError(e.message); }
     setGuardando(false);
   }
@@ -166,8 +203,9 @@ export default function CalendarioAusencias({ jugador }) {
     )) return;
     setGuardando(true);
     try {
-      await delAusenciaFechas(a.id);
+      await origenRef.current.borrar(a);
       await cargar();
+      onCambio?.();
     } catch (e) { setError(e.message); }
     setGuardando(false);
   }
@@ -184,6 +222,7 @@ export default function CalendarioAusencias({ jugador }) {
 
   const mover = (n) => setMes(new Date(mes.getFullYear(), mes.getMonth() + n, 1));
   const isoHoy = iso(hoy);
+  const ambitoDe = (a) => AMBITOS.find((x) => x.value === a.ambito);
 
   return (
     <div className="calendario-ausencias">
@@ -211,16 +250,16 @@ export default function CalendarioAusencias({ jugador }) {
                 faltas.length ? "con-falta" : "",
               ].filter(Boolean).join(" ")}
               title={faltas.map((f) =>
-                `${f.ambito === "DIA" ? "Todo el día" : AMBITOS.find((a) => a.value === f.ambito)?.label || f.ambito}` +
-                `${f.subtipo ? ` · ${f.subtipo.toLowerCase()}` : ""}${f.nota ? ` · ${f.nota}` : ""}`
+                [ambitoDe(f)?.label || f.ambito, origen.describir(f)]
+                  .filter(Boolean).join(" · ")
               ).join("\n") || undefined}
               onPointerDown={() => empezar(dia)}
               onPointerEnter={() => extender(dia)}>
               <span className="num">{deIso(dia).getDate()}</span>
               <span className="marcas">
                 {faltas.slice(0, 3).map((f) => (
-                  <i key={f.id} style={{ background: ESTADO_COLOR[f.estado] || "#999" }}
-                    className={f.ambito === "DIA" ? "marca llena" : "marca"} />
+                  <i key={f.id} style={{ background: origen.colorDe(f) }}
+                    className={!f.ambito || f.ambito === "DIA" ? "marca llena" : "marca"} />
                 ))}
               </span>
             </button>
@@ -252,7 +291,7 @@ export default function CalendarioAusencias({ jugador }) {
             </label>
             <label>Motivo
               <select value={motivo} onChange={(e) => setMotivo(e.target.value)}>
-                {MOTIVOS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                {lista.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </label>
             <label className="crece">Nota (opcional)
@@ -279,15 +318,14 @@ export default function CalendarioAusencias({ jugador }) {
         <ul className="cal-lista">
           {ausencias.map((a) => (
             <li key={a.id}>
-              <i className="punto" style={{ background: ESTADO_COLOR[a.estado] || "#999" }} />
+              <i className="punto" style={{ background: origen.colorDe(a) }} />
               <span className="cuando">
                 {fmtCorta(a.fecha_inicio)}
                 {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
               </span>
               <span className="que">
-                {AMBITOS.find((x) => x.value === a.ambito)?.corto || a.ambito}
-                {a.subtipo && ` · ${a.subtipo.toLowerCase().replace("_", " ")}`}
-                {a.nota && ` · ${a.nota}`}
+                {[ambitoDe(a)?.corto || a.ambito || "día", origen.describir(a)]
+                  .filter(Boolean).join(" · ")}
               </span>
               <button type="button" className="quitar" disabled={guardando}
                 title="Quitar esta falta" onClick={() => borrar(a)}>✕</button>
