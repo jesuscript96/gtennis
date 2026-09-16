@@ -320,10 +320,10 @@ class Jugador(models.Model):
     activo = models.BooleanField(default=True)
     notas = models.CharField(max_length=200, blank=True)
     # --- Dosis de entrenamiento (#18) --------------------------------------
-    # Cuántas sesiones le tocan a este jugador. El motor reparte hasta cubrir
-    # el objetivo semanal de todos antes de dar una segunda vuelta, y nunca
-    # pone a nadie más veces al día de las que marca `sesiones_dia_max`.
-    # Vacío = usa el valor por defecto de ConfiguracionMotor.
+    # `sesiones_semana` ya no la usa el motor (septiembre de 2026): no hay cupo
+    # semanal, se da por hecho que viene todos los días y lo que no, se declara.
+    # Se conserva porque la rellenan las importaciones. `sesiones_dia_max` sí:
+    # nadie entra más veces al día de las que marca.
     sesiones_semana = models.PositiveSmallIntegerField(
         null=True, blank=True,
         help_text="Sesiones/semana objetivo. Vacío = valor por defecto del motor.",

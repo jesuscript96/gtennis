@@ -94,8 +94,7 @@ class JugadorAdmin(admin.ModelAdmin):
             "classes": ("collapse",),
         }),
         ("Entrenamiento", {
-            "fields": ("turno_manana", "turno_tarde",
-                       "sesiones_semana", "sesiones_dia_max",
+            "fields": ("turno_manana", "turno_tarde", "sesiones_dia_max",
                        "entrenador_responsable"),
             "description": "Los turnos de aquí valen para toda la semana. "
                            "Si algún día es distinto, se ajusta abajo en el "

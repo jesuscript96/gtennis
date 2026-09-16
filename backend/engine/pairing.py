@@ -1,4 +1,5 @@
-"""Pure constraint-solving core for one (day, shift).
+"""Pure constraint-solving core for one (day, shift) — or for all the shifts of
+a block at once (M1 and M2 of a morning).
 
 No Django imports — fully unit-testable. Given the available players, the courts
 (central first, then satellites) and the business rules, it produces court
@@ -11,6 +12,8 @@ Hard constraints:
   * Capacity: <= court.capacity players per court.
   * Occupancy: a used court holds >= `min_occupancy` players (1 si se permiten
     clases particulares, 2 si no).
+  * Franjas: cada jugador solo entra en las suyas, y en tantas del bloque como
+    marque `max_franjas` (una por defecto).
 
 Soft (minimised):
   * Anti-repetition: penalise pairs that already played together this week.
@@ -19,10 +22,14 @@ Soft (minimised):
     motor sube a 3-4 solo cuando hace falta para colocar a alguien.
   * Court opening: cada pista abierta cuesta un poco, así se agrupa en pistas
     de 2 en vez de repartir individuales.
+  * Equilibrio: con varias franjas a la vez, los jugadores se reparten entre
+    ellas en proporción a los entrenadores de cada una.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
+from math import lcm
 
 from ortools.sat.python import cp_model
 
@@ -92,15 +99,34 @@ class PairingInput:
     # mitad en contra si cae hacia el otro. Pequeño frente a colocar a todos:
     # es un desempate, nunca una razón para dejar a nadie sin pista.
     w_div_pref: int = 30
+    # --- Varias franjas a la vez -------------------------------------------
+    # Ids de las franjas que se deciden juntas (M1 y M2 de una mañana). Vacío =
+    # una sola franja, como siempre.
+    franjas: list[int] = field(default_factory=list)
+    # Jugador -> {franja: prioridad}: en qué franjas puede entrar y con qué
+    # prioridad en cada una. Quien no aparece entra en todas con `priority`.
+    franjas_de: dict[int, dict[int, int]] = field(default_factory=dict)
+    # Jugador -> en cuántas franjas del bloque puede entrar como mucho. Por
+    # defecto una: nadie repite en la misma mañana.
+    max_franjas: dict[int, int] = field(default_factory=dict)
+    # Franja -> entrenadores disponibles. Los jugadores se reparten entre
+    # franjas en esa proporción; sin datos, a partes iguales.
+    entrenadores_franja: dict[int, int] = field(default_factory=dict)
+    # Coste por cada jugador de desequilibrio. Por debajo de lo que vale
+    # colocar a alguien (nunca deja a nadie fuera por cuadrar) y de lo que
+    # cuesta abrir una pista (no parte una pareja en dos individuales).
+    w_balance: int = 200
 
 
 @dataclass
 class PairingResult:
-    # court_id -> list of player ids
+    # court_id -> list of player ids (con una sola franja)
     courts: dict[int, list[int]]
     unassigned: list[int]
     status: str
     objective: float
+    # franja -> court_id -> player ids (con varias franjas a la vez)
+    franjas: dict[int, dict[int, list[int]]] = field(default_factory=dict)
 
 
 def _normalise(a: int, b: int) -> tuple[int, int]:
@@ -119,113 +145,150 @@ def _incompatible(
 
 
 def solve_pairing(data: PairingInput) -> PairingResult:
+    """Empareja una franja, o todas las de `data.franjas` a la vez.
+
+    Decidirlas juntas es lo que permite repartir: resolviendo franja a franja,
+    la primera se llevaba a todo el que cupiera y la segunda quedaba vacía.
+    """
     model = cp_model.CpModel()
     players = data.players
     courts = data.courts
     pidx = {p.id: p for p in players}
+    franjas = list(data.franjas) or [None]
 
-    x = {
-        (p.id, c.id): model.NewBoolVar(f"x_{p.id}_{c.id}")
-        for p in players
-        for c in courts
-    }
-    used = {c.id: model.NewBoolVar(f"used_{c.id}") for c in courts}
+    def prioridad(p, f):
+        """Prioridad de `p` en la franja `f`, o None si ahí no puede entrar."""
+        if f is None or p.id not in data.franjas_de:
+            return p.priority
+        return data.franjas_de[p.id].get(f)
 
-    # Each player on at most one court (unassigned allowed -> overflow signal).
+    # x[p, f, c]: el jugador p juega en la pista c en la franja f. Solo existe
+    # donde puede entrar: sus franjas, su superficie estricta (#1) y, si es de
+    # una escuela del Resort (#6), sin satélites.
+    x = {}
+    del_jugador = defaultdict(list)
+    en_pista = defaultdict(list)
     for p in players:
-        model.Add(sum(x[p.id, c.id] for c in courts) <= 1)
+        for f in franjas:
+            if prioridad(p, f) is None:
+                continue
+            for c in courts:
+                if p.surface_pref and c.surface and c.surface != p.surface_pref:
+                    continue
+                if p.solo_central and c.is_satellite:
+                    continue
+                var = model.NewBoolVar(f"x_{p.id}_{f}_{c.id}")
+                x[p.id, f, c.id] = var
+                del_jugador[p.id].append((f, var))
+                en_pista[f, c.id].append(var)
+
+    def xv(pid, f, cid):
+        return x.get((pid, f, cid), 0)
+
+    used = {(f, c.id): model.NewBoolVar(f"used_{f}_{c.id}")
+            for f in franjas for c in courts}
+
+    # Una pista como mucho por franja, y `max_franjas` franjas del bloque (una
+    # por defecto: nadie repite en la misma mañana). Quedarse sin pista está
+    # permitido: es la señal de que no caben.
+    for p in players:
+        por_franja = defaultdict(list)
+        for f, var in del_jugador[p.id]:
+            por_franja[f].append(var)
+        for vs in por_franja.values():
+            model.Add(sum(vs) <= 1)
+        if del_jugador[p.id]:
+            model.Add(sum(v for _f, v in del_jugador[p.id])
+                      <= data.max_franjas.get(p.id, 1))
 
     # Occupancy: a used court holds between `min_occupancy` and capacity
     # players; 0 otherwise. Además se mide el exceso sobre la densidad normal
     # para penalizarlo en el objetivo (pistas de 3-4 solo si hacen falta).
     min_occ = max(1, data.min_occupancy)
     excess = {}
-    for c in courts:
-        occ = sum(x[p.id, c.id] for p in players)
-        model.Add(occ <= c.capacity * used[c.id])
-        model.Add(occ >= min_occ * used[c.id])
-        e = model.NewIntVar(0, max(0, c.capacity - c.normal_density), f"exc_{c.id}")
-        model.Add(e >= occ - c.normal_density)
-        excess[c.id] = e
-
-    # Preferencia de superficie estricta (#1): un jugador con superficie
-    # preferida no puede jugar en una pista de otra superficie.
-    for p in players:
-        if p.surface_pref:
-            for c in courts:
-                if c.surface and c.surface != p.surface_pref:
-                    model.Add(x[p.id, c.id] == 0)
-
-    # #6: jugadores restringidos al Resort (p. ej. Junior Program) nunca en
-    # una pista de sede satélite.
-    for p in players:
-        if p.solo_central:
-            for c in courts:
-                if c.is_satellite:
-                    model.Add(x[p.id, c.id] == 0)
+    for f in franjas:
+        for c in courts:
+            occ = sum(en_pista[f, c.id])
+            model.Add(occ <= c.capacity * used[f, c.id])
+            model.Add(occ >= min_occ * used[f, c.id])
+            e = model.NewIntVar(0, max(0, c.capacity - c.normal_density),
+                                f"exc_{f}_{c.id}")
+            model.Add(e >= occ - c.normal_density)
+            excess[f, c.id] = e
 
     # Incompatible pairs may never share a court.
-    incompatible: list[tuple[int, int]] = []
     for i in range(len(players)):
         for j in range(i + 1, len(players)):
-            if _incompatible(
-                players[i], players[j], data.vetoes, data.apply_neighbor,
-                data.neighbor_span,
-            ):
-                incompatible.append((players[i].id, players[j].id))
-    for a, b in incompatible:
-        for c in courts:
-            model.Add(x[a, c.id] + x[b, c.id] <= 1)
+            a, b = players[i], players[j]
+            if not _incompatible(a, b, data.vetoes, data.apply_neighbor,
+                                 data.neighbor_span):
+                continue
+            for f in franjas:
+                for c in courts:
+                    if (a.id, f, c.id) in x and (b.id, f, c.id) in x:
+                        model.Add(x[a.id, f, c.id] + x[b.id, f, c.id] <= 1)
 
-    # Parejas obligatorias (#5, HARD): si ambos están disponibles este turno,
-    # comparten pista (o ambos quedan sin asignar).
+    # Parejas obligatorias (#5, HARD): en una franja en la que pueden entrar
+    # los dos, comparten pista (o ninguno de los dos juega en ella).
     for pair in data.pairs_hard:
         a, b = tuple(pair)
-        if a in pidx and b in pidx:
+        if a not in pidx or b not in pidx:
+            continue
+        for f in franjas:
+            if prioridad(pidx[a], f) is None or prioridad(pidx[b], f) is None:
+                continue
             for c in courts:
-                model.Add(x[a, c.id] == x[b, c.id])
+                va, vb = xv(a, f, c.id), xv(b, f, c.id)
+                if isinstance(va, int) and isinstance(vb, int):
+                    continue
+                model.Add(va == vb)
 
     # --- Objective ---------------------------------------------------------
     terms = []
+    court_by_id = {c.id: c for c in courts}
     # 1) Maximise assigned players, weighted by division/state priority.
     #    Bonus per player on central (non-satellite) courts ensures the
     #    GTennis academy courts fill first.
-    for p in players:
+    for (pid, f, cid), var in x.items():
+        bonus = data.w_central if not court_by_id[cid].is_satellite else 0
+        terms.append((data.w_assign * prioridad(pidx[pid], f) + bonus) * var)
+    for f in franjas:
         for c in courts:
-            bonus = data.w_central if not c.is_satellite else 0
-            terms.append((data.w_assign * p.priority + bonus) * x[p.id, c.id])
-    # 2) Prefer the base venue, and among satellites respect the overflow order
-    #    (fill_rank): a small penalty per used satellite, growing with its rank.
-    for c in courts:
-        if c.is_satellite:
-            terms.append(-data.w_satellite * max(1, c.fill_rank) * used[c.id])
-    # 3) Densidad: cada jugador por encima de la densidad normal de la pista
-    #    penaliza, así el motor prefiere abrir otra pista antes que apretar.
-    #    Y abrir pista también cuesta, para que no reparta individuales
-    #    pudiendo agrupar de dos en dos.
-    for c in courts:
-        terms.append(-data.w_density * excess[c.id])
-        terms.append(-data.w_court * used[c.id])
+            # 2) Prefer the base venue, and among satellites respect the
+            #    overflow order (fill_rank).
+            if c.is_satellite:
+                terms.append(-data.w_satellite * max(1, c.fill_rank) * used[f, c.id])
+            # 3) Densidad y apertura de pista: se prefiere abrir otra pista antes
+            #    que apretar, y agrupar de dos en dos antes que individuales.
+            terms.append(-data.w_density * excess[f, c.id])
+            terms.append(-data.w_court * used[f, c.id])
     # 4) Anti-repetition: penalise re-pairing recent partners.
     for pair, weight in data.recent_partners.items():
         a, b = tuple(pair)
         if a not in pidx or b not in pidx:
             continue
+        comunes = [(f, c.id) for f in franjas for c in courts
+                   if (a, f, c.id) in x and (b, f, c.id) in x]
+        if not comunes:
+            continue
         together = model.NewBoolVar(f"rep_{a}_{b}")
-        for c in courts:
-            # together >= x[a,c] + x[b,c] - 1
-            model.Add(together >= x[a, c.id] + x[b, c.id] - 1)
+        for f, cid in comunes:
+            # together >= x[a,f,c] + x[b,f,c] - 1
+            model.Add(together >= x[a, f, cid] + x[b, f, cid] - 1)
         terms.append(-(data.w_repeat * weight) * together)
     # 5) Parejas preferentes (#5, SOFT): bonus si ambos coinciden en una pista.
     for pair in data.pairs_soft:
         a, b = tuple(pair)
         if a not in pidx or b not in pidx:
             continue
-        for c in courts:
-            both = model.NewBoolVar(f"soft_{a}_{b}_{c.id}")
-            model.Add(both <= x[a, c.id])
-            model.Add(both <= x[b, c.id])
-            terms.append(data.w_pair * both)
+        for f in franjas:
+            for c in courts:
+                if (a, f, c.id) not in x or (b, f, c.id) not in x:
+                    continue
+                both = model.NewBoolVar(f"soft_{a}_{b}_{f}_{c.id}")
+                model.Add(both <= x[a, f, c.id])
+                model.Add(both <= x[b, f, c.id])
+                terms.append(data.w_pair * both)
 
     # 6) Preferencia de división: quien pide jugar hacia arriba (o abajo)
     #    cobra un premio si comparte pista con alguien de ese lado, y paga la
@@ -238,17 +301,49 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 if q.id != p.id and q.division == p.division + p.division_pref]
         contrario = [q for q in players
                      if q.id != p.id and q.division == p.division - p.division_pref]
-        for c in courts:
-            if lado:
-                y = model.NewBoolVar(f"divpref_{p.id}_{c.id}")
-                model.Add(y <= x[p.id, c.id])
-                model.Add(y <= sum(x[q.id, c.id] for q in lado))
-                terms.append(data.w_div_pref * y)
-            if contrario:
-                z = model.NewBoolVar(f"divcontra_{p.id}_{c.id}")
-                for q in contrario:
-                    model.Add(z >= x[p.id, c.id] + x[q.id, c.id] - 1)
-                terms.append(-(data.w_div_pref // 2) * z)
+        for f in franjas:
+            for c in courts:
+                if (p.id, f, c.id) not in x:
+                    continue
+                yo = x[p.id, f, c.id]
+                de_lado = [x[q.id, f, c.id] for q in lado if (q.id, f, c.id) in x]
+                if de_lado:
+                    y = model.NewBoolVar(f"divpref_{p.id}_{f}_{c.id}")
+                    model.Add(y <= yo)
+                    model.Add(y <= sum(de_lado))
+                    terms.append(data.w_div_pref * y)
+                del_otro = [x[q.id, f, c.id] for q in contrario
+                            if (q.id, f, c.id) in x]
+                if del_otro:
+                    z = model.NewBoolVar(f"divcontra_{p.id}_{f}_{c.id}")
+                    for v in del_otro:
+                        model.Add(z >= yo + v - 1)
+                    terms.append(-(data.w_div_pref // 2) * z)
+
+    # 7) Equilibrio entre franjas: los jugadores se reparten en proporción a
+    #    los entrenadores de cada una (a partes iguales si tienen los mismos).
+    #    Se mide la carga de cada franja —jugadores por entrenador, en enteros—
+    #    y se penaliza la distancia entre la más cargada y la menos.
+    if len(franjas) > 1 and data.w_balance > 0:
+        entrenadores = {f: data.entrenadores_franja.get(f, 0) for f in franjas}
+        if not any(entrenadores.values()):
+            entrenadores = {f: 1 for f in franjas}
+        cuentan = [f for f in franjas if entrenadores[f] > 0]
+        if len(cuentan) > 1:
+            comun = lcm(*(entrenadores[f] for f in cuentan))
+            carga = {f: sum(v for c in courts for v in en_pista[f, c.id])
+                        * (comun // entrenadores[f])
+                     for f in cuentan}
+            techo = max(1, len(players)) * comun
+            mas = model.NewIntVar(0, techo, "carga_max")
+            menos = model.NewIntVar(0, techo, "carga_min")
+            for f in cuentan:
+                model.Add(mas >= carga[f])
+                model.Add(menos <= carga[f])
+            # Un jugador de más en la franja con más entrenadores cuesta
+            # exactamente `w_balance`.
+            unidad = max(1, round(data.w_balance * max(entrenadores[f] for f in cuentan) / comun))
+            terms.append(-unidad * (mas - menos))
 
     model.Maximize(sum(terms))
 
@@ -257,19 +352,22 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     solver.parameters.num_search_workers = 8
     status = solver.Solve(model)
 
-    out: dict[int, list[int]] = {}
+    por_franja: dict = {f: {} for f in franjas}
     assigned: set[int] = set()
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        for c in courts:
-            members = [p.id for p in players if solver.Value(x[p.id, c.id])]
-            if members:
-                out[c.id] = members
-                assigned.update(members)
+        for f in franjas:
+            for c in courts:
+                members = [p.id for p in players
+                           if (p.id, f, c.id) in x and solver.Value(x[p.id, f, c.id])]
+                if members:
+                    por_franja[f][c.id] = members
+                    assigned.update(members)
 
     unassigned = [p.id for p in players if p.id not in assigned]
     return PairingResult(
-        courts=out,
+        courts=por_franja[franjas[0]] if len(franjas) == 1 else {},
         unassigned=unassigned,
         status=solver.StatusName(status),
         objective=solver.ObjectiveValue() if status != cp_model.UNKNOWN else 0.0,
+        franjas=por_franja if data.franjas else {},
     )

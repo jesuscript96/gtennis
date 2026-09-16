@@ -8,6 +8,7 @@ const NUM_FIELDS = [
   ["peso_central", "Peso · priorizar pistas GTennis", "Bonus por cada jugador asignado a pista central. Más alto = llena GTennis antes de usar satélites."],
   ["peso_satelite", "Peso · evitar satélites", "Penalización por usar pistas satélite. Más alto = se usan solo si hace falta."],
   ["peso_repeticion", "Peso · antirrepetición", "Penalización por repetir pareja. Más alto = más rotación."],
+  ["peso_equilibrio_franjas", "Peso · equilibrar franjas", "Reparte a los jugadores entre 8:30 y 10:30 (y entre las franjas de la tarde) en proporción a los entrenadores de cada una. Más alto = más igualadas."],
   ["max_dias_misma_pista", "Máx. días misma pista", "A partir de estas repeticiones en la semana, se penaliza fuerte."],
   ["time_limit_s", "Límite del solver (s)", "Tiempo máximo de cálculo por turno."],
 ];
@@ -34,6 +35,7 @@ export default function ConfiguracionPage() {
         peso_central: Number(cfg.peso_central),
         peso_satelite: Number(cfg.peso_satelite),
         peso_repeticion: Number(cfg.peso_repeticion),
+        peso_equilibrio_franjas: Number(cfg.peso_equilibrio_franjas),
         max_dias_misma_pista: Number(cfg.max_dias_misma_pista),
         time_limit_s: Number(cfg.time_limit_s),
         aplicar_vecindad: !!cfg.aplicar_vecindad,

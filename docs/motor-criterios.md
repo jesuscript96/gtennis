@@ -61,19 +61,25 @@ Tiene **tres bloques**, siempre los mismos:
 ### a) Variables — las "casillas" que el solver decide
 
 ```python
-# ¿Está el jugador p en la pista c?  (un sí/no por cada combinación)
-x = {(p.id, c.id): model.NewBoolVar(...) for p in players for c in courts}
+# ¿Está el jugador p en la pista c en la franja f?  (un sí/no por combinación)
+x = {(p.id, f, c.id): model.NewBoolVar(...) for p in players for f in franjas for c in courts}
 ```
 
 Nosotros no les damos valor: **el solver decide** cuáles son "sí".
+
+Las franjas de un mismo bloque se deciden **a la vez**: la mañana entera (M1 y
+M2) y la tarde entera (T1 y T2). Si se resolvieran de una en una, la primera se
+llevaría a todo el que cupiera y la segunda quedaría vacía. El turno propio de
+una escuela (JP) va aparte, porque nadie más entra en él.
 
 ### b) Restricciones DURAS — lo que jamás se puede romper
 
 Se "declaran" con `model.Add(...)`. Ejemplos reales del código:
 
 ```python
-# Cada jugador como mucho en una pista
-model.Add(sum(x[p.id, c.id] for c in courts) <= 1)
+# Cada jugador como mucho en una pista, y en una sola franja del bloque
+# (nadie repite en la misma mañana)
+model.Add(sum(x[p.id, f, c.id] for f in franjas for c in courts) <= 1)
 
 # Una pista usada lleva entre 2 y su capacidad (nada de medias pistas)
 model.Add(occ >= 2 * used[c.id])
@@ -103,6 +109,7 @@ model.Maximize(
       1000 * (jugadores_asignados)     # prioridad máxima: que jueguen todos
     -    5 * (pistas_satélite_usadas)  # mejor llenar la sede central primero
     -   10 * (parejas_repetidas)       # antirrepetición / rotación
+    -  200 * (desequilibrio_franjas)   # repartir entre 8:30 y 10:30
 )
 ```
 
@@ -122,7 +129,9 @@ orden de unos `if`.
 | §05 Capacidad 2–4 / no medias pistas | **Dura** | `pairing.solve_pairing` | `2 ≤ ocupación ≤ capacidad` |
 | §05 Desbordamiento a satélites | **Blanda** | objetivo (`-5 × satélite`) | penaliza usar satélite → se usan solo si hace falta |
 | §4.3 Antirrepetición / rotación | **Blanda** | objetivo (`-10 × repetición`) + `service._recent_partners` | penaliza repetir pareja vista esta semana |
-| §03 Estados (lesión, torneo…) | **Filtro previo** | `service._available_players` | excluye del cálculo a quien no está disponible |
+| §03 Estados (lesión, torneo…) | **Filtro previo** | `service._entra_en_franja` | excluye del cálculo a quien no está disponible en esa franja |
+| Reparto entre franjas (8:30 / 10:30) | **Blanda** | objetivo (`-peso_equilibrio_franjas × desequilibrio`) | reparte a los jugadores en proporción a los entrenadores de cada franja |
+| Sin cupo semanal | **Prioridad** | `service._player_priority` | todos vienen todos los días salvo lo declarado; si no caben, entra antes quien ya se quedó fuera esta semana |
 | §4.4 Contrato de patrocinio | **Preferencia** | `service._assign_coaches` | orden de preferencia al elegir coach |
 | §02 Regenerar solo la tarde | **Alcance** | `service.generate(bloques=...)` | recalcula únicamente esos turnos |
 
@@ -148,8 +157,9 @@ flowchart LR
 
 - **Lógica secuencial → Python normal (`if`/`for` de toda la vida).** Cosas que
   **sí** son pasos ordenados y no son combinatorias:
-  - *Quién entra al cálculo* (`_available_players`): filtra ausencias/lesiones
-    antes de llamar al solver.
+  - *Quién entra al cálculo* (`_candidatos_bloque`): filtra ausencias, horario
+    y franja fija antes de llamar al solver, y dice en qué franjas del bloque
+    puede entrar cada jugador.
   - *Qué coach va a cada pista* (`_assign_coaches`): un orden de preferencia
     sencillo — patrocinador → entrenador responsable → el menos cargado
     (rotación). Aquí **sí hay `if`**, y está bien, porque es una decisión
@@ -192,7 +202,7 @@ Esto es lo que importa para mantener el producto vivo:
   **un término** al objetivo con su peso.
 - **Cambiar prioridades** → se ajusta **un número**.
 - **Cambiar quién es elegible** (estados nuevos) → se toca solo el filtro
-  `_available_players`.
+  `_entra_en_franja`.
 
 Cada regla queda **aislada y con nombre**. En un `if` gigante, cada cambio
 arriesga romper los demás criterios; aquí no.

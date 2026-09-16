@@ -9,12 +9,12 @@ from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 
 from academy.models import (
-    Entrenador, HorarioJugador, Jugador, ResponsableJugador, Turno,
+    Entrenador, HorarioJugador, Jugador, Pista, ResponsableJugador, Sede, Turno,
     VacacionesEntrenador,
 )
 from academy.pesos import errores, reparto_por_defecto
-from engine.service import _available_players, entrenador_en_franja
-from scheduling.models import Disponibilidad, Estado, Semana
+from engine.service import _available_players, entrenador_en_franja, generate
+from scheduling.models import Asignacion, Disponibilidad, Estado, Semana
 
 LUNES = date(2026, 9, 14)
 
@@ -54,25 +54,13 @@ class MotorRespetaElAltaTests(TestCase):
             },
         )
         self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
-        # Cupo semanal holgado a propósito: el motor frena a quien ya lleva su
-        # dosis, y ese freno depende del pk. Sin esto el test pasaría o fallaría
-        # según qué id le tocara al alumno, que no es lo que se está midiendo.
         self.nuevo = Jugador.objects.create(
             nombre="Alta el 16", activo=True, fecha_alta=date(2026, 9, 16),
-            sesiones_semana=10,
         )
-        self.veterano = Jugador.objects.create(
-            nombre="De siempre", activo=True, sesiones_semana=10,
-        )
+        self.veterano = Jugador.objects.create(nombre="De siempre", activo=True)
 
     def _ids(self, dia):
-        # `idx_dia` es el día que va de la semana: sin él, el freno de ritmo
-        # semanal deja fuera a media plantilla y el test mediría otra cosa.
-        return [
-            p.id for p in _available_players(
-                self.semana, dia, self.turno, {}, idx_dia=dia,
-            )
-        ]
+        return [p.id for p in _available_players(self.semana, dia, self.turno, {})]
 
     def test_no_sale_antes_de_su_alta(self):
         self.assertNotIn(self.nuevo.id, self._ids(0))  # lunes 14
@@ -132,9 +120,7 @@ class DiaDistintoTests(TestCase):
                           "hora_fin": fin, "orden": orden},
             )
         self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
-        self.jug = Jugador.objects.create(
-            nombre="Sin franja fija", activo=True, sesiones_semana=10,
-        )
+        self.jug = Jugador.objects.create(nombre="Sin franja fija", activo=True)
 
     def _donde(self, dia):
         mapa = {
@@ -145,7 +131,7 @@ class DiaDistintoTests(TestCase):
         return {
             codigo for codigo, t in self.turnos.items()
             if any(p.id == self.jug.id for p in _available_players(
-                self.semana, dia, t, {}, idx_dia=dia, horario=mapa))
+                self.semana, dia, t, {}, horario=mapa))
         }
 
     def test_la_tarde_no_deja_las_mananas_como_estaban(self):
@@ -194,7 +180,7 @@ class AusenciaEntrenadorPorFranjaTests(SimpleTestCase):
 
 class VieneAdemasTests(TestCase):
     """El entrenador apunta que un día viene a una franja que no le toca: entra
-    en esa, y solo en esa, aunque su horario, su cupo o sus topes digan que no."""
+    en esa, y solo en esa, aunque su horario o sus topes digan que no."""
 
     def setUp(self):
         self.turnos = {}
@@ -205,7 +191,7 @@ class VieneAdemasTests(TestCase):
                           "hora_fin": fin, "orden": orden},
             )
         self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
-        self.jug = Jugador.objects.create(nombre="Excepción", activo=True, sesiones_semana=4)
+        self.jug = Jugador.objects.create(nombre="Excepción", activo=True)
         # Según su horario, los martes no viene por la mañana.
         HorarioJugador.objects.create(jugador=self.jug, dia=1, entrena_manana=False)
 
@@ -216,7 +202,7 @@ class VieneAdemasTests(TestCase):
             for h in HorarioJugador.objects.all()
         }
         return any(p.id == self.jug.id for p in _available_players(
-            self.semana, 1, self.turnos[codigo], {}, idx_dia=1, horario=mapa, **extra))
+            self.semana, 1, self.turnos[codigo], {}, horario=mapa, **extra))
 
     def _apuntar(self, ambito="M2"):
         Disponibilidad.objects.create(
@@ -232,10 +218,10 @@ class VieneAdemasTests(TestCase):
         self.assertTrue(self._entra("M2"))
         self.assertFalse(self._entra("M1"))
 
-    def test_aunque_ya_haya_cubierto_cupo_y_topes(self):
+    def test_aunque_ya_haya_cubierto_sus_topes(self):
         self._apuntar("M2")
         self.assertTrue(self._entra(
-            "M2", hechas_semana={self.jug.id: 99},
+            "M2",
             hechas_bloque={(self.jug.id, "MANANA"): 5},
             hechas_dia={self.jug.id: 5},
         ))
@@ -388,3 +374,84 @@ class PorcentajesDelJugadorApiTests(TestCase):
         api.force_authenticate(usuario)
         r = api.post(self.url, self._cuerpo(90, 10), format="json")
         self.assertEqual(r.status_code, 403)
+
+
+class MananaEnteraMotorTests(TestCase):
+    """El motor decide la mañana de una vez: reparte entre 8:30 y 10:30, no
+    frena a nadie por un cupo semanal y no manda jugadores a una franja sin
+    entrenadores."""
+
+    def setUp(self):
+        Sede.objects.update(activa=False)
+        Turno.objects.update(activo=False)
+        Entrenador.objects.update(activo=False)
+        Jugador.objects.update(activo=False)
+        self.sede = Sede.objects.create(
+            nombre="Prueba", es_satelite=False, densidad_default=2, densidad_max=4,
+            orden_desbordamiento=0, activa=True,
+        )
+        for n in range(1, 5):
+            Pista.objects.create(sede=self.sede, numero=n, superficie="TIERRA", activa=True)
+        self.turnos = {}
+        for codigo, (bloque, ini, fin, orden) in DiaDistintoTests.FRANJAS.items():
+            if bloque != Turno.Bloque.MANANA:
+                continue
+            turno, _ = Turno.objects.get_or_create(
+                codigo=codigo,
+                defaults={"nombre": codigo, "bloque": bloque, "hora_inicio": ini,
+                          "hora_fin": fin, "orden": orden},
+            )
+            turno.activo = True
+            turno.save(update_fields=["activo"])
+            self.turnos[codigo] = turno
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+
+    def _jugadores(self, n):
+        return [Jugador.objects.create(nombre=f"J{i}", activo=True) for i in range(n)]
+
+    def _por_franja(self, dia=0):
+        return {
+            codigo: Asignacion.objects.filter(semana=self.semana, dia=dia, turno=t).count()
+            for codigo, t in self.turnos.items()
+        }
+
+    def test_reparte_la_manana_entre_las_dos_franjas(self):
+        Entrenador.objects.create(nombre="A")
+        Entrenador.objects.create(nombre="B")
+        self._jugadores(8)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual(self._por_franja(), {"M1": 4, "M2": 4})
+
+    def test_sin_cupo_semanal_entrena_todos_los_dias(self):
+        Entrenador.objects.create(nombre="A")
+        jugadores = self._jugadores(2)
+        generate(self.semana, dias=[0, 1, 2, 3, 4], bloques=["MANANA"])
+        for j in jugadores:
+            self.assertEqual(
+                Asignacion.objects.filter(semana=self.semana, jugador=j).count(), 5)
+
+    def test_a_una_franja_sin_entrenadores_no_va_nadie(self):
+        # El único entrenador solo da clase a las 8:30.
+        Entrenador.objects.create(nombre="A", turno_manana=self.turnos["M1"])
+        self._jugadores(4)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual(self._por_franja(), {"M1": 4, "M2": 0})
+
+    def test_quien_se_queda_fuera_entra_el_dia_siguiente(self):
+        # Una sola pista de dos y una sola franja para tres: el que se queda
+        # fuera el lunes tiene sitio el martes.
+        self.turnos.pop("M2").delete()
+        Pista.objects.filter(sede=self.sede).exclude(numero=1).delete()
+        self.sede.densidad_max = 2
+        self.sede.save(update_fields=["densidad_max"])
+        Entrenador.objects.create(nombre="A")
+        jugadores = self._jugadores(3)
+        generate(self.semana, dias=[0, 1], bloques=["MANANA"])
+        lunes = set(Asignacion.objects.filter(semana=self.semana, dia=0)
+                    .values_list("jugador_id", flat=True))
+        martes = set(Asignacion.objects.filter(semana=self.semana, dia=1)
+                     .values_list("jugador_id", flat=True))
+        fuera_el_lunes = {j.id for j in jugadores} - lunes
+        self.assertEqual(len(fuera_el_lunes), 1)
+        self.assertTrue(fuera_el_lunes <= martes)
+

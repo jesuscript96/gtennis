@@ -306,12 +306,8 @@ class ConfiguracionMotor(models.Model):
         default=10, help_text="Tiempo máx. del solver por turno (segundos)."
     )
     # --- Dosis de entrenamiento (#18) --------------------------------------
-    sesiones_semana_default = models.PositiveSmallIntegerField(
-        default=4,
-        help_text="Sesiones/semana que se intenta dar a cada jugador sin "
-                  "objetivo propio. Manda sobre el nivel: nadie repite hasta "
-                  "que todos han cubierto su cupo.",
-    )
+    # No hay cupo semanal: se da por hecho que todos vienen todos los días, y
+    # lo que no, se declara (ausencias, horario). Solo quedan los topes del día.
     sesiones_dia_max_default = models.PositiveSmallIntegerField(
         default=2, help_text="Máximo de sesiones el mismo día por jugador."
     )
@@ -337,6 +333,14 @@ class ConfiguracionMotor(models.Model):
         default=500,
         help_text="Coste de abrir una pista. Hace que el motor agrupe de dos "
                   "en dos en vez de repartir clases individuales.",
+    )
+    peso_equilibrio_franjas = models.PositiveIntegerField(
+        default=200,
+        help_text="Cuánto cuesta cada jugador de desequilibrio entre las "
+                  "franjas de un bloque (8:30 y 10:30; 14:15 y 15:30). Se "
+                  "reparten en proporción a los entrenadores de cada franja. "
+                  "Por debajo de lo que cuesta abrir una pista, para no partir "
+                  "parejas en individuales solo por cuadrar.",
     )
     peso_carga_entrenador = models.PositiveIntegerField(
         default=4,

@@ -2,7 +2,7 @@
 from django.test import SimpleTestCase
 
 from .pairing import Court, PairingInput, Player, solve_pairing
-from .service import cupo_por_horario, hay_entrenamiento
+from .service import hay_entrenamiento
 
 
 def central(n):
@@ -63,7 +63,7 @@ class PairingTests(SimpleTestCase):
         # de densidad es el jugador MARGINAL (el 3º), no el mejor de la pista.
         courts = [Court(id=1, venue_id=1, capacity=4, normal_density=2)]
 
-        # Prioridad alta (déficit de cupo): compensa apretar a 3.
+        # Prioridad alta (lleva días en el banquillo): compensa apretar a 3.
         altos = [Player(i, division=2, priority=40) for i in (1, 2, 3)]
         res = solve_pairing(
             PairingInput(players=altos, courts=courts, w_density=15_000)
@@ -217,17 +217,67 @@ class PreferenciaDivisionTests(SimpleTestCase):
             self.assertFalse({1, 2} <= set(miembros))
 
 
-class CupoPorHorarioTests(SimpleTestCase):
-    """El cupo sale del horario solo si el horario describe la semana entera."""
+def _manana(players, courts, **kw):
+    """Las dos franjas de una mañana (1 = M1, 2 = M2) decididas a la vez."""
+    return solve_pairing(PairingInput(players=players, courts=courts, franjas=[1, 2], **kw))
 
-    def test_una_excepcion_suelta_no_fija_el_cupo(self):
-        horario = {(7, 1): (None, None, True, False)}
-        self.assertNotIn(7, cupo_por_horario(horario, [0, 1, 2, 3, 4]))
 
-    def test_semana_entera_sin_la_tarde_del_miercoles(self):
-        horario = {(7, d): (None, None, True, True) for d in range(5)}
-        # Cinco mañanas y cuatro tardes: el miércoles por la tarde no abre.
-        self.assertEqual(cupo_por_horario(horario, [0, 1, 2, 3, 4])[7], 9)
+def _por_franja(res):
+    return {f: sum(len(m) for m in pistas.values()) for f, pistas in res.franjas.items()}
+
+
+class MananaEnteraTests(SimpleTestCase):
+    """La mañana se decide de una vez: los jugadores se reparten entre M1 y M2
+    en vez de llenar la primera franja y dejar la segunda vacía."""
+
+    def test_reparte_entre_las_dos_franjas(self):
+        # En la primera caben los ocho, pero se reparten cuatro y cuatro.
+        players = [Player(i, division=2) for i in range(1, 9)]
+        res = _manana(players, central(4))
+        self.assertEqual(res.unassigned, [])
+        self.assertEqual(_por_franja(res), {1: 4, 2: 4})
+
+    def test_la_franja_fija_manda_y_los_demas_compensan(self):
+        # Seis tienen que ir a la segunda: los seis libres van a la primera.
+        players = [Player(i, division=2) for i in range(1, 13)]
+        fijos = {i: {2: 1} for i in range(1, 7)}
+        res = _manana(players, central(8), franjas_de=fijos)
+        self.assertEqual(_por_franja(res), {1: 6, 2: 6})
+        segunda = {j for m in res.franjas[2].values() for j in m}
+        self.assertTrue(set(range(1, 7)) <= segunda)
+
+    def test_en_proporcion_a_los_entrenadores(self):
+        # Con el doble de entrenadores a primera hora, el doble de jugadores.
+        players = [Player(i, division=2) for i in range(1, 13)]
+        res = _manana(players, central(8), entrenadores_franja={1: 4, 2: 2})
+        self.assertEqual(_por_franja(res), {1: 8, 2: 4})
+
+    def test_nadie_repite_en_la_misma_manana(self):
+        players = [Player(i, division=2) for i in range(1, 5)]
+        res = _manana(players, central(4))
+        colocados = [j for pistas in res.franjas.values() for m in pistas.values() for j in m]
+        self.assertEqual(sorted(colocados), [1, 2, 3, 4])
+
+    def test_no_deja_a_nadie_fuera_por_equilibrar(self):
+        # Todos solo pueden a primera hora: la segunda queda vacía y entran todos.
+        players = [Player(i, division=2) for i in range(1, 8)]
+        solo_primera = {i: {1: 1} for i in range(1, 8)}
+        res = _manana(players, central(4), franjas_de=solo_primera, min_occupancy=1)
+        self.assertEqual(res.unassigned, [])
+        self.assertEqual(_por_franja(res), {1: 7, 2: 0})
+
+    def test_no_parte_una_pareja_para_cuadrar(self):
+        # Dos jugadores: una pista de dos, no una individual en cada franja.
+        players = [Player(1, division=2), Player(2, division=2)]
+        res = _manana(players, central(4), min_occupancy=1)
+        tamanos = [len(m) for pistas in res.franjas.values() for m in pistas.values()]
+        self.assertEqual(tamanos, [2])
+
+    def test_quien_viene_a_las_dos_franjas_entra_en_las_dos(self):
+        players = [Player(1, division=2), Player(2, division=2)]
+        res = _manana(players, central(2), max_franjas={1: 2}, min_occupancy=1)
+        veces = sum(1 in m for pistas in res.franjas.values() for m in pistas.values())
+        self.assertEqual(veces, 2)
 
 
 class PistasAlternasTests(SimpleTestCase):
