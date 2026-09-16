@@ -2,3 +2,6 @@ fly.toml
 .git/
 *.sqlite3
 .venv
+# Copias de seguridad locales: datos personales, nunca en la imagen
+backup_*.json
+db.sqlite3.bak-*
