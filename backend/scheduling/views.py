@@ -561,6 +561,72 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         return Response({"ok": True})
 
     @action(detail=False, methods=["post"])
+    def mover(self, request):
+        """Llevar a un jugador que ya está en el cuadrante a otra pista, aunque
+        esté vacía —o a otra franja del mismo día—.
+
+        El swap solo sirve cuando hay alguien enfrente con quien cambiarse; esto
+        es lo que permite abrir una pista vacía con gente que ya está colocada.
+        En la pista de destino manda su entrenador: si ya tiene uno, el que
+        llega entrena con él; si está vacía, la pista se queda sin entrenador
+        hasta que se le ponga uno.
+        """
+        from academy.models import Pista
+
+        from engine.service import hay_entrenamiento
+
+        asignacion_id = request.data.get("asignacion")
+        pista_id = request.data.get("pista")
+        if not asignacion_id or not pista_id:
+            return Response({"error": "Faltan parámetros."}, status=400)
+        a = Asignacion.objects.filter(pk=asignacion_id).first()
+        if a is None:
+            return Response({"error": "Esa asignación ya no existe."}, status=404)
+
+        turno = (Turno.objects.filter(pk=request.data.get("turno")).first()
+                 if request.data.get("turno") else a.turno)
+        dia = int(request.data.get("dia", a.dia))
+        if turno is None:
+            return Response({"error": "Esa franja no existe."}, status=400)
+        if not hay_entrenamiento(dia, turno.bloque):
+            return Response(
+                {"error": "Ese día no se entrena en ese bloque (el club cierra "
+                          "los miércoles por la tarde)."},
+                status=400,
+            )
+        if (a.pista_id == int(pista_id) and a.turno_id == turno.id and a.dia == dia):
+            return Response({"ok": True, "sin_cambios": True})
+
+        vecinas = Asignacion.objects.filter(
+            semana=a.semana, dia=dia, turno=turno, pista_id=pista_id
+        ).exclude(pk=a.pk)
+        if Asignacion.objects.filter(
+            semana=a.semana, dia=dia, turno=turno, jugador=a.jugador
+        ).exclude(pk=a.pk).exists():
+            return Response(
+                {"error": "El jugador ya tiene asignación en esa franja."},
+                status=409,
+            )
+        pista = Pista.objects.select_related("sede").get(pk=pista_id)
+        tope = pista.sede.densidad_max or pista.sede.densidad_default
+        if vecinas.count() >= tope:
+            return Response(
+                {"error": f"La pista está llena ({vecinas.count()}/{tope})."},
+                status=409,
+            )
+
+        a.pista = pista
+        a.turno = turno
+        a.dia = dia
+        # Una pista, un entrenador: el que llega se pone con el de la pista, y
+        # si la pista estaba vacía se queda sin entrenador.
+        primera = vecinas.first()
+        a.entrenador_id = primera.entrenador_id if primera else None
+        a.manual = True
+        a.save()
+        return Response(AsignacionSerializer(a).data)
+
+    @action(detail=False, methods=["post"])
     def manual_assign(self, request):
         """Asignar manualmente un jugador a una pista/turno desde el panel.
         Crea una Asignacion con manual=True. Respeta capacidad de la pista
@@ -618,12 +684,18 @@ class AsignacionViewSet(viewsets.ModelViewSet):
             int(jugador_id),
             turno,
         )
+        # Una pista, un entrenador: quien entra en una pista que ya tiene
+        # gente entrena con el suyo.
+        vecina = Asignacion.objects.filter(
+            semana_id=semana_id, dia=dia, turno_id=turno_id, pista_id=pista_id
+        ).first()
         asig = Asignacion.objects.create(
             semana_id=semana_id,
             dia=dia,
             turno_id=turno_id,
             pista_id=pista_id,
             jugador_id=jugador_id,
+            entrenador_id=vecina.entrenador_id if vecina else None,
             estado=estado,
             manual=True,
         )
@@ -645,7 +717,9 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         ).update(entrenador_id=entrenador_id, manual=True)
         if n == 0:
             return Response(
-                {"error": "La pista no tiene jugadores en ese turno."}, status=409
+                {"error": "La pista está vacía: coloca primero a los jugadores "
+                          "y después al entrenador."},
+                status=409,
             )
         return Response({"ok": True, "actualizadas": n})
 

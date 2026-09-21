@@ -15,6 +15,7 @@ import {
   despublicarSemana,
   swapAsignacion,
   manualAssign,
+  moverAsignacion,
   setCoach,
   removeAsignacion,
 } from "../../../lib/api";
@@ -119,6 +120,9 @@ function Inner() {
       const s = readDrag(e);
       if (!s) return;
       if (s.k === "bj") op(() => manualAssign({ jugador_id: s.jugador, semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
+      // Traer a alguien de otra pista: así se abre una pista vacía sin tener
+      // que intercambiarlo con nadie.
+      else if (s.k === "cj") op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
       else if (s.k === "be") op(() => setCoach({ semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista, entrenador_id: s.entrenador }));
     };
   }
@@ -162,7 +166,10 @@ function Inner() {
     const firstPlayer = (items || []).find((a) => a.jugador_nombre);
     const coachAsig = items && items[0] && items[0].entrenador_nombre ? items[0].id : null;
     if (s.k === "bj") op(() => manualAssign({ jugador_id: s.jugador, ...ctx }));
-    else if (s.k === "cj") { if (firstPlayer && firstPlayer.id !== s.asignacion) op(() => swapAsignacion(s.asignacion, firstPlayer.id, "jugador")); }
+    else if (s.k === "cj") {
+      if (firstPlayer && firstPlayer.id !== s.asignacion) op(() => swapAsignacion(s.asignacion, firstPlayer.id, "jugador"));
+      else if (!firstPlayer) op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
+    }
     else if (s.k === "be") op(() => setCoach({ ...ctx, entrenador_id: s.entrenador }));
     else if (s.k === "cc") { if (coachAsig && coachAsig !== s.asignacion) op(() => swapAsignacion(s.asignacion, coachAsig, "entrenador")); }
     setSel(null);
@@ -534,7 +541,7 @@ function Inner() {
       </div>
 
       {error && <p className="err">{error}</p>}
-      <p className="dnd-hint">Arrastra jugadores/entrenadores entre pistas para intercambiarlos, desde el banquillo a una pista para colocarlos, o de una pista al banquillo para quitarlos.</p>
+      <p className="dnd-hint">Arrastra jugadores/entrenadores entre pistas para intercambiarlos, desde el banquillo a una pista para colocarlos, o de una pista al banquillo para quitarlos. Para abrir una pista vacía, suelta ahí a quien quieras —del banquillo o de otra pista— y después arrástrale el entrenador.</p>
 
       <div className="dnd-layout">
         <div className="dnd-main">

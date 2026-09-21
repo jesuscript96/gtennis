@@ -120,6 +120,8 @@ export const swapAsignacion = (a, b, campo) =>
   req("/asignaciones/swap/", { method: "POST", body: JSON.stringify({ a, b, campo }) });
 export const manualAssign = (body) =>
   req("/asignaciones/manual_assign/", { method: "POST", body: JSON.stringify(body) });
+export const moverAsignacion = (body) =>
+  req("/asignaciones/mover/", { method: "POST", body: JSON.stringify(body) });
 export const setCoach = (body) =>
   req("/asignaciones/set_coach/", { method: "POST", body: JSON.stringify(body) });
 export const removeAsignacion = (id) =>
