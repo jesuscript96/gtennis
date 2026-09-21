@@ -713,8 +713,11 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     report = {"dias": {}, "overflow": [], "unassigned": []}
 
     # --- Entrenadores disponibles (#10/#11) y con quién entrena cada alumno --
+    # Los de reserva no entran en el reparto: están para ponerlos a mano.
     all_coaches = list(
-        Entrenador.objects.filter(activo=True, disponible_semana=True)
+        Entrenador.objects.filter(
+            activo=True, disponible_semana=True, reserva=False
+        )
     )
     pesos = pesos_de_entrenamiento()
 

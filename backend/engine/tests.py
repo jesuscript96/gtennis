@@ -425,6 +425,21 @@ class TierraAntesQueResinaTests(SimpleTestCase):
         self.assertEqual(res.unassigned, [])
 
 
+class EntrenadorDeReservaTests(SimpleTestCase):
+    """Quien está de reserva no entra en el reparto automático; se le pone a
+    mano desde el cuadrante."""
+
+    def test_el_motivo_no_habla_de_la_reserva(self):
+        # La reserva se filtra antes, al elegir a los candidatos: para el panel
+        # sigue estando libre y se le puede arrastrar a una pista.
+        from academy.models import Entrenador, Turno as T
+        from engine.service import motivo_no_disponible
+
+        c = Entrenador(nombre="Sergio", disponible_semana=True, reserva=True)
+        turno = T(codigo="M1", bloque=T.Bloque.MANANA)
+        self.assertIsNone(motivo_no_disponible(c, 0, turno, None, {}, {}, {}))
+
+
 class PistasAlternasTests(SimpleTestCase):
     """Con menos entrenadores que pistas, cada pista sin entrenador tiene uno
     al lado. El ejemplo de Iván: ocho pistas y cinco entrenadores, 1-3-4-6-7."""

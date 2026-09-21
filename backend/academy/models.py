@@ -126,6 +126,15 @@ class Entrenador(models.Model):
     disponibilidad_notas = models.CharField(max_length=200, blank=True)
     # Manual fallback button (PRD §06): overrides Sésame for the current week.
     disponible_semana = models.BooleanField(default=True)
+    # Entrenador de refuerzo: no entra en el reparto automático, pero sigue en
+    # el banquillo del cuadrante para meterlo en una pista a mano cuando hace
+    # falta. Es lo de Sergio, Iván y Jorge: están, pero no se les da grupo.
+    reserva = models.BooleanField(
+        default=False,
+        verbose_name="Solo a mano (banquillo)",
+        help_text="El motor no le asigna pistas; se le coloca a mano desde el "
+                  "cuadrante.",
+    )
     # Photo in EU object storage (S3-compatible); signed-URL ref.
     foto_url = models.URLField(blank=True)
 

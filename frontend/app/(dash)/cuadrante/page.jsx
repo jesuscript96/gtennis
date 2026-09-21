@@ -626,9 +626,9 @@ function Inner() {
                           <div className="bench-chip dnd" draggable
                             onDragStart={(e) => setDrag(e, { k: "be", entrenador: c.id })}
                             onClick={() => pick({ k: "be", entrenador: c.id })}
-                            title={`${c.nombre} · arrastra a una pista`}>
+                            title={`${c.nombre}${c.reserva ? " · de banquillo" : ""} · arrastra a una pista`}>
                             <Avatar nombre={c.nombre} fotoUrl={c.foto_url} kind="coach" />
-                            <span>{c.nombre}</span>
+                            <span>{c.nombre}{c.reserva ? " ·" : ""}</span>
                           </div>
                         </td>
                         {data.turnos.map((t) => {

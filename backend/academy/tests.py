@@ -430,6 +430,16 @@ class MananaEnteraMotorTests(TestCase):
             self.assertEqual(
                 Asignacion.objects.filter(semana=self.semana, jugador=j).count(), 5)
 
+    def test_el_de_reserva_no_recibe_pistas(self):
+        # Está disponible, pero el motor no le da grupo: es de banquillo.
+        Entrenador.objects.create(nombre="Sergio", reserva=True)
+        self._jugadores(4)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual(Asignacion.objects.filter(
+            semana=self.semana, entrenador__nombre="Sergio").count(), 0)
+        # Y sin nadie más, las pistas salen sin entrenador en vez de con él.
+        self.assertTrue(Asignacion.objects.filter(semana=self.semana, entrenador=None).exists())
+
     def test_a_una_franja_sin_entrenadores_no_va_nadie(self):
         # El único entrenador solo da clase a las 8:30.
         Entrenador.objects.create(nombre="A", turno_manana=self.turnos["M1"])

@@ -162,6 +162,7 @@ export const RESOURCES = {
       { key: "turnos_display", label: "Franjas" },
       { key: "activo", label: "Activo", type: "bool" },
       { key: "disponible_semana", label: "Disp. semana", type: "bool" },
+      { key: "reserva", label: "Banquillo", type: "bool" },
     ],
     fields: [
       { name: "nombre", label: "Nombre", type: "text", required: true },
@@ -169,6 +170,7 @@ export const RESOURCES = {
       { name: "turno_tarde", label: "Da clase por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },
       { name: "disponible_semana", label: "Disponible esta semana (fallback manual)", type: "bool", default: true },
+      { name: "reserva", label: "Solo a mano (banquillo)", type: "bool", help: "El motor no le da pistas. Sigue en la tabla de entrenadores del cuadrante para colocarlo a mano cuando haga falta." },
       { name: "activo", label: "Activo", type: "bool", default: true },
     ],
   },
