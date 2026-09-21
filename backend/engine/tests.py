@@ -280,6 +280,53 @@ class MananaEnteraTests(SimpleTestCase):
         self.assertEqual(veces, 2)
 
 
+class VecindadPropiaTests(SimpleTestCase):
+    """Hay alumnos que solo entrenan con su división o con la de encima, aunque
+    el club admita una horquilla más ancha. Es regla dura."""
+
+    def _juntos(self, res):
+        return [sorted(m) for m in res.courts.values()]
+
+    def test_con_la_de_encima_si(self):
+        # Victoria (7) solo sube: con la 6 comparte pista.
+        victoria = Player(1, division=7, div_arriba=1, div_abajo=0)
+        res = solve_pairing(PairingInput(
+            players=[victoria, Player(2, division=6)], courts=central(2), neighbor_span=2))
+        self.assertEqual(self._juntos(res), [[1, 2]])
+
+    def test_con_la_de_debajo_no(self):
+        # La 8 le valdría al club (±2) pero a ella no: nadie entra.
+        victoria = Player(1, division=7, div_arriba=1, div_abajo=0)
+        res = solve_pairing(PairingInput(
+            players=[victoria, Player(3, division=8)], courts=central(2), neighbor_span=2))
+        self.assertEqual(self._juntos(res), [])
+        self.assertEqual(sorted(res.unassigned), [1, 3])
+
+    def test_manda_la_regla_del_mas_estricto(self):
+        # Al de la 6 no le restringe nadie, pero la de la 7 solo sube.
+        victoria = Player(1, division=7, div_arriba=1, div_abajo=0)
+        res = solve_pairing(PairingInput(
+            players=[victoria, Player(2, division=8), Player(3, division=9)],
+            courts=central(2), neighbor_span=2))
+        for miembros in res.courts.values():
+            self.assertNotIn(1, miembros)
+
+    def test_solo_su_division(self):
+        solitario = Player(1, division=5, div_arriba=0, div_abajo=0)
+        res = solve_pairing(PairingInput(
+            players=[solitario, Player(2, division=4)], courts=central(2), neighbor_span=2))
+        self.assertEqual(self._juntos(res), [])
+        res = solve_pairing(PairingInput(
+            players=[solitario, Player(2, division=5)], courts=central(2), neighbor_span=2))
+        self.assertEqual(self._juntos(res), [[1, 2]])
+
+    def test_sin_regla_propia_manda_la_del_club(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(1, division=5), Player(2, division=7)],
+            courts=central(2), neighbor_span=2))
+        self.assertEqual(self._juntos(res), [[1, 2]])
+
+
 class PistasAlternasTests(SimpleTestCase):
     """Con menos entrenadores que pistas, cada pista sin entrenador tiene uno
     al lado. El ejemplo de Iván: ocho pistas y cinco entrenadores, 1-3-4-6-7."""

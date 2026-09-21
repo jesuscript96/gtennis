@@ -178,6 +178,16 @@ def entrenador_en_franja(entrenador, turno):
     return fijo is None or fijo == turno.id
 
 
+# Horquilla de divisiones de cada opción de la ficha: (por encima, por debajo).
+# Vacío = la del club.
+HORQUILLA_VECINDAD = {
+    "SOLO": (0, 0),
+    "ARRIBA": (1, 0),
+    "ABAJO": (0, 1),
+    "AMBAS": (1, 1),
+}
+
+
 def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
     """El `Player` del solver para la ficha `j` ese día."""
     coach = next(iter(sponsors.get(j.id, set())), None)
@@ -187,6 +197,7 @@ def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
         if (desde is None or fecha >= desde) and (hasta is None or fecha <= hasta):
             pref = sup
             break
+    arriba, abajo = HORQUILLA_VECINDAD.get(j.vecindad, (None, None))
     return Player(
         division_pref={"ARRIBA": -1, "ABAJO": 1}.get(j.pareja_division, 0),
         id=j.id,
@@ -195,6 +206,8 @@ def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
         priority=priority,
         surface_pref=pref,
         solo_central=solo_central,
+        div_arriba=arriba,
+        div_abajo=abajo,
     )
 
 

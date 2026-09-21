@@ -90,6 +90,13 @@ export const RESOURCES = {
       { name: "entrenador_responsable", label: "Entrenador responsable (principal)", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre },
       { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO },
       { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO },
+      { name: "vecindad", label: "Con qué divisiones entrena", type: "select", options: [
+        { value: "CLUB", label: "La del club (la horquilla general)" },
+        { value: "SOLO", label: "Solo su división" },
+        { value: "ARRIBA", label: "Su división y la de encima (D−1)" },
+        { value: "ABAJO", label: "Su división y la de debajo (D+1)" },
+        { value: "AMBAS", label: "Su división y las dos vecinas (±1)" },
+      ], help: "Regla dura: nunca se rompe. Sirve para el alumno que solo entrena con su nivel o con el de encima. La D1 es la más alta." },
       // La D1 es la división más alta: «hacia arriba» es con la de número menor.
       { name: "pareja_division", label: "Se empareja preferentemente", type: "select", options: [
         { value: "ARRIBA", label: "Hacia arriba · con la división mejor (D−1)" },

@@ -48,6 +48,11 @@ class Player:
     # número menor (la D1 es la más alta, así que eso es «hacia arriba»),
     # +1 = hacia abajo, 0 = le da igual.
     division_pref: int = 0
+    # Horquilla propia de divisiones, cuando la suya es más estrecha que la del
+    # club: cuántas admite por encima (número menor) y por debajo (número
+    # mayor). None = la del club. Es regla dura, como la vecindad general.
+    div_arriba: int | None = None
+    div_abajo: int | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +138,13 @@ def _normalise(a: int, b: int) -> tuple[int, int]:
     return (a, b) if a <= b else (b, a)
 
 
+def _horquilla(p: Player, span: int) -> tuple[int, int]:
+    """Divisiones que admite `p` por encima y por debajo de la suya."""
+    ancho = max(1, span)
+    return (ancho if p.div_arriba is None else p.div_arriba,
+            ancho if p.div_abajo is None else p.div_abajo)
+
+
 def _incompatible(
     p: Player, q: Player, vetoes: set[tuple[int, int]],
     apply_neighbor: bool = True, span: int = 1,
@@ -140,7 +152,16 @@ def _incompatible(
     if _normalise(p.id, q.id) in vetoes:
         return True
     if apply_neighbor and p.division is not None and q.division is not None:
-        return abs(p.division - q.division) > max(1, span)
+        # Cada uno tiene su horquilla y manda la más estrecha: si a uno de los
+        # dos no le vale el otro, no comparten pista. La D1 es la más alta, así
+        # que una diferencia positiva quiere decir que `q` es de nivel más bajo.
+        salto = q.division - p.division
+        p_arriba, p_abajo = _horquilla(p, span)
+        q_arriba, q_abajo = _horquilla(q, span)
+        if salto > 0 and (salto > p_abajo or salto > q_arriba):
+            return True
+        if salto < 0 and (-salto > p_arriba or -salto > q_abajo):
+            return True
     return False
 
 

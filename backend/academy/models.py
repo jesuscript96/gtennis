@@ -347,9 +347,28 @@ class Jugador(models.Model):
         limit_choices_to={"codigo__in": ["T1", "T2"]},
         help_text="T1 (14:15) o T2 (15:30). Vacío = cualquiera.",
     )
-    # La regla de vecindad (±1 división) no cambia; esto decide hacia qué lado
-    # tira cuando puede elegir. OJO al sentido: la División 1 es la MÁS ALTA,
-    # así que «hacia arriba» es emparejarle con la división de número menor.
+    # Con qué divisiones comparte pista. El club admite una horquilla (±2 hoy,
+    # `ConfiguracionMotor.vecindad_max`), pero hay alumnos que solo entrenan con
+    # su nivel o con el de encima. Esto es regla DURA —no se rompe nunca—, al
+    # contrario que `pareja_division`, que solo desempata. La D1 es la más alta,
+    # así que «la de encima» es la de número menor.
+    class Vecindad(models.TextChoices):
+        CLUB = "CLUB", "La del club"
+        SOLO = "SOLO", "Solo su división"
+        ARRIBA = "ARRIBA", "Su división y la de encima (D−1)"
+        ABAJO = "ABAJO", "Su división y la de debajo (D+1)"
+        AMBAS = "AMBAS", "Su división y las dos vecinas (±1)"
+
+    vecindad = models.CharField(
+        max_length=6, choices=Vecindad.choices, default=Vecindad.CLUB,
+        verbose_name="Con qué divisiones entrena",
+        help_text="Regla dura. «La del club» usa la horquilla general; el resto "
+                  "la estrecha solo para este alumno.",
+    )
+
+    # La regla de vecindad no cambia; esto decide hacia qué lado tira cuando
+    # puede elegir. OJO al sentido: la División 1 es la MÁS ALTA, así que
+    # «hacia arriba» es emparejarle con la división de número menor.
     class ParejaDivision(models.TextChoices):
         ARRIBA = "ARRIBA", "Hacia arriba (división mejor, D-1)"
         ABAJO = "ABAJO", "Hacia abajo (división de debajo, D+1)"
