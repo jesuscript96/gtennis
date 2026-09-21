@@ -36,8 +36,13 @@ async function req(path, opts = {}) {
     try {
       res = await fetch(`${BASE}${path}`, { ...opts, headers, cache: "no-store" });
     } catch (e) {
-      if (attempt < RETRY_DELAYS.length) { await sleep(RETRY_DELAYS[attempt]); continue; }
-      throw new Error("No se pudo conectar con el servidor. Reinténtalo en unos segundos.");
+      // Solo se reintenta lo que no cambia nada. Reintentar un POST que se
+      // cortó a medias relanzaba el trabajo en el servidor —generar una semana
+      // se disparaba varias veces a la vez— y cada intento moría igual.
+      if (safe && attempt < RETRY_DELAYS.length) { await sleep(RETRY_DELAYS[attempt]); continue; }
+      throw new Error(safe
+        ? "No se pudo conectar con el servidor. Reinténtalo en unos segundos."
+        : "Se cortó la conexión con el servidor. Si era una operación larga (rehacer la semana), puede haber terminado igualmente: recarga antes de repetirla.");
     }
     const transient = res.status >= 502 || (safe && res.status >= 500);
     if (transient && attempt < RETRY_DELAYS.length) { await sleep(RETRY_DELAYS[attempt]); continue; }

@@ -18,7 +18,10 @@ console_command = '/code/manage.py shell'
   DEBUG = 'false'
 
 [processes]
-  app = 'gunicorn --bind :8000 --workers 2 config.wsgi'
+  # Generar una semana entera tarda minuto y medio: con los 30 s por defecto,
+  # gunicorn mataba al trabajador a media faena y el navegador veía la
+  # conexión caída.
+  app = 'gunicorn --bind :8000 --workers 2 --timeout 600 --graceful-timeout 60 config.wsgi'
   celery = 'celery -A config worker --loglevel=INFO'
 
 [http_service]
