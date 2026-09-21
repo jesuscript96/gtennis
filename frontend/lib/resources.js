@@ -86,6 +86,10 @@ export const RESOURCES = {
       { name: "escuela", label: "Escuela", type: "fk", endpoint: "escuelas", optionLabel: (o) => o.nombre, help: "Alto Rendimiento, Junior Program o Escuela. Se puede cambiar en cualquier momento." },
       // La edad se calcula sola a partir de la fecha; no se teclea.
       { name: "fecha_nacimiento", label: "Fecha de nacimiento", type: "date", help: "La edad se calcula sola." },
+      { name: "sexo", label: "Chico o chica", type: "select", options: [
+        { value: "CHICO", label: "Chico" },
+        { value: "CHICA", label: "Chica" },
+      ], help: "Un chico no comparte pista con una chica de división más baja. «—» = sin declarar, no se le aplica la regla." },
       { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel },
       { name: "entrenador_responsable", label: "Entrenador responsable (principal)", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre },
       { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO },

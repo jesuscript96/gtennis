@@ -327,6 +327,70 @@ class VecindadPropiaTests(SimpleTestCase):
         self.assertEqual(self._juntos(res), [[1, 2]])
 
 
+class ChicosYChicasTests(SimpleTestCase):
+    """Un chico no comparte pista con una chica de nivel más bajo. Al revés sí:
+    ella puede entrenar con chicos de su nivel o de nivel más bajo."""
+
+    def _juntos(self, res):
+        return [sorted(m) for m in res.courts.values()]
+
+    def test_el_chico_no_baja_con_una_chica(self):
+        chico = Player(1, division=2, sexo="CHICO")
+        chica = Player(2, division=3, sexo="CHICA")
+        res = solve_pairing(PairingInput(players=[chico, chica], courts=central(2)))
+        self.assertEqual(self._juntos(res), [])
+
+    def test_la_chica_si_puede_bajar_con_un_chico(self):
+        chica = Player(1, division=2, sexo="CHICA")
+        chico = Player(2, division=3, sexo="CHICO")
+        res = solve_pairing(PairingInput(players=[chica, chico], courts=central(2)))
+        self.assertEqual(self._juntos(res), [[1, 2]])
+
+    def test_del_mismo_nivel_si(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(1, division=3, sexo="CHICO"), Player(2, division=3, sexo="CHICA")],
+            courts=central(2)))
+        self.assertEqual(self._juntos(res), [[1, 2]])
+
+    def test_sin_declarar_no_se_aplica(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(1, division=2, sexo="CHICO"), Player(2, division=3)],
+            courts=central(2)))
+        self.assertEqual(self._juntos(res), [[1, 2]])
+
+
+class EdadesTests(SimpleTestCase):
+    """Los críos entrenan con críos: hasta 14 años, dos de diferencia como
+    mucho; de 15 a 18, tres. Manda el más estricto de los dos."""
+
+    def _juntos(self, a, b):
+        res = solve_pairing(PairingInput(players=[a, b], courts=central(2)))
+        return any({1, 2} <= set(m) for m in res.courts.values())
+
+    def test_doce_y_catorce_si(self):
+        self.assertTrue(self._juntos(Player(1, division=3, edad=12), Player(2, division=3, edad=14)))
+
+    def test_doce_y_quince_no(self):
+        self.assertFalse(self._juntos(Player(1, division=3, edad=12), Player(2, division=3, edad=15)))
+
+    def test_quince_y_dieciocho_si(self):
+        self.assertTrue(self._juntos(Player(1, division=3, edad=15), Player(2, division=3, edad=18)))
+
+    def test_el_menor_manda_aunque_el_otro_sea_mayor(self):
+        # El de 19 no tiene tope, pero el de 16 sí: cuatro años son demasiados.
+        self.assertFalse(self._juntos(Player(1, division=3, edad=16), Player(2, division=3, edad=20)))
+
+    def test_entre_adultos_no_hay_tope(self):
+        self.assertTrue(self._juntos(Player(1, division=3, edad=22), Player(2, division=3, edad=30)))
+
+    def test_sin_edad_no_se_aplica(self):
+        self.assertTrue(self._juntos(Player(1, division=3, edad=12), Player(2, division=3)))
+
+    def test_una_edad_imposible_cuenta_como_no_declarada(self):
+        # Un alumno con "1 año" es un error de tecleo, no un bebé.
+        self.assertTrue(self._juntos(Player(1, division=3, edad=1), Player(2, division=3, edad=17)))
+
+
 class PistasAlternasTests(SimpleTestCase):
     """Con menos entrenadores que pistas, cada pista sin entrenador tiene uno
     al lado. El ejemplo de Iván: ocho pistas y cinco entrenadores, 1-3-4-6-7."""

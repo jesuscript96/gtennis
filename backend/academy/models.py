@@ -347,6 +347,19 @@ class Jugador(models.Model):
         limit_choices_to={"codigo__in": ["T1", "T2"]},
         help_text="T1 (14:15) o T2 (15:30). Vacío = cualquiera.",
     )
+    # Chico o chica. Hace falta para una regla dura del club: un chico no
+    # entrena con una chica de nivel más bajo. Vacío = sin declarar, y entonces
+    # la regla no se le aplica.
+    class Sexo(models.TextChoices):
+        CHICO = "CHICO", "Chico"
+        CHICA = "CHICA", "Chica"
+
+    sexo = models.CharField(
+        max_length=5, choices=Sexo.choices, blank=True, default="",
+        help_text="Un chico no comparte pista con una chica de división más "
+                  "baja. Vacío = sin declarar, no se le aplica la regla.",
+    )
+
     # Con qué divisiones comparte pista. El club admite una horquilla (±2 hoy,
     # `ConfiguracionMotor.vecindad_max`), pero hay alumnos que solo entrenan con
     # su nivel o con el de encima. Esto es regla DURA —no se rompe nunca—, al

@@ -53,6 +53,11 @@ class Player:
     # mayor). None = la del club. Es regla dura, como la vecindad general.
     div_arriba: int | None = None
     div_abajo: int | None = None
+    # "CHICO"/"CHICA"; None = sin declarar. Un chico no comparte pista con una
+    # chica de división más baja.
+    sexo: str | None = None
+    # Años. Los menores solo entrenan con gente de edad parecida (`BANDAS_EDAD`).
+    edad: int | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +143,30 @@ def _normalise(a: int, b: int) -> tuple[int, int]:
     return (a, b) if a <= b else (b, a)
 
 
+# Diferencia de edad que admite cada franja de edad: (desde, hasta, años). Los
+# críos entrenan con críos — de 10 a 14 años, como mucho dos años de
+# diferencia; de 15 a 18, tres. Fuera de esas edades el club no pone tope.
+BANDAS_EDAD = ((10, 12, 2), (13, 14, 2), (15, 18, 3))
+# Por debajo de esto la edad no es de un alumno, es un error de tecleo: se
+# trata como si no estuviera declarada en vez de dejar a nadie sin compañero.
+EDAD_MINIMA_CREIBLE = 8
+
+
+def _edad_creible(edad: int | None) -> int | None:
+    """La edad, o None si no la hay o no se la cree nadie."""
+    return edad if edad is not None and edad >= EDAD_MINIMA_CREIBLE else None
+
+
+def _tope_edad(edad: int | None) -> int | None:
+    """Años de diferencia que admite alguien de esta edad. None = sin tope."""
+    if edad is None:
+        return None
+    for desde, hasta, tope in BANDAS_EDAD:
+        if desde <= edad <= hasta:
+            return tope
+    return None
+
+
 def _horquilla(p: Player, span: int) -> tuple[int, int]:
     """Divisiones que admite `p` por encima y por debajo de la suya."""
     ancho = max(1, span)
@@ -161,6 +190,20 @@ def _incompatible(
         if salto > 0 and (salto > p_abajo or salto > q_arriba):
             return True
         if salto < 0 and (-salto > p_arriba or -salto > q_abajo):
+            return True
+        # Un chico no entrena con una chica de nivel más bajo (división de
+        # número mayor). Al revés sí: ella puede entrenar con chicos de su
+        # nivel o de nivel más bajo.
+        if p.sexo and q.sexo and p.sexo != q.sexo:
+            chico, chica = (p, q) if p.sexo == "CHICO" else (q, p)
+            if chica.division > chico.division:
+                return True
+    # Edad: manda el más estricto de los dos, y hacen falta las dos edades para
+    # poder compararlas.
+    edad_p, edad_q = _edad_creible(p.edad), _edad_creible(q.edad)
+    if edad_p is not None and edad_q is not None:
+        topes = [t for t in (_tope_edad(edad_p), _tope_edad(edad_q)) if t is not None]
+        if topes and abs(edad_p - edad_q) > min(topes):
             return True
     return False
 

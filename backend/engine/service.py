@@ -208,6 +208,8 @@ def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
         solo_central=solo_central,
         div_arriba=arriba,
         div_abajo=abajo,
+        sexo=j.sexo or None,
+        edad=j.edad,
     )
 
 
