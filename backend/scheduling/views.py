@@ -670,6 +670,90 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         return Response(AsignacionSerializer(a).data)
 
     @action(detail=False, methods=["post"])
+    def mover_pista(self, request):
+        """Llevar una pista entera —jugadores y entrenador— a otra.
+
+        Si la de destino está vacía se muda; si tiene gente, se intercambian
+        las dos. Sirve para reordenar el cuadrante sin tener que arrastrar de
+        uno en uno.
+        """
+        from django.db import transaction
+
+        from academy.models import Pista
+        from engine.service import hay_entrenamiento
+
+        semana_id = request.data.get("semana")
+        dia = request.data.get("dia")
+        turno_id = request.data.get("turno")
+        desde_pista = request.data.get("desde_pista")
+        pista_id = request.data.get("pista")
+        desde_dia = int(request.data.get("desde_dia", dia if dia is not None else 0))
+        desde_turno = request.data.get("desde_turno") or turno_id
+        if not all([semana_id, dia is not None, turno_id, desde_pista, pista_id]):
+            return Response({"error": "Faltan parámetros."}, status=400)
+        dia = int(dia)
+        if (str(desde_pista), str(desde_turno), desde_dia) == (str(pista_id), str(turno_id), dia):
+            return Response({"ok": True, "sin_cambios": True})
+
+        turno = Turno.objects.filter(pk=turno_id).first()
+        if turno is None:
+            return Response({"error": "Esa franja no existe."}, status=400)
+        if not hay_entrenamiento(dia, turno.bloque):
+            return Response(
+                {"error": "Ese día no se entrena en ese bloque (el club cierra "
+                          "los miércoles por la tarde)."},
+                status=400,
+            )
+
+        origen = list(Asignacion.objects.filter(
+            semana_id=semana_id, dia=desde_dia, turno_id=desde_turno, pista_id=desde_pista))
+        destino = list(Asignacion.objects.filter(
+            semana_id=semana_id, dia=dia, turno_id=turno_id, pista_id=pista_id))
+        if not origen:
+            return Response({"error": "La pista de origen está vacía."}, status=409)
+
+        def caben(filas, pista_pk):
+            pista = Pista.objects.select_related("sede").get(pk=pista_pk)
+            return len(filas) <= (pista.sede.densidad_max or pista.sede.densidad_default)
+
+        if not caben(origen, pista_id) or (destino and not caben(destino, desde_pista)):
+            return Response(
+                {"error": "No caben: las pistas tienen capacidades distintas."},
+                status=409,
+            )
+        # Cambiar de franja puede chocar con el jugador que ya esté en ella.
+        if (str(desde_turno), desde_dia) != (str(turno_id), dia):
+            jug_origen = {a.jugador_id for a in origen}
+            jug_destino = {a.jugador_id for a in destino}
+            choca = Asignacion.objects.filter(
+                semana_id=semana_id, dia=dia, turno_id=turno_id, jugador_id__in=jug_origen
+            ).exclude(pista_id=pista_id).exists() or Asignacion.objects.filter(
+                semana_id=semana_id, dia=desde_dia, turno_id=desde_turno,
+                jugador_id__in=jug_destino,
+            ).exclude(pista_id=desde_pista).exists()
+            if choca:
+                return Response(
+                    {"error": "Alguno de esos jugadores ya entrena en la otra franja."},
+                    status=409,
+                )
+
+        with transaction.atomic():
+            # El destino se aparta primero: las dos pistas pueden cruzarse.
+            for a in destino:
+                a.pista_id = desde_pista
+                a.dia = desde_dia
+                a.turno_id = desde_turno
+                a.manual = True
+                a.save()
+            for a in origen:
+                a.pista_id = pista_id
+                a.dia = dia
+                a.turno_id = turno_id
+                a.manual = True
+                a.save()
+        return Response({"ok": True, "movidas": len(origen), "intercambiadas": len(destino)})
+
+    @action(detail=False, methods=["post"])
     def manual_assign(self, request):
         """Asignar manualmente un jugador a una pista/turno desde el panel.
         Crea una Asignacion con manual=True. Respeta capacidad de la pista

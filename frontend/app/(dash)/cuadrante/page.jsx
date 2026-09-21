@@ -16,6 +16,7 @@ import {
   swapAsignacion,
   manualAssign,
   moverAsignacion,
+  moverPista,
   setCoach,
   removeAsignacion,
 } from "../../../lib/api";
@@ -127,6 +128,9 @@ function Inner() {
       // Entrenador arrastrado desde otra pista a una celda sin entrenador: se
       // traslada, no se duplica.
       else if (s.k === "cc") op(() => setCoach({ semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista, entrenador_id: s.entrenadorId, desde_pista: s.pista, desde_turno: s.turno, desde_dia: s.dia }));
+      // Pista entera: se muda si la de destino está vacía, y si no, se
+      // intercambian las dos.
+      else if (s.k === "pista") op(() => moverPista({ semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista, desde_pista: s.pista, desde_turno: s.turno, desde_dia: s.dia }));
     };
   }
   // Con hueco en la pista de destino se mueve —y la de origen se queda sin
@@ -160,7 +164,11 @@ function Inner() {
   function onDropBench(e) {
     e.preventDefault(); overOff(e);
     const s = readDrag(e);
-    if (s && s.k === "cj") op(() => removeAsignacion(s.asignacion));
+    if (!s) return;
+    if (s.k === "cj") op(() => removeAsignacion(s.asignacion));
+    // Un entrenador al banquillo se queda sin pista, sin tener que cambiarlo
+    // por otro.
+    else if (s.k === "cc") op(() => setCoach({ semana: semanaId, dia: s.dia, turno: s.turno, pista: s.pista, entrenador_id: null }));
   }
 
   // ----- Interacción táctil (móvil): tocar origen → tocar destino -----
@@ -178,7 +186,8 @@ function Inner() {
     const firstPlayer = (items || []).find((a) => a.jugador_nombre);
     const coachAsig = items && items[0] && items[0].entrenador_nombre ? items[0].id : null;
     const ocupacion = (items || []).filter((a) => a.jugador_nombre).length;
-    if (s.k === "bj") op(() => manualAssign({ jugador_id: s.jugador, ...ctx }));
+    if (s.k === "pista") op(() => moverPista({ ...ctx, desde_pista: s.pista, desde_turno: s.turno, desde_dia: s.dia }));
+    else if (s.k === "bj") op(() => manualAssign({ jugador_id: s.jugador, ...ctx }));
     else if (s.k === "cj") {
       if (hayHueco(ocupacion, densidad)) op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
       else if (firstPlayer && firstPlayer.id !== s.asignacion) op(() => swapAsignacion(s.asignacion, firstPlayer.id, "jugador"));
@@ -192,6 +201,7 @@ function Inner() {
   }
   function placeOnBench() {
     if (sel && sel.k === "cj") op(() => removeAsignacion(sel.asignacion));
+    else if (sel && sel.k === "cc") op(() => setCoach({ semana: semanaId, dia: sel.dia, turno: sel.turno, pista: sel.pista, entrenador_id: null }));
     setSel(null);
   }
 
@@ -352,7 +362,11 @@ function Inner() {
                   onClick={() => sel && placeOnCell(ctx, items, sede.densidad_default)}
                 >
                   <div className="mcell-head">
-                    <span className="mcell-pista">P{p.numero}</span>
+                    <span className="mcell-pista" onClick={(e) => {
+                      e.stopPropagation();
+                      if (!items || !items.length) return;
+                      pick({ k: "pista", pista: p.id, turno: turno.id, dia, label: `pista ${p.numero} entera` });
+                    }}>P{p.numero}</span>
                     {p.superficie && (
                       <span className="surf-dot" title={SUPERFICIE_LABEL[p.superficie]}
                         style={{ background: SUPERFICIE_COLOR[p.superficie] }} />
@@ -696,7 +710,11 @@ function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach }) {
           {items[0].entrenador_nombre}
         </div>
       ) : null}
-      {empty ? <span className="cell-empty-hint">—</span> : null}
+      {empty ? <span className="cell-empty-hint">—</span> : (
+        <span className="cell-grip dnd" draggable
+          onDragStart={(e) => setDrag(e, { k: "pista", pista: ctx.pista, turno: ctx.turno, dia: ctx.dia })}
+          title="Arrastra la pista entera: se muda a una vacía o se intercambia con otra">⠿</span>
+      )}
     </td>
   );
 }

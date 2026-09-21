@@ -156,3 +156,56 @@ class EntrenadoresPorFranjaTests(AbrirPistaVaciaTests):
         self.assertEqual(r.status_code, 200)
         self.asig.refresh_from_db()
         self.assertIsNone(self.asig.entrenador)
+
+
+class MoverPistaEnteraTests(AbrirPistaVaciaTests):
+    """Una pista entera se lleva a otra: si está vacía se muda, y si tiene
+    gente se intercambian."""
+
+    def _mover_pista(self, **extra):
+        cuerpo = {"semana": self.semana.id, "dia": 0, "turno": self.m1.id,
+                  "desde_pista": self.p1.id, "pista": self.p2.id, **extra}
+        return self.api.post("/api/asignaciones/mover_pista/", cuerpo, format="json")
+
+    def test_se_muda_a_una_pista_vacia_con_su_entrenador(self):
+        r = self._mover_pista()
+        self.assertEqual(r.status_code, 200)
+        self.asig.refresh_from_db()
+        self.assertEqual(self.asig.pista, self.p2)
+        self.assertEqual(self.asig.entrenador, self.coach)
+        self.assertFalse(Asignacion.objects.filter(
+            semana=self.semana, dia=0, turno=self.m1, pista=self.p1).exists())
+
+    def test_con_gente_en_las_dos_se_intercambian(self):
+        otra = Asignacion.objects.create(
+            semana=self.semana, dia=0, turno=self.m1, pista=self.p2,
+            jugador=self.b, entrenador=self.otro_coach)
+        r = self._mover_pista()
+        self.assertEqual(r.status_code, 200)
+        self.asig.refresh_from_db(); otra.refresh_from_db()
+        self.assertEqual(self.asig.pista, self.p2)
+        self.assertEqual(otra.pista, self.p1)
+        self.assertEqual(self.asig.entrenador, self.coach)
+        self.assertEqual(otra.entrenador, self.otro_coach)
+
+    def test_la_pista_vacia_no_se_puede_mover(self):
+        r = self._mover_pista(desde_pista=self.p2.id, pista=self.p1.id)
+        self.assertEqual(r.status_code, 409)
+
+    def test_no_se_lleva_al_miercoles_por_la_tarde(self):
+        r = self._mover_pista(dia=2, turno=self.t1.id)
+        self.assertEqual(r.status_code, 400)
+
+    def test_cambiar_de_franja_avisa_si_el_jugador_ya_esta_alli(self):
+        # Ana ya entrena en T1, así que su pista de la mañana no puede mudarse
+        # a esa franja.
+        Asignacion.objects.create(semana=self.semana, dia=0, turno=self.t1,
+                                  pista=self.p2, jugador=self.a)
+        r = self._mover_pista(desde_turno=self.m1.id, turno=self.t1.id, pista=self.p1.id)
+        self.assertEqual(r.status_code, 409)
+
+    def test_se_puede_mudar_a_otra_franja(self):
+        r = self._mover_pista(desde_turno=self.m1.id, turno=self.t1.id, pista=self.p1.id)
+        self.assertEqual(r.status_code, 200)
+        self.asig.refresh_from_db()
+        self.assertEqual((self.asig.turno, self.asig.pista), (self.t1, self.p1))

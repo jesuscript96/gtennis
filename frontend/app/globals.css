@@ -1132,3 +1132,10 @@ ul.sesiones .sesion.extra { border-left-color: #0f8b8d; }
 .coach-slot.libre { color: var(--st-disponible); }
 .coach-slot.ocupado { color: var(--muted); }
 .coach-slot.fuera { color: var(--st-ausencia); opacity: .75; }
+
+/* Asa para arrastrar una pista entera. */
+.cell-grip { position: absolute; top: 2px; right: 4px; color: var(--muted); font-size: 11px;
+  cursor: grab; opacity: 0; transition: opacity .12s; }
+.cell:hover .cell-grip { opacity: .7; }
+.cell-grip:hover { opacity: 1; }
+.cell { position: relative; }

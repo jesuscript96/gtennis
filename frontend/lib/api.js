@@ -127,6 +127,8 @@ export const manualAssign = (body) =>
   req("/asignaciones/manual_assign/", { method: "POST", body: JSON.stringify(body) });
 export const moverAsignacion = (body) =>
   req("/asignaciones/mover/", { method: "POST", body: JSON.stringify(body) });
+export const moverPista = (body) =>
+  req("/asignaciones/mover_pista/", { method: "POST", body: JSON.stringify(body) });
 export const setCoach = (body) =>
   req("/asignaciones/set_coach/", { method: "POST", body: JSON.stringify(body) });
 export const removeAsignacion = (id) =>
