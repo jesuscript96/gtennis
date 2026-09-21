@@ -478,9 +478,29 @@ def _mejor_asignacion(pistas, entrenadores, valor):
     }
 
 
+def _penalizacion_division(miembros, entrenador, divisiones, peso):
+    """Cuánto cuesta que este entrenador lleve esta pista, por el grupo.
+
+    Cada alumno fuera de su grupo suma las divisiones de distancia, y pesan más
+    los de arriba: llevar a un alumno de la división 1 que no es de tu grupo
+    cuesta nueve veces más que a uno de la 9. Es coste, no prohibición: si no
+    hay nadie más, la pista la coge igual.
+    """
+    if not peso:
+        return 0
+    total = 0
+    for jid in miembros:
+        nivel = divisiones.get(jid)
+        distancia = entrenador.distancia_division(nivel)
+        if distancia:
+            total += distancia * (NIVEL_MAX + 1 - nivel)
+    return peso * total
+
+
 def _emparejar_entrenadores(
     courts, sponsors, elegibles, load, pesos=None, con_quien=None,
-    sesiones=None, blandos=None, info_pistas=None,
+    sesiones=None, blandos=None, info_pistas=None, divisiones=None,
+    peso_division=0,
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
@@ -524,8 +544,12 @@ def _emparejar_entrenadores(
         for pista, miembros in courts.items() for cid in ids_elegibles
     }
 
+    por_id = {c.id: c for c in elegibles}
+    divisiones = divisiones or {}
+
     def valor(pista, cid):
-        return round(ESCALA_AFINIDAD * afin[(pista, cid)]) - load[cid]
+        return (round(ESCALA_AFINIDAD * afin[(pista, cid)]) - load[cid]
+                - _penalizacion_division(courts[pista], por_id[cid], divisiones, peso_division))
 
     # Candidatos por pista: todos los disponibles, primero el del contrato duro
     # y después por afinidad.
@@ -720,6 +744,14 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         )
     )
     pesos = pesos_de_entrenamiento()
+    # Nivel de cada alumno: lo usa el reparto de entrenadores para respetar
+    # los grupos de cada uno.
+    from academy.models import Jugador as _JD
+
+    divisiones_jugador = dict(
+        _JD.objects.filter(activo=True, division__isnull=False)
+        .values_list("id", "division__nivel")
+    )
 
     # Preferencias de superficie estrictas por jugador (#1).
     from academy.models import PreferenciaSuperficie
@@ -895,6 +927,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     blandos=blandos,
                     info_pistas={c.id: (c.venue_id, c.number, c.fill_rank)
                                  for c in turno_courts},
+                    divisiones=divisiones_jugador,
+                    peso_division=cfg.peso_division_entrenador,
                 )
                 sin_entrenador = [p for p in pistas if p not in entrenador_de]
                 if sin_entrenador:

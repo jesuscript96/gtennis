@@ -153,6 +153,28 @@ class Entrenador(models.Model):
         blank=True,
         related_name="entrenadores_gestores",
     )
+    # El grupo que entrena: de la división `desde` a la `hasta` (p. ej. Dani
+    # Gimeno, de la 1 a la 2). Vacío = cualquiera. No es una regla dura: si no
+    # queda nadie de ese grupo el motor le pone otro, pero cuesta, y cuanto más
+    # arriba es el alumno más cuesta — el grupo 1 es el más estricto.
+    division_desde = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="Entrena desde la división",
+        help_text="La más alta de su grupo (la 1 es la mejor). Vacío = cualquiera.",
+    )
+    division_hasta = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="hasta la división",
+        help_text="La más baja de su grupo. Vacío = cualquiera.",
+    )
+
+    def distancia_division(self, nivel):
+        """Cuántas divisiones se sale este alumno del grupo del entrenador."""
+        if nivel is None or (self.division_desde is None and self.division_hasta is None):
+            return 0
+        desde = self.division_desde if self.division_desde is not None else nivel
+        hasta = self.division_hasta if self.division_hasta is not None else nivel
+        desde, hasta = min(desde, hasta), max(desde, hasta)
+        return max(0, desde - nivel, nivel - hasta)
+
     # Histórico: las divisiones que entrenaba. Desde septiembre de 2026 la
     # división solo empareja alumnos y con quién entrena cada uno lo dicen sus
     # porcentajes (`ResponsableJugador`); el motor ya no lo mira.

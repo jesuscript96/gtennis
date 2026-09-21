@@ -287,6 +287,13 @@ class ConfiguracionMotor(models.Model):
     peso_central = models.PositiveIntegerField(
         default=100, help_text="Bonus por jugador asignado a pista no satélite (rellenar GTennis primero)."
     )
+    peso_division_entrenador = models.PositiveIntegerField(
+        default=1000,
+        help_text="Cuánto cuesta que un entrenador coja un grupo que no es el "
+                  "suyo, por cada división de distancia. Pesa más cuanto más "
+                  "arriba está el alumno: el grupo 1 es el más estricto. Nunca "
+                  "deja una pista sin entrenador.",
+    )
     peso_pista_division = models.PositiveIntegerField(
         default=50,
         help_text="Cuánto tira cada división hacia su pista: la 1 a la pista 1 "

@@ -111,6 +111,60 @@ def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
     )
 
 
+class GruposDelEntrenadorTests(SimpleTestCase):
+    """Cada entrenador tiene su grupo de divisiones y se respeta mientras se
+    pueda; el grupo 1 es el más estricto."""
+
+    def _emparejar_con_grupos(self, courts, entrenadores, divisiones, peso=1000):
+        from collections import Counter
+
+        from academy.models import Entrenador
+        from .service import _emparejar_entrenadores
+
+        gente = [Entrenador(id=i, nombre=str(i), division_desde=d, division_hasta=h)
+                 for i, (d, h) in entrenadores.items()]
+        return _emparejar_entrenadores(
+            courts, {}, gente, Counter(), divisiones=divisiones, peso_division=peso,
+        )[0]
+
+    def test_cada_uno_a_su_grupo(self):
+        # 100 lleva del 1 al 2 y 101 del 6 al 7.
+        courts = {10: [1, 2], 11: [3, 4]}
+        asignado = self._emparejar_con_grupos(
+            courts, {100: (1, 2), 101: (6, 7)},
+            {1: 1, 2: 2, 3: 6, 4: 7})
+        self.assertEqual(asignado, {10: 100, 11: 101})
+
+    def test_si_no_hay_de_su_grupo_lo_coge_igual(self):
+        # Una sola pista de división 7 y solo está el del grupo 1-2.
+        asignado = self._emparejar_con_grupos({10: [1, 2]}, {100: (1, 2)}, {1: 7, 2: 7})
+        self.assertEqual(asignado, {10: 100})
+
+    def test_el_grupo_uno_manda_sobre_los_de_abajo(self):
+        # Los dos entrenadores están fuera de su grupo en las dos pistas: el
+        # reparto se decide por la pista de división 1, que pesa más.
+        courts = {10: [1, 2], 11: [3, 4]}
+        asignado = self._emparejar_con_grupos(
+            courts, {100: (1, 1), 101: (9, 9)},
+            {1: 1, 2: 1, 3: 9, 4: 9})
+        self.assertEqual(asignado, {10: 100, 11: 101})
+
+    def test_sin_grupo_declarado_da_igual(self):
+        from academy.models import Entrenador
+
+        e = Entrenador(nombre="X")
+        self.assertEqual(e.distancia_division(1), 0)
+        self.assertEqual(e.distancia_division(9), 0)
+
+    def test_la_distancia_es_hasta_el_borde_del_grupo(self):
+        from academy.models import Entrenador
+
+        dani = Entrenador(nombre="Dani", division_desde=1, division_hasta=2)
+        self.assertEqual(dani.distancia_division(2), 0)
+        self.assertEqual(dani.distancia_division(4), 2)
+        self.assertEqual(dani.distancia_division(7), 5)
+
+
 class EmparejarEntrenadoresTests(SimpleTestCase):
     """Nadie cubre dos pistas a la vez.
 

@@ -160,6 +160,7 @@ export const RESOURCES = {
     columns: [
       { key: "nombre", label: "Nombre" },
       { key: "turnos_display", label: "Franjas" },
+      { key: "division_desde", label: "Grupo", render: (v, row) => (v || row.division_hasta ? `D${v ?? "?"}–D${row.division_hasta ?? "?"}` : "—") },
       { key: "activo", label: "Activo", type: "bool" },
       { key: "disponible_semana", label: "Disp. semana", type: "bool" },
       { key: "reserva", label: "Banquillo", type: "bool" },
@@ -168,6 +169,8 @@ export const RESOURCES = {
       { name: "nombre", label: "Nombre", type: "text", required: true },
       { name: "turno_manana", label: "Da clase por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
       { name: "turno_tarde", label: "Da clase por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
+      { name: "division_desde", label: "Entrena desde la división", type: "number", help: "La más alta de su grupo; la 1 es la mejor. Vacío = cualquiera." },
+      { name: "division_hasta", label: "…hasta la división", type: "number", help: "La más baja de su grupo. Si no queda nadie de ese grupo el motor le pone otro, pero cuesta." },
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },
       { name: "disponible_semana", label: "Disponible esta semana (fallback manual)", type: "bool", default: true },
       { name: "reserva", label: "Solo a mano (banquillo)", type: "bool", help: "El motor no le da pistas. Sigue en la tabla de entrenadores del cuadrante para colocarlo a mano cuando haga falta." },
