@@ -396,6 +396,28 @@ def _tierra_y_resina():
             Court(id=2, venue_id=1, capacity=2, surface="RESINA")]
 
 
+class PistaSegunDivisionTests(SimpleTestCase):
+    """La división manda en qué pista se entrena: los de arriba, en las
+    primeras. Es un desempate, no una regla."""
+
+    def _pista_de(self, res, jid):
+        return next(c for c, m in res.courts.items() if jid in m)
+
+    def test_los_de_arriba_van_a_las_primeras(self):
+        courts = [Court(id=n, venue_id=1, capacity=2, number=n) for n in (1, 2, 3, 4)]
+        players = [Player(1, division=1), Player(2, division=1),
+                   Player(11, division=4), Player(12, division=4)]
+        res = solve_pairing(PairingInput(players=players, courts=courts, neighbor_span=1))
+        self.assertLess(self._pista_de(res, 1), self._pista_de(res, 11))
+
+    def test_no_deja_a_nadie_fuera_por_la_pista(self):
+        # Solo queda la última pista: se usa igualmente.
+        courts = [Court(id=8, venue_id=1, capacity=2, number=8)]
+        players = [Player(1, division=1), Player(2, division=1)]
+        res = solve_pairing(PairingInput(players=players, courts=courts))
+        self.assertEqual(res.unassigned, [])
+
+
 class TierraAntesQueResinaTests(SimpleTestCase):
     """El club entrena en tierra. La resina es para cuando ya no queda tierra,
     o para quien la tiene declarada en su ficha."""

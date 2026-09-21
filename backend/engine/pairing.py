@@ -90,6 +90,9 @@ class PairingInput:
     w_assign: int = 1000
     w_satellite: int = 5
     w_central: int = 100
+    # Cada división tira hacia su pista: la 1 a la pista 1, la 2 a la 2… Es un
+    # desempate por cada pista de distancia, no una regla.
+    w_pista_division: int = 50
     # Coste de abrir una pista de resina: el club entrena en tierra y la resina
     # es el recurso de última hora. Por debajo de lo que vale colocar a
     # alguien, así que nadie se queda fuera por no pisar resina.
@@ -318,7 +321,14 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     #    Bonus per player on central (non-satellite) courts ensures the
     #    GTennis academy courts fill first.
     for (pid, f, cid), var in x.items():
-        bonus = data.w_central if not court_by_id[cid].is_satellite else 0
+        court = court_by_id[cid]
+        bonus = data.w_central if not court.is_satellite else 0
+        # La división marca la pista: los de arriba, en las primeras. Cuesta
+        # por cada pista de distancia, así que solo decide cuando el resto
+        # empata.
+        division = pidx[pid].division
+        if division and court.number and not court.is_satellite:
+            bonus -= data.w_pista_division * abs(court.number - division)
         terms.append((data.w_assign * prioridad(pidx[pid], f) + bonus) * var)
     for f in franjas:
         for c in courts:
