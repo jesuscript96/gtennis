@@ -90,6 +90,10 @@ class PairingInput:
     w_assign: int = 1000
     w_satellite: int = 5
     w_central: int = 100
+    # Coste de abrir una pista de resina: el club entrena en tierra y la resina
+    # es el recurso de última hora. Por debajo de lo que vale colocar a
+    # alguien, así que nadie se queda fuera por no pisar resina.
+    w_resina: int = 300
     w_repeat: int = 10
     apply_neighbor: bool = True
     # Diferencia máxima de división admitida dentro de una pista.
@@ -322,6 +326,10 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             #    overflow order (fill_rank).
             if c.is_satellite:
                 terms.append(-data.w_satellite * max(1, c.fill_rank) * used[f, c.id])
+            # Primero la tierra: la resina solo se abre cuando la tierra está
+            # llena (o cuando la pide quien juega en ella).
+            if c.surface == "RESINA":
+                terms.append(-data.w_resina * used[f, c.id])
             # 3) Densidad y apertura de pista: se prefiere abrir otra pista antes
             #    que apretar, y agrupar de dos en dos antes que individuales.
             terms.append(-data.w_density * excess[f, c.id])

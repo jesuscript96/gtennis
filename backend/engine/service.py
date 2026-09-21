@@ -845,6 +845,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     w_assign=cfg.peso_asignacion,
                     w_satellite=cfg.peso_satelite,
                     w_central=cfg.peso_central,
+                    w_resina=cfg.peso_resina,
                     w_repeat=cfg.peso_repeticion,
                     apply_neighbor=cfg.aplicar_vecindad,
                     neighbor_span=cfg.vecindad_max,

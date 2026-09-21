@@ -287,6 +287,12 @@ class ConfiguracionMotor(models.Model):
     peso_central = models.PositiveIntegerField(
         default=100, help_text="Bonus por jugador asignado a pista no satélite (rellenar GTennis primero)."
     )
+    peso_resina = models.PositiveIntegerField(
+        default=300,
+        help_text="Coste de abrir una pista de resina. La academia entrena en "
+                  "tierra: la resina solo se usa cuando ya no queda tierra o "
+                  "cuando el alumno la tiene declarada en su ficha.",
+    )
     peso_repeticion = models.PositiveIntegerField(
         default=10, help_text="Penalización por repetir pareja (rotación)."
     )

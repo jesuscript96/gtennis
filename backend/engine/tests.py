@@ -391,6 +391,40 @@ class EdadesTests(SimpleTestCase):
         self.assertTrue(self._juntos(Player(1, division=3, edad=1), Player(2, division=3, edad=17)))
 
 
+def _tierra_y_resina():
+    return [Court(id=1, venue_id=1, capacity=2, surface="TIERRA"),
+            Court(id=2, venue_id=1, capacity=2, surface="RESINA")]
+
+
+class TierraAntesQueResinaTests(SimpleTestCase):
+    """El club entrena en tierra. La resina es para cuando ya no queda tierra,
+    o para quien la tiene declarada en su ficha."""
+
+    def test_primero_la_tierra(self):
+        players = [Player(1, division=3), Player(2, division=3)]
+        res = solve_pairing(PairingInput(players=players, courts=_tierra_y_resina()))
+        self.assertEqual(list(res.courts), [1])
+
+    def test_la_resina_cuando_la_tierra_se_llena(self):
+        players = [Player(i, division=3) for i in range(1, 5)]
+        res = solve_pairing(PairingInput(players=players, courts=_tierra_y_resina()))
+        self.assertEqual(res.unassigned, [])
+        self.assertEqual(sorted(res.courts), [1, 2])
+
+    def test_quien_la_tiene_declarada_juega_en_resina(self):
+        players = [Player(1, division=3, surface_pref="RESINA"),
+                   Player(2, division=3, surface_pref="RESINA")]
+        res = solve_pairing(PairingInput(players=players, courts=_tierra_y_resina()))
+        self.assertEqual(list(res.courts), [2])
+
+    def test_nadie_se_queda_fuera_por_no_pisar_resina(self):
+        # Solo hay resina: se usa igualmente.
+        players = [Player(1, division=3), Player(2, division=3)]
+        solo_resina = [Court(id=2, venue_id=1, capacity=2, surface="RESINA")]
+        res = solve_pairing(PairingInput(players=players, courts=solo_resina))
+        self.assertEqual(res.unassigned, [])
+
+
 class PistasAlternasTests(SimpleTestCase):
     """Con menos entrenadores que pistas, cada pista sin entrenador tiene uno
     al lado. El ejemplo de Iván: ocho pistas y cinco entrenadores, 1-3-4-6-7."""
