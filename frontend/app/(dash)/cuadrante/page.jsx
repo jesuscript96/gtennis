@@ -124,6 +124,9 @@ function Inner() {
       // que intercambiarlo con nadie.
       else if (s.k === "cj") op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
       else if (s.k === "be") op(() => setCoach({ semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista, entrenador_id: s.entrenador }));
+      // Entrenador arrastrado desde otra pista a una celda sin entrenador: se
+      // traslada, no se duplica.
+      else if (s.k === "cc") op(() => setCoach({ semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista, entrenador_id: s.entrenadorId, desde_pista: s.pista, desde_turno: s.turno, desde_dia: s.dia }));
     };
   }
   function onDropPlayer(targetAsig, ctx) {
@@ -171,7 +174,10 @@ function Inner() {
       else if (!firstPlayer) op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
     }
     else if (s.k === "be") op(() => setCoach({ ...ctx, entrenador_id: s.entrenador }));
-    else if (s.k === "cc") { if (coachAsig && coachAsig !== s.asignacion) op(() => swapAsignacion(s.asignacion, coachAsig, "entrenador")); }
+    else if (s.k === "cc") {
+      if (coachAsig && coachAsig !== s.asignacion) op(() => swapAsignacion(s.asignacion, coachAsig, "entrenador"));
+      else if (!coachAsig) op(() => setCoach({ ...ctx, entrenador_id: s.entrenadorId, desde_pista: s.pista, desde_turno: s.turno, desde_dia: s.dia }));
+    }
     setSel(null);
   }
   function placeOnBench() {
@@ -187,6 +193,9 @@ function Inner() {
   const publicado = data.semana.estado === "PUBLICADO";
   const bench = benchPlayers(panel);
   const benchCoaches = panel?.entrenadores_libres || [];
+  // Todos los entrenadores con su estado franja a franja: los de la tabla de
+  // la derecha, de donde se arrastra para forzar a quien haga falta.
+  const coaches = panel?.entrenadores || [];
 
   // ---------------- Vista móvil: lista por pista + tocar-para-mover ----------------
   if (isMobile) {
@@ -384,17 +393,21 @@ function Inner() {
                 );
               })}
           </div>
-          {benchCoaches.length > 0 && (
+          {coaches.length > 0 && (
             <>
-              <div className="bench-title sm">Entrenadores libres</div>
+              <div className="bench-title sm">Entrenadores · {turnos[tIdx]?.codigo}</div>
               <div className="bench-items">
-                {benchCoaches.map((e2) => {
+                {coaches.map((e2) => {
                   const selected = sel && sel.k === "be" && sel.entrenador === e2.id;
+                  const f = (e2.franjas || {})[turnos[tIdx]?.id] || {};
+                  const ocupado = f.pistas && f.pistas.length;
+                  const donde = ocupado ? f.pistas.map((x) => x.split(" ").pop()).join(",") : (f.libre ? "libre" : (f.motivo || "—"));
                   return (
-                    <div key={e2.id} className={`bench-chip${selected ? " sel" : ""}`}
-                      onClick={(e) => { e.stopPropagation(); pick({ k: "be", entrenador: e2.id, label: e2.nombre }); }}>
+                    <div key={e2.id} className={`bench-chip${selected ? " sel" : ""}${ocupado || !f.libre ? " nd" : ""}`}
+                      onClick={(e) => { e.stopPropagation(); pick({ k: "be", entrenador: e2.id, label: e2.nombre }); }}
+                      title={ocupado ? `En ${f.pistas.join(" y ")}` : (f.motivo || "Libre")}>
                       <Avatar nombre={e2.nombre} fotoUrl={e2.foto_url} kind="coach" />
-                      <span>{e2.nombre}</span>
+                      <span>{e2.nombre} · {donde}</span>
                     </div>
                   );
                 })}
@@ -598,18 +611,43 @@ function Inner() {
                   </div>
                 ))}
             </div>
-            {benchCoaches.length > 0 && (
+            {coaches.length > 0 && (
               <>
-                <div className="bench-title sm">Entrenadores libres</div>
-                <div className="bench-col-items">
-                  {benchCoaches.map((e2) => (
-                    <div key={e2.id} className="bench-chip dnd" draggable
-                      onDragStart={(e) => setDrag(e, { k: "be", entrenador: e2.id })} title={e2.nombre}>
-                      <Avatar nombre={e2.nombre} fotoUrl={e2.foto_url} kind="coach" />
-                      <span>{e2.nombre}</span>
-                    </div>
-                  ))}
-                </div>
+                <div className="bench-title sm">Entrenadores por franja</div>
+                <div className="bench-side-hint">Arrástralos a una pista. Se puede forzar a quien ya está en otra pista a esa hora.</div>
+                <table className="coach-grid">
+                  <thead>
+                    <tr><th /> {data.turnos.map((t) => <th key={t.id}>{t.codigo}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {coaches.map((c) => (
+                      <tr key={c.id}>
+                        <td>
+                          <div className="bench-chip dnd" draggable
+                            onDragStart={(e) => setDrag(e, { k: "be", entrenador: c.id })}
+                            onClick={() => pick({ k: "be", entrenador: c.id })}
+                            title={`${c.nombre} · arrastra a una pista`}>
+                            <Avatar nombre={c.nombre} fotoUrl={c.foto_url} kind="coach" />
+                            <span>{c.nombre}</span>
+                          </div>
+                        </td>
+                        {data.turnos.map((t) => {
+                          const f = (c.franjas || {})[t.id] || {};
+                          const clase = f.pistas && f.pistas.length ? "ocupado" : (f.libre ? "libre" : "fuera");
+                          const texto = f.pistas && f.pistas.length
+                            ? f.pistas.map((x) => x.split(" ").pop()).join(",")
+                            : (f.libre ? "libre" : "—");
+                          return (
+                            <td key={t.id} className={`coach-slot ${clase}`}
+                              title={f.pistas && f.pistas.length ? `En ${f.pistas.join(" y ")}` : (f.motivo || "Libre")}>
+                              {texto}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </>
             )}
           </div>
@@ -638,7 +676,8 @@ function Cell({ items, ctx, onDropCell, onDropPlayer, onDropCoach }) {
       ))}
       {!empty && items[0].entrenador_nombre ? (
         <div className="coach dnd" draggable
-          onDragStart={(e) => setDrag(e, { k: "cc", asignacion: items[0].id })}
+          onDragStart={(e) => setDrag(e, { k: "cc", asignacion: items[0].id, entrenadorId: items[0].entrenador,
+                                           pista: ctx.pista, turno: ctx.turno, dia: ctx.dia })}
           onDragOver={overOn} onDragLeave={overOff} onDrop={onDropCoach(items[0].id, ctx)}
           title="Arrastra para intercambiar entrenador">
           <Avatar nombre={items[0].entrenador_nombre} fotoUrl={items[0].entrenador_foto} kind="coach" />

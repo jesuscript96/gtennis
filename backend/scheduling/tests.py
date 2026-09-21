@@ -5,7 +5,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from academy.models import Entrenador, Jugador, Pista, Sede, Turno
-from scheduling.models import Asignacion, Semana
+from scheduling.models import Asignacion, DisponibilidadEntrenador, Semana
 from users.models import User
 
 LUNES = date(2026, 9, 14)
@@ -96,3 +96,63 @@ class AbrirPistaVaciaTests(TestCase):
         }, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(Asignacion.objects.get(pk=r.json()["id"]).entrenador, self.coach)
+
+
+class EntrenadoresPorFranjaTests(AbrirPistaVaciaTests):
+    """A la derecha del cuadrante salen todos los entrenadores con su estado en
+    cada franja, para poder forzar a quien haga falta."""
+
+    def _panel(self):
+        r = self.api.get(f"/api/semanas/{self.semana.id}/panel/?dia=0")
+        self.assertEqual(r.status_code, 200)
+        return {e["nombre"]: e for e in r.json()["entrenadores"]}
+
+    def test_dice_donde_esta_y_donde_queda_libre(self):
+        blas = self._panel()["Blas"]
+        self.assertEqual(blas["franjas"][str(self.m1.id)]["pistas"], ["Prueba 1"])
+        self.assertFalse(blas["franjas"][str(self.m1.id)]["libre"])
+        self.assertTrue(blas["franjas"][str(self.t1.id)]["libre"])
+
+    def test_el_ocupado_sigue_saliendo_para_poder_forzarlo(self):
+        self.assertIn("Blas", self._panel())
+
+    def test_el_declarado_no_disponible_sale_con_su_motivo(self):
+        DisponibilidadEntrenador.objects.create(
+            semana=self.semana, entrenador=self.otro_coach, dia=0, estado="AUSENTE")
+        nacho = self._panel()["Nacho"]
+        self.assertFalse(nacho["franjas"][str(self.m1.id)]["libre"])
+        self.assertIn("no disponible", nacho["franjas"][str(self.m1.id)]["motivo"])
+
+    def test_se_puede_forzar_al_que_ya_esta_en_otra_pista(self):
+        Asignacion.objects.create(semana=self.semana, dia=0, turno=self.m1,
+                                  pista=self.p2, jugador=self.b)
+        r = self.api.post("/api/asignaciones/set_coach/", {
+            "semana": self.semana.id, "dia": 0, "turno": self.m1.id,
+            "pista": self.p2.id, "entrenador_id": self.coach.id,
+        }, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(Asignacion.objects.filter(
+            semana=self.semana, dia=0, turno=self.m1, entrenador=self.coach).count(), 2)
+
+    def test_arrastrarlo_de_una_pista_a_otra_lo_traslada(self):
+        Asignacion.objects.create(semana=self.semana, dia=0, turno=self.m1,
+                                  pista=self.p2, jugador=self.b)
+        r = self.api.post("/api/asignaciones/set_coach/", {
+            "semana": self.semana.id, "dia": 0, "turno": self.m1.id,
+            "pista": self.p2.id, "entrenador_id": self.coach.id,
+            "desde_pista": self.p1.id,
+        }, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.asig.refresh_from_db()
+        self.assertIsNone(self.asig.entrenador)
+        self.assertEqual(Asignacion.objects.get(
+            semana=self.semana, dia=0, turno=self.m1, pista=self.p2).entrenador, self.coach)
+
+    def test_se_puede_dejar_una_pista_sin_entrenador(self):
+        r = self.api.post("/api/asignaciones/set_coach/", {
+            "semana": self.semana.id, "dia": 0, "turno": self.m1.id,
+            "pista": self.p1.id, "entrenador_id": None,
+        }, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.asig.refresh_from_db()
+        self.assertIsNone(self.asig.entrenador)

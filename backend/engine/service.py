@@ -188,6 +188,34 @@ HORQUILLA_VECINDAD = {
 }
 
 
+def motivo_no_disponible(c, dia, turno, fecha, vacaciones, jornada, partes):
+    """Por qué este entrenador no puede dar esta franja, o None si sí puede.
+
+    Lo usa el motor para elegir a quién puede poner y el panel del cuadrante
+    para enseñar quién está libre en cada franja, así que la regla vive en un
+    único sitio. No mira si ya está en otra pista: eso depende de cómo vaya
+    quedando el reparto y se comprueba aparte.
+    """
+    if not c.disponible_semana:
+        return "no disponible esta semana"
+    if any(v.afecta_turno(turno) for v in vacaciones.get(c.id, ())):
+        return "de vacaciones"
+    # Jornada estable: quien no trabaja ese bloque ese día no entra. Sin fila
+    # se entiende jornada completa.
+    jor = jornada.get((c.id, dia))
+    if jor is not None and not (
+        jor[0] if turno.bloque == Turno.Bloque.MANANA else jor[1]
+    ):
+        return "ese día no trabaja " + (
+            "por la mañana" if turno.bloque == Turno.Bloque.MANANA else "por la tarde")
+    if not entrenador_en_franja(c, turno):
+        return "solo da clase en su franja fija"
+    parte = partes.get(c.id)
+    if parte is not None and not parte.disponible_en(*turno.horas(fecha)):
+        return "declarado no disponible ese día"
+    return None
+
+
 def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
     """El `Player` del solver para la ficha `j` ese día."""
     coach = next(iter(sponsors.get(j.id, set())), None)
@@ -776,31 +804,15 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         }
 
         def elegibles_para(turno):
-            """Entrenadores que pueden dar clase en este turno: no de vacaciones,
-            cuya jornada y ventana horaria lo cubren y que no están ya en otra
-            pista a esa hora."""
+            """Entrenadores que pueden dar clase en este turno y no están ya en
+            otra pista a esa hora."""
             ini_t, fin_t = turno.horas(fecha)
-            elegibles = []
-            for c in all_coaches:
-                if any(v.afecta_turno(turno) for v in vac_de.get(c.id, ())):
-                    continue
-                # Jornada estable: quien no trabaja ese bloque ese día no
-                # entra. Sin fila se entiende jornada completa.
-                jor = jornada.get((c.id, dia))
-                if jor is not None and not (
-                    jor[0] if turno.bloque == Turno.Bloque.MANANA else jor[1]
-                ):
-                    continue
-                if not entrenador_en_franja(c, turno):
-                    continue
-                ovr = coach_ovr.get(c.id)
-                if ovr is not None and not ovr.disponible_en(ini_t, fin_t):
-                    continue
+            return [
+                c for c in all_coaches
+                if motivo_no_disponible(c, dia, turno, fecha, vac_de, jornada, coach_ovr) is None
                 # No puede estar en dos pistas a la vez.
-                if any(i < fin_t and f > ini_t for i, f in ocupacion_coach[c.id]):
-                    continue
-                elegibles.append(c)
-            return elegibles
+                and not any(i < fin_t and f > ini_t for i, f in ocupacion_coach[c.id])
+            ]
 
         for grupo in grupos:
             # El club cierra algunas medias jornadas: ahí no se reparte nada y,

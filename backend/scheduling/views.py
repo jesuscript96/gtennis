@@ -10,7 +10,9 @@ from rest_framework.views import APIView
 
 from academy.models import Entrenador, Jugador, Sede, Turno
 from academy.permissions import ReadOnlyOrDireccion
-from engine.service import _effective_state, _overrides, generate, regenerate_afternoon
+from engine.service import (
+    _effective_state, _overrides, generate, hay_entrenamiento, regenerate_afternoon,
+)
 
 from .models import (
     AusenciaJugador,
@@ -358,23 +360,64 @@ class SemanaViewSet(viewsets.ModelViewSet):
                 "jugadores": no_coach,
             })
 
-        # Entrenadores disponibles SIN pista asignada ese día (para el banquillo).
-        assigned_coach_ids = set(
-            Asignacion.objects.filter(semana=semana, dia=dia)
-            .exclude(entrenador=None)
-            .values_list("entrenador_id", flat=True)
-        )
-        entrenadores_libres = [
-            {"id": c.id, "nombre": c.nombre, "foto_url": c.foto_url or ""}
-            for c in coaches
-            if c.disponible_semana and c.id not in assigned_coach_ids
+        # Entrenadores franja a franja: dónde está cada uno y quién queda
+        # libre. Se enseñan TODOS, también los que ya tienen pista a otra hora,
+        # porque desde el cuadrante se puede forzar a cualquiera.
+        from academy.models import HorarioEntrenador, VacacionesEntrenador
+        from engine.service import motivo_no_disponible
+
+        fecha = semana.fecha_inicio + timedelta(days=dia)
+        vacaciones = {}
+        for v in VacacionesEntrenador.objects.filter(
+            fecha_inicio__lte=fecha, fecha_fin__gte=fecha
+        ):
+            vacaciones.setdefault(v.entrenador_id, []).append(v)
+        jornada = {
+            (h.entrenador_id, h.dia): (h.manana, h.tarde)
+            for h in HorarioEntrenador.objects.filter(dia=dia)
+        }
+        partes = {
+            d.entrenador_id: d
+            for d in DisponibilidadEntrenador.objects.filter(semana=semana, dia=dia)
+        }
+        donde = {}
+        for a in Asignacion.objects.filter(semana=semana, dia=dia).exclude(
+            entrenador=None
+        ).select_related("pista", "pista__sede"):
+            donde.setdefault((a.entrenador_id, a.turno_id), set()).add(
+                f"{a.pista.sede.nombre} {a.pista.numero}"
+            )
+        turnos = [
+            t for t in Turno.objects.filter(activo=True)
+            if hay_entrenamiento(dia, t.bloque)
         ]
+        entrenadores = []
+        for c in coaches:
+            franjas = {}
+            for t in turnos:
+                pistas = sorted(donde.get((c.id, t.id), ()))
+                motivo = motivo_no_disponible(c, dia, t, fecha, vacaciones, jornada, partes)
+                franjas[t.id] = {
+                    "pistas": pistas,
+                    "libre": not pistas and motivo is None,
+                    "motivo": motivo or "",
+                }
+            entrenadores.append({
+                "id": c.id, "nombre": c.nombre, "foto_url": c.foto_url or "",
+                "franjas": franjas,
+            })
 
         return Response({
             "dia": dia,
             "por_entrenador": por_entrenador,
             "sin_entrenador": sin_entrenador,
-            "entrenadores_libres": entrenadores_libres,
+            "entrenadores": entrenadores,
+            # Compatibilidad con la pantalla anterior.
+            "entrenadores_libres": [
+                {"id": e["id"], "nombre": e["nombre"], "foto_url": e["foto_url"]}
+                for e in entrenadores
+                if all(f["libre"] for f in e["franjas"].values())
+            ],
         })
 
 
@@ -703,15 +746,30 @@ class AsignacionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def set_coach(self, request):
-        """Colocar un entrenador del banquillo en una pista/turno (todas sus
-        filas). El que estuviera queda libre para el banquillo."""
+        """Poner (o quitar) el entrenador de una pista y turno, en todas sus
+        filas.
+
+        `entrenador_id` vacío deja la pista sin entrenador. Con `desde_pista`
+        se le quita además de la pista de la que viene, que es lo que convierte
+        el arrastre de una pista a otra en un traslado y no en un duplicado.
+
+        Se puede poner a cualquiera, aunque esa hora ya esté en otra pista o
+        tenga el día declarado libre: desde el cuadrante manda la dirección.
+        """
         semana_id = request.data.get("semana")
         dia = request.data.get("dia")
         turno_id = request.data.get("turno")
         pista_id = request.data.get("pista")
-        entrenador_id = request.data.get("entrenador_id")
-        if not all([semana_id, dia is not None, turno_id, pista_id, entrenador_id]):
+        entrenador_id = request.data.get("entrenador_id") or None
+        desde_pista = request.data.get("desde_pista")
+        if not all([semana_id, dia is not None, turno_id, pista_id]):
             return Response({"error": "Faltan parámetros."}, status=400)
+        if desde_pista and str(desde_pista) != str(pista_id):
+            Asignacion.objects.filter(
+                semana_id=semana_id, dia=request.data.get("desde_dia", dia),
+                turno_id=request.data.get("desde_turno", turno_id),
+                pista_id=desde_pista,
+            ).update(entrenador=None, manual=True)
         n = Asignacion.objects.filter(
             semana_id=semana_id, dia=dia, turno_id=turno_id, pista_id=pista_id
         ).update(entrenador_id=entrenador_id, manual=True)

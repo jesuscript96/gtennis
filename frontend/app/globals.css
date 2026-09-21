@@ -1121,3 +1121,14 @@ ul.sesiones .sesion.extra { border-left-color: #0f8b8d; }
 }
 .agenda-extra .etiqueta { color: var(--muted); }
 .agenda-extra select { width: auto; font-size: .8rem; padding: .2rem .35rem; }
+
+/* Entrenadores por franja, a la derecha del cuadrante: dónde está cada uno y
+   quién queda libre a cada hora. */
+.coach-grid { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }
+.coach-grid th { font-weight: 600; color: var(--muted); padding: 2px 3px; text-align: center; }
+.coach-grid td { padding: 2px 3px; }
+.coach-grid .bench-chip { margin: 0; }
+.coach-slot { text-align: center; border-radius: 6px; font-weight: 600; white-space: nowrap; }
+.coach-slot.libre { color: var(--st-disponible); }
+.coach-slot.ocupado { color: var(--muted); }
+.coach-slot.fuera { color: var(--st-ausencia); opacity: .75; }
