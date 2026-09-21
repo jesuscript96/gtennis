@@ -129,12 +129,21 @@ function Inner() {
       else if (s.k === "cc") op(() => setCoach({ semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista, entrenador_id: s.entrenadorId, desde_pista: s.pista, desde_turno: s.turno, desde_dia: s.dia }));
     };
   }
-  function onDropPlayer(targetAsig, ctx) {
+  // Con hueco en la pista de destino se mueve —y la de origen se queda sin
+  // él, que es como se rompe una pista—; con la pista completa se intercambian.
+  // «Hueco» es respecto a los dos jugadores de siempre, no al máximo de cuatro.
+  function hayHueco(ocupacion, densidad) {
+    return (ocupacion || 0) < (densidad || 2);
+  }
+  function onDropPlayer(targetAsig, ctx, ocupacion, densidad) {
     return (e) => {
       e.preventDefault(); e.stopPropagation(); overOff(e);
       const s = readDrag(e);
       if (!s) return;
-      if (s.k === "cj" && s.asignacion !== targetAsig) op(() => swapAsignacion(s.asignacion, targetAsig, "jugador"));
+      if (s.k === "cj" && s.asignacion !== targetAsig) {
+        if (hayHueco(ocupacion, densidad)) op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
+        else op(() => swapAsignacion(s.asignacion, targetAsig, "jugador"));
+      }
       else if (s.k === "bj") op(() => manualAssign({ jugador_id: s.jugador, semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
       else if (s.k === "be") op(() => setCoach({ semana: ctx.semana, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista, entrenador_id: s.entrenador }));
     };
@@ -163,15 +172,16 @@ function Inner() {
     );
   }
   // Coloca la selección actual en una pista (ctx) según lo que ya haya en ella.
-  function placeOnCell(ctx, items) {
+  function placeOnCell(ctx, items, densidad) {
     if (!sel) return;
     const s = sel;
     const firstPlayer = (items || []).find((a) => a.jugador_nombre);
     const coachAsig = items && items[0] && items[0].entrenador_nombre ? items[0].id : null;
+    const ocupacion = (items || []).filter((a) => a.jugador_nombre).length;
     if (s.k === "bj") op(() => manualAssign({ jugador_id: s.jugador, ...ctx }));
     else if (s.k === "cj") {
-      if (firstPlayer && firstPlayer.id !== s.asignacion) op(() => swapAsignacion(s.asignacion, firstPlayer.id, "jugador"));
-      else if (!firstPlayer) op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
+      if (hayHueco(ocupacion, densidad)) op(() => moverAsignacion({ asignacion: s.asignacion, dia: ctx.dia, turno: ctx.turno, pista: ctx.pista }));
+      else if (firstPlayer && firstPlayer.id !== s.asignacion) op(() => swapAsignacion(s.asignacion, firstPlayer.id, "jugador"));
     }
     else if (s.k === "be") op(() => setCoach({ ...ctx, entrenador_id: s.entrenador }));
     else if (s.k === "cc") {
@@ -339,7 +349,7 @@ function Inner() {
                   key={p.id}
                   className={`mcell${empty ? " empty" : ""}${sel ? " targetable" : ""}`}
                   style={{ borderLeftColor: color }}
-                  onClick={() => sel && placeOnCell(ctx, items)}
+                  onClick={() => sel && placeOnCell(ctx, items, sede.densidad_default)}
                 >
                   <div className="mcell-head">
                     <span className="mcell-pista">P{p.numero}</span>
@@ -554,7 +564,7 @@ function Inner() {
       </div>
 
       {error && <p className="err">{error}</p>}
-      <p className="dnd-hint">Arrastra jugadores/entrenadores entre pistas para intercambiarlos, desde el banquillo a una pista para colocarlos, o de una pista al banquillo para quitarlos. Para abrir una pista vacía, suelta ahí a quien quieras —del banquillo o de otra pista— y después arrástrale el entrenador.</p>
+      <p className="dnd-hint">Arrastra jugadores/entrenadores entre pistas para intercambiarlos, desde el banquillo a una pista para colocarlos, o de una pista al banquillo para quitarlos. Para abrir una pista vacía, suelta ahí a quien quieras —del banquillo o de otra pista— y después arrástrale el entrenador. Si la pista de destino tiene hueco se mueve, y la de origen se queda sin él; si está completa, se intercambian.</p>
 
       <div className="dnd-layout">
         <div className="dnd-main">
@@ -581,6 +591,7 @@ function Inner() {
                         key={t.id}
                         items={cellMap[`${p.id}_${t.id}`]}
                         ctx={{ semana: semanaId, dia, turno: t.id, pista: p.id }}
+                        densidad={sede.densidad_default}
                         onDropCell={onDropCell}
                         onDropPlayer={onDropPlayer}
                         onDropCoach={onDropCoach}
@@ -657,7 +668,7 @@ function Inner() {
   );
 }
 
-function Cell({ items, ctx, onDropCell, onDropPlayer, onDropCoach }) {
+function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach }) {
   const empty = !items || items.length === 0;
   const color = empty ? "var(--border-strong)" : (ESTADO_COLOR[items[0].estado] || "var(--border-strong)");
   return (
@@ -666,7 +677,8 @@ function Cell({ items, ctx, onDropCell, onDropPlayer, onDropCoach }) {
       {(items || []).map((a) => (
         <div className="player dnd" key={a.id} draggable
           onDragStart={(e) => setDrag(e, { k: "cj", asignacion: a.id })}
-          onDragOver={overOn} onDragLeave={overOff} onDrop={onDropPlayer(a.id, ctx)}
+          onDragOver={overOn} onDragLeave={overOff}
+          onDrop={onDropPlayer(a.id, ctx, items.length, densidad)}
           title="Arrastra para intercambiar / al banquillo">
           <Avatar nombre={a.jugador_nombre} fotoUrl={a.jugador_foto} kind="player" />
           <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
