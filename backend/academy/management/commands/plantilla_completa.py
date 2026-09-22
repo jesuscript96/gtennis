@@ -216,20 +216,27 @@ class Command(BaseCommand):
                  "; ".join(d["principal"].get(j.id, [])),
                  "; ".join(d["secundarios"].get(j.id, [])),
                  VECINDAD.get(j.vecindad, ""), hacia,
-                 j.sesiones_dia_max if j.sesiones_dia_max is not None else "",
+                 j.sesiones_dia_max if j.sesiones_dia_max is not None else 2,
                  f"{j.fecha_alta:%d/%m/%Y}" if j.fecha_alta else "",
                  f"{j.fecha_baja:%d/%m/%Y}" if j.fecha_baja else ""]
             f += ["; ".join(d["rencillas"].get(j.id, [])), "; ".join(d["contratos"].get(j.id, [])),
                   "; ".join(d["parejas"].get(j.id, [])), "sí" if d["parejas"].get(j.id) else "",
                   "; ".join(d["superficies"].get(j.id, [])),
                   "sí" if d["estrictas"].get(j.id) else "", ""]
+            fija_m = j.turno_manana.codigo if j.turno_manana_id else ""
+            fija_t = j.turno_tarde.codigo if j.turno_tarde_id else ""
             for i in range(5):
                 h = d["horarios"].get((j.id, i))
-                if h is None:
-                    f += ["", ""]
-                else:
+                if h is not None:
                     f += [(h.turno_manana.codigo if h.turno_manana_id else "sí") if h.entrena_manana else "no",
                           (h.turno_tarde.codigo if h.turno_tarde_id else "sí") if h.entrena_tarde else "no"]
+                    continue
+                # Sin horario declarado: la franja fija de la ficha; y si no la
+                # tiene, lo que hizo en la semana de referencia.
+                ref = (vivida.get(j.id) or {}).get(i, {})
+                cel_m = fija_m or ref.get("manana", "")
+                cel_t = fija_t or ref.get("tarde", "")
+                f += [cel_m if cel_m != "no" else "", cel_t if cel_t != "no" else ""]
             for i in range(5):
                 dia = (vivida.get(j.id) or {}).get(i, {})
                 f += [dia.get("manana", ""), dia.get("tarde", ""), dia.get("motivo", "")]
