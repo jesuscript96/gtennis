@@ -68,13 +68,24 @@ class Command(BaseCommand):
         parejas = {}
         for p in PreferenciaPareja.objects.filter(activa=True).select_related("jugador_objetivo"):
             parejas.setdefault(p.jugador_id, []).append(p.jugador_objetivo.nombre)
-        superficies = {}
+        superficies, estrictas = {}, {}
         for p in PreferenciaSuperficie.objects.all():
-            superficies.setdefault(p.jugador_id, []).append(
-                f"{p.get_superficie_display()}{' (obligatorio)' if p.estricta else ''}")
+            superficies.setdefault(p.jugador_id, []).append(p.get_superficie_display())
+            if p.estricta:
+                estrictas[p.jugador_id] = True
+        from academy.models import ResponsableJugador
+        principal, secundarios = {}, {}
+        for r in (ResponsableJugador.objects.filter(activo=True)
+                  .select_related("entrenador").order_by("prioridad", "-porcentaje_objetivo")):
+            etiqueta = f"{r.entrenador.nombre} ({r.porcentaje_objetivo}%)"
+            if r.prioridad <= 1:
+                principal.setdefault(r.jugador_id, []).append(etiqueta)
+            else:
+                secundarios.setdefault(r.jugador_id, []).append(etiqueta)
         return dict(turnos=turnos, jugadores=jugadores, entrenadores=entrenadores,
                     horarios=horarios, jornadas=jornadas, rencillas=rencillas,
-                    contratos=contratos, parejas=parejas, superficies=superficies)
+                    contratos=contratos, parejas=parejas, superficies=superficies,
+                    estrictas=estrictas, principal=principal, secundarios=secundarios)
 
     def _semana_vivida(self, lunes):
         from scheduling.models import Asignacion, Disponibilidad, Semana
@@ -174,11 +185,16 @@ class Command(BaseCommand):
 
         # ================= JUGADORES =================
         ficha = [("Jugador", 26), ("Cód.", 8), ("Escuela", 16), ("División", 10),
-                 ("Chico o chica", 11), ("Fecha nacim.", 13), ("Responsable", 20),
-                 ("Con qué divisiones entrena", 22), ("Máx. sesiones/día", 11),
-                 ("Entra el día (alta)", 13), ("Último día (baja)", 13)]
+                 ("Chico o chica", 11), ("Fecha nacim.", 13),
+                 ("Responsable (gestión)", 18),
+                 ("Entrenador PRINCIPAL (%)", 22), ("Entrenadores SECUNDARIOS (%)", 30),
+                 ("Con qué divisiones entrena", 20), ("Se empareja hacia", 16),
+                 ("Máx. sesiones/día", 11), ("Entra el día (alta)", 13),
+                 ("Último día (baja)", 13)]
         reglas = [("NO juntar con (rencilla)", 22), ("Contrato con", 20),
-                  ("Pareja fija con", 20), ("Superficie", 16), ("Pistas preferidas", 14)]
+                  ("Pareja preferente con", 20), ("¿Pareja obligatoria?", 12),
+                  ("Superficie", 14), ("¿Superficie obligatoria?", 13),
+                  ("Pistas preferidas", 14)]
         habitual = []
         for dia in DIAS:
             habitual += [(f"{dia} mañana", 11), (f"{dia} tarde", 11)]
@@ -190,18 +206,23 @@ class Command(BaseCommand):
 
         filas_j = []
         for j in d["jugadores"]:
+            hacia = {"ARRIBA": "arriba (mejor)", "ABAJO": "abajo (peor)"}.get(j.pareja_division, "")
             f = [j.nombre, j.codigo_cliente or "",
                  j.escuela.nombre if j.escuela_id else "",
                  f"D{j.division.nivel}" if j.division_id else "sin división",
                  j.get_sexo_display() if j.sexo else "",
                  f"{j.fecha_nacimiento:%d/%m/%Y}" if j.fecha_nacimiento else "",
                  j.entrenador_responsable.nombre if j.entrenador_responsable_id else "",
-                 VECINDAD.get(j.vecindad, ""),
+                 "; ".join(d["principal"].get(j.id, [])),
+                 "; ".join(d["secundarios"].get(j.id, [])),
+                 VECINDAD.get(j.vecindad, ""), hacia,
                  j.sesiones_dia_max if j.sesiones_dia_max is not None else "",
                  f"{j.fecha_alta:%d/%m/%Y}" if j.fecha_alta else "",
                  f"{j.fecha_baja:%d/%m/%Y}" if j.fecha_baja else ""]
             f += ["; ".join(d["rencillas"].get(j.id, [])), "; ".join(d["contratos"].get(j.id, [])),
-                  "; ".join(d["parejas"].get(j.id, [])), "; ".join(d["superficies"].get(j.id, [])), ""]
+                  "; ".join(d["parejas"].get(j.id, [])), "sí" if d["parejas"].get(j.id) else "",
+                  "; ".join(d["superficies"].get(j.id, [])),
+                  "sí" if d["estrictas"].get(j.id) else "", ""]
             for i in range(5):
                 h = d["horarios"].get((j.id, i))
                 if h is None:
@@ -215,19 +236,21 @@ class Command(BaseCommand):
             filas_j.append(f)
 
         ej_j = ["(ejemplo) Juan Pérez", "", "Alto Rendimiento", "D4", "Chico", "12/03/2011",
-                "Mario Muniesa", "su división y la de encima", "2", "16/09/2026", "",
-                "Marco Ruiz", "", "Ana Gil", "tierra (obligatorio)", "1, 2, 3",
-                "M2", "T1", "M2", "no", "M2", "T1", "no", "no", "M2", "T1",
-                "M2", "T1", "", "M2", "no", "torneo", "no", "no", "lesión", "M1", "no", "", "M2", "T1", ""]
-        val_j = {"E": ["Chico", "Chica"], "H": list(VECINDAD.values()), "N": ["tierra", "resina"]}
-        col = 17  # primera de semana habitual
+                "Mario Muniesa", "Mario Muniesa (60%)", "Pablo Gil (20%); Salva Barcala (20%)",
+                "su división y la de encima", "arriba (mejor)", "2", "16/09/2026", "",
+                "Marco Ruiz", "", "Ana Gil", "sí", "tierra", "sí", "1, 2, 3"]
+        ej_j += ["M2", "T1", "M2", "no", "M2", "T1", "no", "no", "M2", "T1"]
+        ej_j += ["M2", "T1", "", "M2", "no", "torneo", "no", "no", "lesión", "M1", "no", "", "M2", "T1", ""]
+        val_j = {"E": ["Chico", "Chica"], "J": list(VECINDAD.values()),
+                 "K": ["arriba (mejor)", "abajo (peor)"], "R": ["sí", "no"],
+                 "S": ["tierra", "resina"], "T": ["sí", "no"]}
+        HAB0, SEM0 = 22, 32  # primeras columnas de cada bloque
         for i in range(5):
-            val_j[get_column_letter(17 + 2 * i)] = man + ["no"]
-            val_j[get_column_letter(18 + 2 * i)] = tar + ["no"]
-        for i in range(5):
-            val_j[get_column_letter(27 + 3 * i)] = man + ["no"]
-            val_j[get_column_letter(28 + 3 * i)] = tar + ["no"]
-            val_j[get_column_letter(29 + 3 * i)] = MOTIVOS
+            val_j[get_column_letter(HAB0 + 2 * i)] = man + ["no"]
+            val_j[get_column_letter(HAB0 + 2 * i + 1)] = tar + ["no"]
+            val_j[get_column_letter(SEM0 + 3 * i)] = man + ["no"]
+            val_j[get_column_letter(SEM0 + 3 * i + 1)] = tar + ["no"]
+            val_j[get_column_letter(SEM0 + 3 * i + 2)] = MOTIVOS
         construir(
             "JUGADORES",
             f"Franjas: {leyenda}.   Gris = identidad (no tocar).   Amarillo = se edita, ya trae lo que hay en la app.   "
