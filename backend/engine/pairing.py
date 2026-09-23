@@ -58,6 +58,8 @@ class Player:
     sexo: str | None = None
     # Años. Los menores solo entrenan con gente de edad parecida (`BANDAS_EDAD`).
     edad: int | None = None
+    # Alumno de relleno: se coloca donde quepa y nunca abre pista él solo.
+    sin_prioridad: bool = False
 
 
 @dataclass(frozen=True)
@@ -286,6 +288,24 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                                 f"exc_{f}_{c.id}")
             model.Add(e >= occ - c.normal_density)
             excess[f, c.id] = e
+
+    # Los alumnos «sin prioridad» encajan al final: solo en pistas que ya abre
+    # alguien con prioridad, nunca ellos solos. Sin esto, despriorizarles baja
+    # su peso pero el motor les sigue abriendo pista cuando sobran.
+    sin_prio = {p.id for p in players if p.sin_prioridad}
+    if sin_prio:
+        for f in franjas:
+            for c in courts:
+                bajos = [x[pid, f, c.id] for pid in sin_prio
+                         if (pid, f, c.id) in x]
+                if not bajos:
+                    continue
+                altos = [x[p.id, f, c.id] for p in players
+                         if p.id not in sin_prio and (p.id, f, c.id) in x]
+                if altos:
+                    model.Add(sum(bajos) <= c.capacity * sum(altos))
+                else:
+                    model.Add(sum(bajos) == 0)
 
     # Incompatible pairs may never share a court.
     for i in range(len(players)):

@@ -66,6 +66,26 @@ def _vetoes() -> set[tuple[int, int]]:
     return out
 
 
+def _vetos_entrenador() -> dict[int, set[int]]:
+    """jugador_id -> entrenadores con los que no debe entrenar (regla dura)."""
+    from academy.models import VetoEntrenador
+
+    m: dict[int, set[int]] = defaultdict(set)
+    for v in VetoEntrenador.objects.filter(activo=True):
+        m[v.jugador_id].add(v.entrenador_id)
+    return m
+
+
+def _preferencias_franja(tipo) -> dict[int, dict[int, set[int]]]:
+    """turno_id -> {jugador_id: entrenadores} («si entrena en M1, con Iván»)."""
+    from academy.models import PreferenciaEntrenadorFranja
+
+    m: dict[int, dict[int, set[int]]] = defaultdict(lambda: defaultdict(set))
+    for pf in PreferenciaEntrenadorFranja.objects.filter(activa=True, tipo=tipo):
+        m[pf.turno_id][pf.jugador_id].add(pf.entrenador_id)
+    return m
+
+
 def _sponsor_map(tipo="DURO") -> dict[int, set[int]]:
     """jugador_id -> entrenadores con contrato de ese tipo.
 
@@ -153,7 +173,7 @@ def _player_priority(division, state, banquillo=0):
 # Medias jornadas en las que el club no entrena. Los miércoles por la tarde no
 # hay pista: ni jugadores ni entrenadores se pueden colocar ahí, ni el motor ni
 # a mano. (día de la semana con lunes=0, bloque)
-CERRADO = {(2, "TARDE")}
+CERRADO = {(2, "TARDE"), (5, "TARDE")}
 
 
 def hay_entrenamiento(dia, bloque):
@@ -238,6 +258,7 @@ def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
         div_abajo=abajo,
         sexo=j.sexo or None,
         edad=j.edad,
+        sin_prioridad=j.sin_prioridad,
     )
 
 
@@ -330,8 +351,11 @@ def _candidatos_bloque(
                 continue
             # Con prioridad alta, para que no se quede en el banquillo justo
             # el que el entrenador ha apuntado.
-            opciones[turno.id] = _player_priority(
-                division, state, 99 if state == Estado.EXTRA else banquillo.get(j.id, 0),
+            opciones[turno.id] = (
+                1 if j.sin_prioridad else _player_priority(
+                    division, state,
+                    99 if state == Estado.EXTRA else banquillo.get(j.id, 0),
+                )
             )
             parte = overrides.get((j.id, turno.codigo))
             if parte is not None and parte.estado == Estado.EXTRA:
@@ -447,6 +471,12 @@ def _afinidad(miembros, cid, pesos, con_quien, sesiones):
     return total
 
 
+# Coste con el que un entrenador vetado nunca gana al hueco «sin entrenador».
+# Tiene que superar a VALOR_CUBRIR: cubrir la pista vale mucho, pero romper un
+# veto no compensa ni así.
+VALOR_PROHIBIDO = 10 ** 10
+
+
 def _mejor_asignacion(pistas, entrenadores, valor):
     """{pista: entrenador}: el máximo de pistas cubiertas y, entre esos
     repartos, el de más valor. Nadie va a dos pistas.
@@ -500,11 +530,14 @@ def _penalizacion_division(miembros, entrenador, divisiones, peso):
 def _emparejar_entrenadores(
     courts, sponsors, elegibles, load, pesos=None, con_quien=None,
     sesiones=None, blandos=None, info_pistas=None, divisiones=None,
-    peso_division=0,
+    peso_division=0, vetos=None, solo_si_atado=frozenset(),
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
     Devuelve `({pista: entrenador}, [entrenadores repetidos])`.
+
+    `solo_si_atado` son los del banquillo: no entran en el reparto, pero si un
+    contrato o una preferencia de franja les llama a una pista concreta, van.
 
     Quién va a cada pista lo deciden los porcentajes de sus alumnos (`pesos`,
     {jugador: {entrenador: fracción}}) y lo que llevan hecho esta semana con
@@ -539,6 +572,14 @@ def _emparejar_entrenadores(
 
     ids_elegibles = {c.id for c in elegibles}
     todas = list(courts)
+    # Vetos (#«no debe entrenar con»): entrenadores prohibidos en cada pista
+    # por alguno de sus jugadores. Es regla dura — antes se queda la pista sin
+    # entrenador que romperla.
+    vetos = vetos or {}
+    vetado = {
+        pista: {cid for j in miembros for cid in vetos.get(j, ())}
+        for pista, miembros in courts.items()
+    }
     afin = {
         (pista, cid): _afinidad(miembros, cid, pesos, con_quien, sesiones)
         for pista, miembros in courts.items() for cid in ids_elegibles
@@ -548,6 +589,10 @@ def _emparejar_entrenadores(
     divisiones = divisiones or {}
 
     def valor(pista, cid):
+        if cid in vetado.get(pista, ()):
+            return -VALOR_PROHIBIDO
+        if cid in solo_si_atado and cid not in contratados(courts[pista], sponsors):
+            return -VALOR_PROHIBIDO
         return (round(ESCALA_AFINIDAD * afin[(pista, cid)]) - load[cid]
                 - _penalizacion_division(courts[pista], por_id[cid], divisiones, peso_division))
 
@@ -556,8 +601,10 @@ def _emparejar_entrenadores(
     candidatos = {}
     for pista, miembros in courts.items():
         duros = contratados(miembros, sponsors)
+        posibles = ids_elegibles - vetado.get(pista, set())
+        posibles -= {c for c in solo_si_atado if c not in duros}
         candidatos[pista] = sorted(
-            ids_elegibles,
+            posibles,
             key=lambda c: (c not in duros, -afin[(pista, c)], load[c], c),
         )
 
@@ -689,16 +736,26 @@ def _emparejar_entrenadores(
 
 
 @transaction.atomic
+def _con_preferencia(base, extra):
+    """`base` (contratos) más las preferencias de esta franja, sin tocar `base`."""
+    if not extra:
+        return base
+    fusion = defaultdict(set, {j: set(c) for j, c in base.items()})
+    for jid, coaches in extra.items():
+        fusion[jid] |= coaches
+    return fusion
+
+
 def generate(semana: Semana, dias=None, bloques=None) -> dict:
     """Generate (or regenerate) the cuadrante.
 
-    dias: iterable of day indices (por defecto de lunes a viernes).
+    dias: iterable of day indices (por defecto de lunes a sábado).
 
-    El sábado queda fuera: en el cuadrante real tiene su propio horario —dos
-    bandas de mañana, 8:30-10:00 y 10:00-11:30— que no son los turnos del
-    curso, y solo se usa algunas semanas. Generarlo con M1/M2/JP/T1/T2 inventa
-    sesiones que nadie da. Los modelos siguen admitiéndolo, así que basta con
-    pasar `dias` para incluirlo.
+    El sábado solo tiene mañana: en el cuadrante real son dos bandas
+    (8:30-10:00 y 10:00-11:30), que se corresponden con M1 y M2 aunque la
+    segunda empiece media hora antes. Por la tarde el club no abre, igual que
+    el miércoles. Quién entrena el sábado sale del horario semanal: sin fila de
+    sábado declarada, nadie viene.
     bloques: restrict to {'MANANA','TARDE'} shifts — used by the afternoon
              regeneration so the morning history stays untouched.
 
@@ -706,7 +763,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     T2) reparten a sus jugadores entre las franjas en vez de llenar la primera
     y dejar las demás vacías. El turno propio de una escuela (JP) va aparte.
     """
-    dias = list(dias) if dias is not None else [d for d, _ in DIAS if d < 5]
+    dias = list(dias) if dias is not None else [d for d, _ in DIAS]
     turnos = list(Turno.objects.filter(activo=True))
     if bloques:
         turnos = [t for t in turnos if t.bloque in bloques]
@@ -731,18 +788,24 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     courts = _build_courts(cfg.usar_satelites)
     courts_by_id = {c.id: c for c in courts}
     vetoes = _vetoes()
+    vetos_coach = _vetos_entrenador()
     sponsors = _sponsor_map()
     blandos = _sponsor_map("BLANDO")
+    # «Si entrena en M1, entrena con Iván»: solo ata en esa franja, así que se
+    # suma al contrato justo en el turno que toca.
+    pref_franja_duro = _preferencias_franja("DURO")
+    pref_franja_blando = _preferencias_franja("BLANDO")
     load: Counter = Counter()
     report = {"dias": {}, "overflow": [], "unassigned": []}
 
     # --- Entrenadores disponibles (#10/#11) y con quién entrena cada alumno --
     # Los de reserva no entran en el reparto: están para ponerlos a mano.
+    # Los de banquillo (Sergio, Iván, Jorge) no entran en el reparto, pero sí
+    # cuando un contrato o una preferencia de franja les llama por su nombre.
     all_coaches = list(
-        Entrenador.objects.filter(
-            activo=True, disponible_semana=True, reserva=False
-        )
+        Entrenador.objects.filter(activo=True, disponible_semana=True)
     )
+    de_banquillo = {c.id for c in all_coaches if c.reserva}
     pesos = pesos_de_entrenamiento()
     # Nivel de cada alumno: lo usa el reparto de entrenadores para respetar
     # los grupos de cada uno.
@@ -859,7 +922,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     semana=semana, dia=dia, turno__in=grupo
                 ).delete()
                 continue
-            n_entrenadores = {t.id: len(elegibles_para(t)) for t in grupo}
+            n_entrenadores = {
+                t.id: sum(1 for c in elegibles_para(t) if c.id not in de_banquillo)
+                for t in grupo
+            }
             players, franjas_de, max_franjas = _candidatos_bloque(
                 semana, dia, grupo, sponsors, escuela_cfg, surface_prefs,
                 turnos_exclusivos, cfg, sesiones_hoy, sesiones_bloque, horario,
@@ -921,10 +987,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 ini_t, fin_t = turno.horas(fecha)
                 # Un entrenador por pista, y a cada una quien más les toca a sus
                 # alumnos según sus porcentajes y lo que llevan hecho esta semana.
+                atados = _con_preferencia(sponsors, pref_franja_duro.get(turno.id))
+                sueltos = _con_preferencia(blandos, pref_franja_blando.get(turno.id))
                 entrenador_de, repetidos = _emparejar_entrenadores(
-                    pistas, sponsors, elegibles_para(turno), load,
+                    pistas, atados, elegibles_para(turno), load,
                     pesos=pesos, con_quien=coach_share, sesiones=player_sessions,
-                    blandos=blandos,
+                    blandos=sueltos, vetos=vetos_coach,
+                    solo_si_atado=de_banquillo,
                     info_pistas={c.id: (c.venue_id, c.number, c.fill_rank)
                                  for c in turno_courts},
                     divisiones=divisiones_jugador,

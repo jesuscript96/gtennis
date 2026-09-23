@@ -425,6 +425,14 @@ class Jugador(models.Model):
         help_text="Siempre dentro de ±1 división. Vacío = le da igual.",
     )
 
+    # Alumno «de relleno»: se coloca al final, donde quepa. No abre pista él
+    # solo ni le sube la prioridad haberse quedado fuera. Nace de la petición
+    # «despriorizar y ver dónde encaja al final».
+    sin_prioridad = models.BooleanField(
+        default=False, verbose_name="Sin prioridad",
+        help_text="Se coloca el último, solo en pistas ya abiertas por otros.",
+    )
+
     class Meta:
         verbose_name = "Jugador"
         verbose_name_plural = "Jugadores"
@@ -659,6 +667,67 @@ class Contrato(models.Model):
 
     def __str__(self):
         return f"{self.jugador} → {self.entrenador}"
+
+
+class VetoEntrenador(models.Model):
+    """Un jugador que NO debe entrenar con un entrenador concreto.
+
+    Es la rencilla de `Rencilla` pero entre alumno y entrenador: el motor nunca
+    pone a ese entrenador en una pista donde esté el alumno. Regla dura; si no
+    queda nadie más, la pista se queda sin entrenador antes que romperla.
+    """
+
+    jugador = models.ForeignKey(
+        Jugador, on_delete=models.CASCADE, related_name="vetos_entrenador"
+    )
+    entrenador = models.ForeignKey(
+        Entrenador, on_delete=models.CASCADE, related_name="vetado_por"
+    )
+    activo = models.BooleanField(default=True)
+    nota = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        verbose_name = "Veto de entrenador"
+        verbose_name_plural = "Vetos de entrenador"
+        unique_together = ("jugador", "entrenador")
+
+    def __str__(self):
+        return f"{self.jugador} ✗ {self.entrenador}"
+
+
+class PreferenciaEntrenadorFranja(models.Model):
+    """«Si entrena en M1, entrena con Iván».
+
+    A diferencia del contrato, que vale para toda la semana, esto solo se
+    activa en la franja indicada: fuera de ella el alumno va con quien le
+    toque por porcentajes.
+    """
+
+    class Tipo(models.TextChoices):
+        DURO = "DURO", "Duro · siempre que entrene en esa franja"
+        BLANDO = "BLANDO", "Blando · cuando se pueda"
+
+    jugador = models.ForeignKey(
+        Jugador, on_delete=models.CASCADE, related_name="preferencias_franja"
+    )
+    turno = models.ForeignKey(
+        Turno, on_delete=models.CASCADE, related_name="preferencias_jugador"
+    )
+    entrenador = models.ForeignKey(
+        Entrenador, on_delete=models.CASCADE, related_name="preferencias_franja"
+    )
+    tipo = models.CharField(
+        max_length=6, choices=Tipo.choices, default=Tipo.DURO
+    )
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Entrenador por franja"
+        verbose_name_plural = "Entrenadores por franja"
+        unique_together = ("jugador", "turno", "entrenador")
+
+    def __str__(self):
+        return f"{self.jugador} · {self.turno.codigo} → {self.entrenador}"
 
 
 class VacacionesEntrenador(models.Model):

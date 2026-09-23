@@ -98,7 +98,8 @@ class _Ent:
 
 
 def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
-               info=None, con_quien=None, sesiones=None, load=None):
+               info=None, con_quien=None, sesiones=None, load=None, vetos=None,
+               banquillo=frozenset()):
     from collections import Counter
 
     from .service import _emparejar_entrenadores
@@ -107,8 +108,86 @@ def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
         courts, duros or {}, [_Ent(i) for i in entrenadores],
         load if load is not None else Counter(),
         pesos=pesos, con_quien=con_quien, sesiones=sesiones,
-        blandos=blandos, info_pistas=info,
+        blandos=blandos, info_pistas=info, vetos=vetos,
+        solo_si_atado=banquillo,
     )
+
+
+class BanquilloTests(SimpleTestCase):
+    """Sergio, Iván y Jorge están para ponerlos a mano: el motor no los reparte,
+    pero sí los usa cuando un contrato o una franja les llama por su nombre."""
+
+    def test_no_entra_por_su_cuenta(self):
+        # Antes se repite al 100 en las dos pistas que dejar entrar al 101.
+        asignado, _ = _emparejar({10: [1], 11: [2]}, [100, 101],
+                                 banquillo={101})
+        self.assertNotIn(101, asignado.values())
+
+    def test_entra_si_lo_pide_un_contrato(self):
+        asignado, _ = _emparejar({10: [1], 11: [2]}, [100, 101],
+                                 duros={2: {101}}, banquillo={101})
+        self.assertEqual(asignado, {10: 100, 11: 101})
+
+    def test_solo_en_la_pista_que_lo_pide(self):
+        asignado, _ = _emparejar({10: [1], 11: [2]}, [101],
+                                 duros={2: {101}}, banquillo={101})
+        self.assertEqual(asignado, {11: 101})
+
+
+class VetoDeEntrenadorTests(SimpleTestCase):
+    """«No debe entrenar con X»: regla dura, aunque deje la pista sin nadie."""
+
+    def test_no_le_pone_al_vetado(self):
+        # Por porcentajes el 101 iría con el 1, pero el 1 le tiene vetado.
+        pesos = {1: {101: 1.0}, 2: {101: 1.0}, 3: {100: 1.0}, 4: {100: 1.0}}
+        asignado, _ = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos,
+            vetos={1: {101}})
+        self.assertEqual(asignado, {10: 100, 11: 101})
+
+    def test_antes_sin_entrenador_que_con_el_vetado(self):
+        asignado, _ = _emparejar({10: [1]}, [100], vetos={1: {100}})
+        self.assertEqual(asignado, {})
+
+    def test_el_veto_gana_al_contrato_duro(self):
+        # El 2 tiene contrato con el 100 y el 1, de su misma pista, le veta.
+        asignado, _ = _emparejar(
+            {10: [1, 2]}, [100, 101], duros={2: {100}}, vetos={1: {100}})
+        self.assertEqual(asignado, {10: 101})
+
+
+class SinPrioridadTests(SimpleTestCase):
+    """«Despriorizar y ver dónde encaja al final»: entra en pistas que ya abre
+    otro, nunca abre una él solo."""
+
+    def _pistas(self, n):
+        return [Court(id=i, venue_id=1, capacity=2) for i in range(1, n + 1)]
+
+    def test_no_abre_pista_el_solo(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=3, sin_prioridad=True),
+                     Player(id=2, division=3, sin_prioridad=True)],
+            courts=self._pistas(2), min_occupancy=1,
+        ))
+        self.assertEqual(res.courts, {})
+
+    def test_encaja_en_la_pista_de_otro(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=3),
+                     Player(id=2, division=3, sin_prioridad=True)],
+            courts=self._pistas(2), min_occupancy=1,
+        ))
+        pistas = {c: sorted(m) for c, m in res.courts.items() if m}
+        self.assertEqual(list(pistas.values()), [[1, 2]])
+
+    def test_cede_el_sitio_al_que_si_tiene_prioridad(self):
+        # Una sola pista de dos: entran los dos con prioridad, no el tercero.
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=3), Player(id=2, division=3),
+                     Player(id=3, division=3, sin_prioridad=True)],
+            courts=self._pistas(1), min_occupancy=1,
+        ))
+        self.assertEqual(sorted(res.courts[1]), [1, 2])
 
 
 class GruposDelEntrenadorTests(SimpleTestCase):
@@ -240,8 +319,12 @@ class MediaJornadaCerradaTests(SimpleTestCase):
         self.assertTrue(hay_entrenamiento(2, "MANANA"))
 
     def test_el_resto_de_tardes_si(self):
-        for dia in (0, 1, 3, 4, 5):
+        for dia in (0, 1, 3, 4):
             self.assertTrue(hay_entrenamiento(dia, "TARDE"), dia)
+
+    def test_el_sabado_solo_por_la_manana(self):
+        self.assertTrue(hay_entrenamiento(5, "MANANA"))
+        self.assertFalse(hay_entrenamiento(5, "TARDE"))
 
 
 class PreferenciaDivisionTests(SimpleTestCase):

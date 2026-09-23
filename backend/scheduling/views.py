@@ -215,7 +215,7 @@ class SemanaViewSet(viewsets.ModelViewSet):
         if solo_dia is not None:
             dias = [int(solo_dia)]
         elif desde_dia is not None:
-            dias = [d for d, _ in DIAS if int(desde_dia) <= d < 5]
+            dias = [d for d, _ in DIAS if int(desde_dia) <= d]
         elif dias is not None:
             dias = [int(d) for d in dias]
 

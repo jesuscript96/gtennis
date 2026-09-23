@@ -494,7 +494,7 @@ function Inner() {
                   style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "8px 14px", border: "none" }}
                   onClick={() => {
                     setShowRehacerMenu(false);
-                    if (window.confirm("¿Rehacer la semana completa (Lunes a Viernes)? Se recalcularán las asignaciones considerando todas las ausencias y disponibilidades actuales.")) {
+                    if (window.confirm("¿Rehacer la semana completa (Lunes a Sábado)? Se recalcularán las asignaciones considerando todas las ausencias y disponibilidades actuales.")) {
                       run("gen-all", () => generarSemana(semanaId));
                     }
                   }}
@@ -508,12 +508,12 @@ function Inner() {
                     style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "8px 14px", border: "none" }}
                     onClick={() => {
                       setShowRehacerMenu(false);
-                      if (window.confirm(`¿Rehacer desde el ${DIAS[dia]} hasta el Viernes? Los días anteriores se mantendrán intactos.`)) {
+                      if (window.confirm(`¿Rehacer desde el ${DIAS[dia]} hasta el Sábado? Los días anteriores se mantendrán intactos.`)) {
                         run(`gen-desde-${dia}`, () => generarSemana(semanaId, { desde_dia: dia }));
                       }
                     }}
                   >
-                    ⏩ <b>Desde {DIAS[dia]}</b> (hasta Viernes)
+                    ⏩ <b>Desde {DIAS[dia]}</b> (hasta Sábado)
                   </button>
                 )}
 
