@@ -114,6 +114,10 @@ export const publicarSemana = (id) =>
 export const despublicarSemana = (id) =>
   req(`/semanas/${id}/despublicar/`, { method: "POST", body: "{}" });
 
+export const deshacerSemana = (id) =>
+  req(`/semanas/${id}/deshacer/`, { method: "POST", body: "{}" });
+export const getCambios = (id) => req(`/semanas/${id}/cambios/`);
+
 export const getConfig = () => req("/configuracion/");
 export const saveConfig = (body) =>
   req("/configuracion/", { method: "PATCH", body: JSON.stringify(body) });

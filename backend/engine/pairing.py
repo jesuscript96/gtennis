@@ -135,6 +135,27 @@ class PairingInput:
     # colocar a alguien (nunca deja a nadie fuera por cuadrar) y de lo que
     # cuesta abrir una pista (no parte una pareja en dos individuales).
     w_balance: int = 200
+    # --- Reglas por bloque --------------------------------------------------
+    # Tope de jugadores por pista de este bloque, por encima de la capacidad de
+    # la sede: por la mañana nunca hay tres en una pista, por la tarde sí.
+    capacidad_max: int | None = None
+    # Coste por jugador de entrar en esta franja: T2 cuesta y T1 no, así que
+    # nadie va a T2 mientras quepa en T1.
+    coste_franja: dict[int, int] = field(default_factory=dict)
+    # Franja -> pistas que se pueden abrir como mucho. Es el número de
+    # entrenadores: por la tarde no se abre una pista que nadie puede dar.
+    max_pistas: dict[int, int] = field(default_factory=dict)
+    # Lo mismo pero como preferencia (mañana), con su coste por pista de más.
+    pistas_objetivo: dict[int, int] = field(default_factory=dict)
+    w_exceso_pistas: int = 0
+    # Coste de una pista con un solo jugador: antes una pareja y una pista
+    # vacía que dos individuales.
+    w_individual: int = 0
+    # Cuánto se puede estirar la vecindad y la edad antes que dejar a dos
+    # alumnos solos en sendas pistas, y lo que cuesta hacerlo.
+    span_extra: int = 0
+    edad_extra: int = 0
+    w_relajar: int = 0
 
 
 @dataclass
@@ -187,8 +208,32 @@ def _incompatible(
     p: Player, q: Player, vetoes: set[tuple[int, int]],
     apply_neighbor: bool = True, span: int = 1,
 ) -> bool:
+    """¿No pueden compartir pista de ninguna manera?"""
+    return _motivo(p, q, vetoes, apply_neighbor, span) == DURO
+
+
+# Resultados de `_motivo`: None = pueden ir juntos; RELAJABLE = solo si la
+# alternativa es peor (dos individuales); DURO = jamás.
+RELAJABLE = "RELAJABLE"
+DURO = "DURO"
+
+
+def _motivo(
+    p: Player, q: Player, vetoes: set[tuple[int, int]],
+    apply_neighbor: bool = True, span: int = 1,
+    span_extra: int = 0, edad_extra: int = 0,
+) -> str | None:
+    """Por qué no pueden compartir pista, o None si sí pueden.
+
+    `span_extra` y `edad_extra` son lo que el club acepta estirar cuando la
+    alternativa es dejar a dos alumnos en sendas pistas individuales: una
+    división más de distancia y un año más de diferencia. La regla de
+    chico/chica, las rencillas y la horquilla que cada alumno tiene declarada
+    en su ficha no se estiran nunca.
+    """
+    blando = False
     if _normalise(p.id, q.id) in vetoes:
-        return True
+        return DURO
     if apply_neighbor and p.division is not None and q.division is not None:
         # Cada uno tiene su horquilla y manda la más estrecha: si a uno de los
         # dos no le vale el otro, no comparten pista. La D1 es la más alta, así
@@ -196,25 +241,40 @@ def _incompatible(
         salto = q.division - p.division
         p_arriba, p_abajo = _horquilla(p, span)
         q_arriba, q_abajo = _horquilla(q, span)
-        if salto > 0 and (salto > p_abajo or salto > q_arriba):
-            return True
-        if salto < 0 and (-salto > p_arriba or -salto > q_abajo):
-            return True
+        # El estirón solo aplica a quien usa la horquilla del club: si el
+        # alumno tiene la suya declarada, esa manda tal cual.
+        e_p = span_extra if p.div_arriba is None and p.div_abajo is None else 0
+        e_q = span_extra if q.div_arriba is None and q.div_abajo is None else 0
+        if salto > 0:
+            if salto > p_abajo + e_p or salto > q_arriba + e_q:
+                return DURO
+            if salto > p_abajo or salto > q_arriba:
+                blando = True
+        elif salto < 0:
+            if -salto > p_arriba + e_p or -salto > q_abajo + e_q:
+                return DURO
+            if -salto > p_arriba or -salto > q_abajo:
+                blando = True
         # Un chico no entrena con una chica de nivel más bajo (división de
         # número mayor). Al revés sí: ella puede entrenar con chicos de su
         # nivel o de nivel más bajo.
         if p.sexo and q.sexo and p.sexo != q.sexo:
             chico, chica = (p, q) if p.sexo == "CHICO" else (q, p)
             if chica.division > chico.division:
-                return True
+                return DURO
     # Edad: manda el más estricto de los dos, y hacen falta las dos edades para
     # poder compararlas.
     edad_p, edad_q = _edad_creible(p.edad), _edad_creible(q.edad)
     if edad_p is not None and edad_q is not None:
         topes = [t for t in (_tope_edad(edad_p), _tope_edad(edad_q)) if t is not None]
-        if topes and abs(edad_p - edad_q) > min(topes):
-            return True
-    return False
+        if topes:
+            tope = min(topes)
+            diferencia = abs(edad_p - edad_q)
+            if diferencia > tope + edad_extra:
+                return DURO
+            if diferencia > tope:
+                blando = True
+    return RELAJABLE if blando else None
 
 
 def solve_pairing(data: PairingInput) -> PairingResult:
@@ -279,15 +339,40 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     # para penalizarlo en el objetivo (pistas de 3-4 solo si hacen falta).
     min_occ = max(1, data.min_occupancy)
     excess = {}
+    solos = {}
+
+    def tope(c):
+        return (c.capacity if data.capacidad_max is None
+                else min(c.capacity, data.capacidad_max))
+
     for f in franjas:
         for c in courts:
             occ = sum(en_pista[f, c.id])
-            model.Add(occ <= c.capacity * used[f, c.id])
+            model.Add(occ <= tope(c) * used[f, c.id])
             model.Add(occ >= min_occ * used[f, c.id])
-            e = model.NewIntVar(0, max(0, c.capacity - c.normal_density),
+            e = model.NewIntVar(0, max(0, tope(c) - c.normal_density),
                                 f"exc_{f}_{c.id}")
             model.Add(e >= occ - c.normal_density)
             excess[f, c.id] = e
+            # Pista con un solo jugador: `solo` vale 1 cuando está abierta y
+            # tiene uno. Se penaliza en el objetivo.
+            solo = model.NewBoolVar(f"solo_{f}_{c.id}")
+            model.Add(solo >= 2 * used[f, c.id] - occ)
+            model.Add(solo <= used[f, c.id])
+            solos[f, c.id] = solo
+
+    # Tantas pistas como entrenadores: por la tarde es un tope, por la mañana
+    # una preferencia con su coste.
+    exceso_pistas = {}
+    for f in franjas:
+        abiertas = sum(used[f, c.id] for c in courts)
+        if f in data.max_pistas:
+            model.Add(abiertas <= max(1, data.max_pistas[f]))
+        objetivo = data.pistas_objetivo.get(f)
+        if objetivo is not None and data.w_exceso_pistas:
+            e = model.NewIntVar(0, len(courts), f"expis_{f}")
+            model.Add(e >= abiertas - max(1, objetivo))
+            exceso_pistas[f] = e
 
     # Los alumnos «sin prioridad» encajan al final: solo en pistas que ya abre
     # alguien con prioridad, nunca ellos solos. Sin esto, despriorizarles baja
@@ -307,17 +392,30 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 else:
                     model.Add(sum(bajos) == 0)
 
-    # Incompatible pairs may never share a court.
+    # Parejas incompatibles. Las duras no comparten pista jamás; las
+    # relajables (una división o un año de más) se permiten pagando
+    # `w_relajar`, que sale a cuenta frente a dos pistas individuales.
+    relajadas = []
     for i in range(len(players)):
         for j in range(i + 1, len(players)):
             a, b = players[i], players[j]
-            if not _incompatible(a, b, data.vetoes, data.apply_neighbor,
-                                 data.neighbor_span):
+            motivo = _motivo(a, b, data.vetoes, data.apply_neighbor,
+                             data.neighbor_span, data.span_extra,
+                             data.edad_extra)
+            if motivo is None:
                 continue
-            for f in franjas:
-                for c in courts:
-                    if (a.id, f, c.id) in x and (b.id, f, c.id) in x:
-                        model.Add(x[a.id, f, c.id] + x[b.id, f, c.id] <= 1)
+            juntos = [(f, c) for f in franjas for c in courts
+                      if (a.id, f, c.id) in x and (b.id, f, c.id) in x]
+            if not juntos:
+                continue
+            if motivo == DURO or not data.w_relajar:
+                for f, c in juntos:
+                    model.Add(x[a.id, f, c.id] + x[b.id, f, c.id] <= 1)
+                continue
+            estirado = model.NewBoolVar(f"rel_{a.id}_{b.id}")
+            for f, c in juntos:
+                model.Add(x[a.id, f, c.id] + x[b.id, f, c.id] <= 1 + estirado)
+            relajadas.append(estirado)
 
     # Parejas obligatorias (#5, HARD): en una franja en la que pueden entrar
     # los dos, comparten pista (o ninguno de los dos juega en ella).
@@ -336,6 +434,12 @@ def solve_pairing(data: PairingInput) -> PairingResult:
 
     # --- Objective ---------------------------------------------------------
     terms = []
+    # La pista individual se penaliza, pero nunca tanto como para que salga a
+    # cuenta dejar al alumno en el banquillo: quien ha venido, entrena.
+    w_individual = min(
+        data.w_individual,
+        max(0, data.w_assign + data.w_central - data.w_court - 1),
+    )
     court_by_id = {c.id: c for c in courts}
     # 1) Maximise assigned players, weighted by division/state priority.
     #    Bonus per player on central (non-satellite) courts ensures the
@@ -349,6 +453,9 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         division = pidx[pid].division
         if division and court.number and not court.is_satellite:
             bonus -= data.w_pista_division * abs(court.number - division)
+        # T1 antes que T2: estar en la franja cara solo compensa cuando en la
+        # barata ya no se cabe.
+        bonus -= data.coste_franja.get(f, 0)
         terms.append((data.w_assign * prioridad(pidx[pid], f) + bonus) * var)
     for f in franjas:
         for c in courts:
@@ -364,6 +471,11 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             #    que apretar, y agrupar de dos en dos antes que individuales.
             terms.append(-data.w_density * excess[f, c.id])
             terms.append(-data.w_court * used[f, c.id])
+            terms.append(-w_individual * solos[f, c.id])
+    for f, e in exceso_pistas.items():
+        terms.append(-data.w_exceso_pistas * e)
+    for estirado in relajadas:
+        terms.append(-data.w_relajar * estirado)
     # 4) Anti-repetition: penalise re-pairing recent partners.
     for pair, weight in data.recent_partners.items():
         a, b = tuple(pair)

@@ -85,6 +85,36 @@ class Semana(models.Model):
         return f"Semana {self.fecha_inicio} ({self.get_estado_display()})"
 
 
+class CambioSemana(models.Model):
+    """Una foto del cuadrante justo antes de un cambio a mano, para deshacer.
+
+    Guarda la semana entera y no solo lo tocado: son doscientas filas de nada y
+    así deshacer es restaurar, sin tener que saber qué hizo cada operación
+    (mover una pista entera mueve hasta ocho filas y cambia dos entrenadores).
+    Se conservan las últimas `MAXIMO` de cada semana.
+    """
+
+    MAXIMO = 20
+
+    semana = models.ForeignKey(
+        "Semana", on_delete=models.CASCADE, related_name="cambios"
+    )
+    descripcion = models.CharField(max_length=120)
+    foto = models.JSONField(default=list)
+    creado_at = models.DateTimeField(auto_now_add=True)
+    creado_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    class Meta:
+        verbose_name = "Cambio a mano"
+        verbose_name_plural = "Cambios a mano"
+        ordering = ["-creado_at", "-id"]
+
+    def __str__(self):
+        return f"{self.semana} · {self.descripcion}"
+
+
 class Disponibilidad(models.Model):
     """Coach-entered override of a player's state for a given day/shift. The
     default (no row) means DISPONIBLE. This is the Friday 17:00 input."""
@@ -353,6 +383,57 @@ class ConfiguracionMotor(models.Model):
         help_text="Coste de abrir una pista. Hace que el motor agrupe de dos "
                   "en dos en vez de repartir clases individuales.",
     )
+    peso_individual = models.PositiveIntegerField(
+        default=1200,
+        verbose_name="Coste de una pista de un solo jugador",
+        help_text="Antes una pareja y una pista vacía que dos individuales. "
+                  "Dos individuales tienen que costar más que estirar la "
+                  "vecindad, o el motor nunca juntará a los que le sobran.",
+    )
+    peso_exceso_pistas = models.PositiveIntegerField(
+        default=600,
+        verbose_name="Coste de abrir más pistas que entrenadores",
+        help_text="Por la mañana es una preferencia (no puede haber tres por "
+                  "pista, así que a veces no salen las cuentas). Por la tarde "
+                  "es un tope y no se usa.",
+    )
+    peso_relajar_vecindad = models.PositiveIntegerField(
+        default=800,
+        verbose_name="Coste de estirar división o edad",
+        help_text="Lo que cuesta juntar a dos que se pasan por una división o "
+                  "un año. Solo se paga cuando evita dejarlos solos.",
+    )
+    peso_segunda_franja_tarde = models.PositiveIntegerField(
+        default=2500,
+        verbose_name="Coste de mandar a alguien a T2",
+        help_text="Por la tarde todos a T1 mientras quepan, aunque haya que "
+                  "hacer pistas de tres. T2 solo cuando T1 está lleno.",
+    )
+    capacidad_manana = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name="Máximo de jugadores por pista (mañana)",
+    )
+    capacidad_tarde = models.PositiveSmallIntegerField(
+        default=3,
+        verbose_name="Máximo de jugadores por pista (tarde)",
+    )
+    peso_densidad_tarde = models.PositiveIntegerField(
+        default=200,
+        verbose_name="Coste del tercer jugador en una pista (tarde)",
+        help_text="Por la tarde vale más una pista de tres que dejar a alguien "
+                  "fuera, así que apretar cuesta mucho menos que por la "
+                  "mañana. Tiene que estar por debajo de peso_asignacion.",
+    )
+    estiron_division = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name="Divisiones que se pueden estirar",
+        help_text="Solo para quien usa la horquilla del club; el alumno que "
+                  "tiene la suya declarada en la ficha no se estira nunca.",
+    )
+    estiron_edad = models.PositiveSmallIntegerField(
+        default=1, verbose_name="Años de edad que se pueden estirar",
+    )
+
     peso_equilibrio_franjas = models.PositiveIntegerField(
         default=200,
         help_text="Cuánto cuesta cada jugador de desequilibrio entre las "

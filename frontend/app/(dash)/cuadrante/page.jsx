@@ -19,6 +19,8 @@ import {
   moverPista,
   setCoach,
   removeAsignacion,
+  deshacerSemana,
+  getCambios,
 } from "../../../lib/api";
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -77,6 +79,8 @@ function Inner() {
   const [turnoIdx, setTurnoIdx] = useState(0);
   const [sel, setSel] = useState(null); // selección táctil (móvil): {k, jugador?, entrenador?, asignacion?, label}
   const [showRehacerMenu, setShowRehacerMenu] = useState(false);
+  // Cuántos cambios a mano se pueden deshacer, de más reciente a más antiguo.
+  const [cambios, setCambios] = useState([]);
 
   async function load(id, d) {
     setError(null);
@@ -84,9 +88,12 @@ function Inner() {
       const sid = id ?? (await getLatestSemana())?.id;
       if (!sid) { setError("No hay semanas. Crea una en Semanas y pulsa Generar."); return; }
       setSemanaId(sid);
-      const [cua, pan] = await Promise.all([getCuadrante(sid, d), getPanel(sid, d)]);
+      const [cua, pan, cam] = await Promise.all([
+        getCuadrante(sid, d), getPanel(sid, d), getCambios(sid).catch(() => []),
+      ]);
       setData(cua);
       setPanel(pan);
+      setCambios(Array.isArray(cam) ? cam : []);
     } catch (e) {
       setError(String(e.message || e));
     }
@@ -242,6 +249,14 @@ function Inner() {
           ))}
         </div>
         <div className="controls">
+          <button
+            className="btn ghost sm"
+            disabled={!!busy || cambios.length === 0}
+            onClick={() => run("deshacer", () => deshacerSemana(semanaId))}
+            title={cambios.length ? `Deshacer: ${cambios[0].descripcion}` : ""}
+          >
+            {busy === "deshacer" ? "…" : "↩︎ Deshacer"}
+          </button>
           <div style={{ position: "relative", display: "inline-block" }}>
             <button
               className="btn ghost sm"
@@ -457,6 +472,18 @@ function Inner() {
           <button key={i} className={i === dia ? "active" : ""} onClick={() => setDia(i)}>{d}</button>
         ))}
         <span style={{ flex: 1 }} />
+        <button
+          className="btn ghost sm"
+          disabled={!!busy || cambios.length === 0}
+          onClick={() => run("deshacer", () => deshacerSemana(semanaId))}
+          title={cambios.length
+            ? `Deshacer: ${cambios[0].descripcion}`
+            : "No hay cambios a mano que deshacer"}
+        >
+          {busy === "deshacer"
+            ? "Deshaciendo…"
+            : `↩︎ Deshacer${cambios.length ? ` · ${cambios[0].descripcion}` : ""}`}
+        </button>
         <div style={{ position: "relative", display: "inline-block" }}>
           <button
             className="btn ghost sm"

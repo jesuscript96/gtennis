@@ -175,6 +175,10 @@ def _player_priority(division, state, banquillo=0):
 # a mano. (día de la semana con lunes=0, bloque)
 CERRADO = {(2, "TARDE"), (5, "TARDE")}
 
+# Franjas que no se abren un día concreto aunque el bloque esté abierto. El
+# viernes por la tarde todo el mundo entrena a las 14:15.
+FRANJA_CERRADA = {(4, "T2")}
+
 
 def hay_entrenamiento(dia, bloque):
     """¿Se entrena ese día en ese bloque? El miércoles por la tarde, no."""
@@ -534,7 +538,9 @@ def _emparejar_entrenadores(
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
-    Devuelve `({pista: entrenador}, [entrenadores repetidos])`.
+    Devuelve `({pista: entrenador}, [pistas que se quedan huérfanas])`: sin
+    entrenador propio y sin ninguna vecina que las cubra. Nadie da dos pistas
+    del mismo turno.
 
     `solo_si_atado` son los del banquillo: no entran en el reparto, pero si un
     contrato o una preferencia de franja les llama a una pista concreta, van.
@@ -721,15 +727,12 @@ def _emparejar_entrenadores(
                 asignado = prueba
                 break
 
-    repetidos = []
-    for pista in sorted(todas, key=lambda p: (len(candidatos[p]), p)):
-        if not candidatos[pista] or not huerfana(pista, asignado):
-            continue
-        # No queda nadie libre a esta hora y ninguna vecina la cubre: se repite
-        # a quien más le toca, mejor que dejarla sin nadie.
-        cid = min(candidatos[pista], key=lambda c: (-afin[(pista, c)], load[c], c))
-        asignado[pista] = cid
-        repetidos.append(cid)
+    # Un entrenador no puede estar en dos pistas del mismo turno: el club lo
+    # ve mal y prefiere la pista sin entrenador, vigilada desde la de al lado.
+    # Las pistas que quedan huérfanas se listan igual, para que el informe
+    # avise.
+    repetidos = [pista for pista in sorted(todas)
+                 if candidatos[pista] and huerfana(pista, asignado)]
     for cid in asignado.values():
         load[cid] += 1
     return asignado, repetidos
@@ -872,6 +875,9 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     }
 
     for dia in dias:
+        # Quién ha entrenado con quién esta mañana: por la tarde se intenta
+        # repetir la pareja (blando), que es como lo hace el club.
+        parejas_manana: set = set()
         # Sesiones ya dadas hoy a cada jugador: alimenta el tope diario (#18)
         # y se reinicia cada jornada.
         sesiones_hoy: Counter = Counter()
@@ -917,15 +923,34 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             # además, se limpia lo que hubiera de antes. Saltar sin borrar deja
             # en pie el cuadrante de la última generación, que es justo lo que
             # no debe verse.
-            if not hay_entrenamiento(dia, grupo[0].bloque):
+            bloque = grupo[0].bloque
+            if not hay_entrenamiento(dia, bloque):
                 Asignacion.objects.filter(
                     semana=semana, dia=dia, turno__in=grupo
                 ).delete()
                 continue
+            # Franjas cerradas ese día (el viernes no hay T2): se vacían y se
+            # quitan del grupo, para que nadie caiga en ellas.
+            cerradas = [t for t in grupo if (dia, t.codigo) in FRANJA_CERRADA]
+            if cerradas:
+                Asignacion.objects.filter(
+                    semana=semana, dia=dia, turno__in=cerradas
+                ).delete()
+                grupo = [t for t in grupo if t not in cerradas]
+                if not grupo:
+                    continue
             n_entrenadores = {
                 t.id: sum(1 for c in elegibles_para(t) if c.id not in de_banquillo)
                 for t in grupo
             }
+            es_tarde = bloque == Turno.Bloque.TARDE
+            # Por la tarde todos a la primera franja mientras quepan, aunque
+            # salgan pistas de tres; por la mañana se reparten entre las dos.
+            orden = sorted(grupo, key=lambda t: t.hora_inicio)
+            coste_franja = (
+                {t.id: cfg.peso_segunda_franja_tarde * i
+                 for i, t in enumerate(orden)} if es_tarde else {}
+            )
             players, franjas_de, max_franjas = _candidatos_bloque(
                 semana, dia, grupo, sponsors, escuela_cfg, surface_prefs,
                 turnos_exclusivos, cfg, sesiones_hoy, sesiones_bloque, horario,
@@ -964,16 +989,30 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     apply_neighbor=cfg.aplicar_vecindad,
                     neighbor_span=cfg.vecindad_max,
                     min_occupancy=1 if cfg.permitir_individuales else 2,
-                    w_density=cfg.peso_densidad,
+                    w_density=(cfg.peso_densidad_tarde if es_tarde
+                               else cfg.peso_densidad),
                     w_court=cfg.peso_pista_abierta,
                     pairs_hard=pairs_hard,
-                    pairs_soft=pairs_soft,
+                    pairs_soft=pairs_soft | (parejas_manana if es_tarde else set()),
                     w_pair=cfg.peso_pareja,
                     franjas=[t.id for t in grupo],
                     franjas_de=franjas_de,
                     max_franjas=max_franjas,
                     entrenadores_franja=n_entrenadores,
-                    w_balance=cfg.peso_equilibrio_franjas,
+                    w_balance=0 if es_tarde else cfg.peso_equilibrio_franjas,
+                    capacidad_max=(cfg.capacidad_tarde if es_tarde
+                                   else cfg.capacidad_manana),
+                    coste_franja=coste_franja,
+                    # Tantas pistas como entrenadores: tope por la tarde,
+                    # preferencia por la mañana (con dos por pista no siempre
+                    # salen las cuentas).
+                    max_pistas=n_entrenadores if es_tarde else {},
+                    pistas_objetivo={} if es_tarde else n_entrenadores,
+                    w_exceso_pistas=0 if es_tarde else cfg.peso_exceso_pistas,
+                    w_individual=cfg.peso_individual,
+                    span_extra=cfg.estiron_division,
+                    edad_extra=cfg.estiron_edad,
+                    w_relajar=cfg.peso_relajar_vecindad,
                 )
             )
             # Regenerar = rehacer el bloque desde cero (incluye celdas editadas
@@ -1030,11 +1069,17 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                         report["overflow"].append(
                             {"dia": dia, "turno": turno.codigo, "pista": court_id}
                         )
-                for cid in repetidos:
-                    report.setdefault("coach_repetido", []).append(
-                        {"dia": dia, "turno": turno.codigo, "entrenador": cid}
+                if repetidos:
+                    report.setdefault("pistas_huerfanas", []).append(
+                        {"dia": dia, "turno": turno.codigo, "pistas": repetidos}
                     )
                 report["dias"].setdefault(dia, {})[turno.codigo] = result.status
+            if not es_tarde:
+                for turno in grupo:
+                    for miembros in result.franjas.get(turno.id, {}).values():
+                        for i, a_id in enumerate(miembros):
+                            for b_id in miembros[i + 1:]:
+                                parejas_manana.add(frozenset((a_id, b_id)))
             fuera = [p.id for p in players if p.id not in colocados] + sin_franja
             for jid in fuera:
                 banquillo[jid] += 1

@@ -231,6 +231,32 @@ class SemanaViewSet(viewsets.ModelViewSet):
         return Response(report)
 
     @action(detail=True, methods=["post"])
+    def deshacer(self, request, pk=None):
+        """Volver atrás el último cambio hecho a mano en el cuadrante."""
+        from .historial import deshacer, quedan
+
+        semana = self.get_object()
+        descripcion = deshacer(semana.id)
+        if descripcion is None:
+            return Response(
+                {"error": "No hay ningún cambio que deshacer."}, status=409)
+        return Response({"ok": True, "deshecho": descripcion,
+                         "quedan": quedan(semana.id)})
+
+    @action(detail=True, methods=["get"])
+    def cambios(self, request, pk=None):
+        """Los cambios a mano que se pueden deshacer, del último al primero."""
+        from .models import CambioSemana
+
+        semana = self.get_object()
+        return Response([
+            {"id": c.id, "descripcion": c.descripcion,
+             "creado_at": c.creado_at,
+             "por": c.creado_por.get_full_name() if c.creado_por else None}
+            for c in CambioSemana.objects.filter(semana=semana)
+        ])
+
+    @action(detail=True, methods=["post"])
     def publicar(self, request, pk=None):
         semana = self.get_object()
         semana.estado = Semana.EstadoSemana.PUBLICADO
@@ -569,12 +595,15 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         from django.db import transaction
         from academy.models import Jugador
 
+        from .historial import registrar
+
         a_id = request.data.get("a")
         b_id = request.data.get("b")
         campo = request.data.get("campo", "jugador")
         with transaction.atomic():
             A = Asignacion.objects.select_for_update().get(pk=a_id)
             B = Asignacion.objects.select_for_update().get(pk=b_id)
+            registrar(A.semana_id, f"Intercambiar {campo}", request.user)
 
             if campo == "entrenador":
                 ca, cb = A.entrenador_id, B.entrenador_id
@@ -625,6 +654,8 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         a = Asignacion.objects.filter(pk=asignacion_id).first()
         if a is None:
             return Response({"error": "Esa asignación ya no existe."}, status=404)
+        from .historial import registrar
+        registrar(a.semana_id, "Mover un jugador", request.user)
 
         turno = (Turno.objects.filter(pk=request.data.get("turno")).first()
                  if request.data.get("turno") else a.turno)
@@ -736,8 +767,26 @@ class AsignacionViewSet(viewsets.ModelViewSet):
                     {"error": "Alguno de esos jugadores ya entrena en la otra franja."},
                     status=409,
                 )
+            # El entrenador viaja con la pista: si en la franja de destino ya
+            # está dando otra, acabaría en dos a la vez.
+            def ocupado(filas, d, t, pista):
+                ids = {a.entrenador_id for a in filas if a.entrenador_id}
+                return ids and Asignacion.objects.filter(
+                    semana_id=semana_id, dia=d, turno_id=t,
+                    entrenador_id__in=ids,
+                ).exclude(pista_id=pista).exists()
+
+            if (ocupado(origen, dia, turno_id, pista_id)
+                    or ocupado(destino, desde_dia, desde_turno, desde_pista)):
+                return Response(
+                    {"error": "Ese entrenador ya está en otra pista de esa "
+                              "franja. Quítalo antes de mover la pista."},
+                    status=409,
+                )
 
         with transaction.atomic():
+            from .historial import registrar
+            registrar(semana_id, "Mover una pista entera", request.user)
             # El destino se aparta primero: las dos pistas pueden cruzarse.
             for a in destino:
                 a.pista_id = desde_pista
@@ -811,6 +860,8 @@ class AsignacionViewSet(viewsets.ModelViewSet):
             int(jugador_id),
             turno,
         )
+        from .historial import registrar
+        registrar(semana_id, "Colocar un jugador", request.user)
         # Una pista, un entrenador: quien entra en una pista que ya tiene
         # gente entrena con el suyo.
         vecina = Asignacion.objects.filter(
@@ -848,6 +899,10 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         desde_pista = request.data.get("desde_pista")
         if not all([semana_id, dia is not None, turno_id, pista_id]):
             return Response({"error": "Faltan parámetros."}, status=400)
+        from .historial import registrar
+        registrar(semana_id,
+                  "Quitar entrenador" if entrenador_id is None else "Poner entrenador",
+                  request.user)
         if desde_pista and str(desde_pista) != str(pista_id):
             Asignacion.objects.filter(
                 semana_id=semana_id, dia=request.data.get("desde_dia", dia),

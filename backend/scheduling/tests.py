@@ -209,3 +209,108 @@ class MoverPistaEnteraTests(AbrirPistaVaciaTests):
         self.assertEqual(r.status_code, 200)
         self.asig.refresh_from_db()
         self.assertEqual((self.asig.turno, self.asig.pista), (self.t1, self.p1))
+
+
+class DeshacerTests(TestCase):
+    """Cada cambio a mano deja una foto; deshacer vuelve a ella."""
+
+    def setUp(self):
+        self.api = APIClient()
+        self.api.force_authenticate(User.objects.create_user(
+            username="dir2", password="x", role=User.Role.SUPERADMIN))
+        Sede.objects.update(activa=False)
+        self.sede = Sede.objects.create(
+            nombre="Prueba", densidad_default=2, densidad_max=2, activa=True)
+        self.p1, self.p2 = [
+            Pista.objects.create(sede=self.sede, numero=n, superficie="TIERRA")
+            for n in (1, 2)
+        ]
+        self.m1, _ = Turno.objects.get_or_create(
+            codigo="M1", defaults={"nombre": "M1", "bloque": Turno.Bloque.MANANA,
+                                   "hora_inicio": time(8, 30),
+                                   "hora_fin": time(10, 0), "orden": 1})
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        self.coach = Entrenador.objects.create(nombre="Blas")
+        self.ana = Jugador.objects.create(nombre="Ana")
+        self.asig = Asignacion.objects.create(
+            semana=self.semana, dia=0, turno=self.m1, pista=self.p1,
+            jugador=self.ana, entrenador=self.coach)
+
+    def test_deshacer_devuelve_al_jugador_a_su_pista(self):
+        r = self.api.post("/api/asignaciones/mover/", {
+            "asignacion": self.asig.id, "pista": self.p2.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(Asignacion.objects.get().pista_id, self.p2.id)
+
+        r = self.api.post(f"/api/semanas/{self.semana.id}/deshacer/", {},
+                          format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(Asignacion.objects.get().pista_id, self.p1.id)
+
+    def test_sin_cambios_no_hay_nada_que_deshacer(self):
+        r = self.api.post(f"/api/semanas/{self.semana.id}/deshacer/", {},
+                          format="json")
+        self.assertEqual(r.status_code, 409)
+
+    def test_deshace_de_uno_en_uno_y_en_orden(self):
+        # Mover a una pista vacía la deja sin entrenador; después se le pone.
+        self.api.post("/api/asignaciones/mover/", {
+            "asignacion": self.asig.id, "pista": self.p2.id}, format="json")
+        self.assertIsNone(Asignacion.objects.get().entrenador_id)
+        self.api.post("/api/asignaciones/set_coach/", {
+            "semana": self.semana.id, "dia": 0, "turno": self.m1.id,
+            "pista": self.p2.id, "entrenador_id": self.coach.id}, format="json")
+        self.assertEqual(Asignacion.objects.get().entrenador_id, self.coach.id)
+
+        self.api.post(f"/api/semanas/{self.semana.id}/deshacer/", {}, format="json")
+        a = Asignacion.objects.get()
+        self.assertEqual((a.pista_id, a.entrenador_id), (self.p2.id, None))
+
+        self.api.post(f"/api/semanas/{self.semana.id}/deshacer/", {}, format="json")
+        a = Asignacion.objects.get()
+        self.assertEqual((a.pista_id, a.entrenador_id), (self.p1.id, self.coach.id))
+
+
+class MoverPistaSinDuplicarEntrenadorTests(TestCase):
+    """Llevar una pista a otra franja no puede dejar al entrenador dando dos
+    pistas a la vez."""
+
+    def setUp(self):
+        self.api = APIClient()
+        self.api.force_authenticate(User.objects.create_user(
+            username="dir3", password="x", role=User.Role.SUPERADMIN))
+        Sede.objects.update(activa=False)
+        self.sede = Sede.objects.create(
+            nombre="Prueba", densidad_default=2, densidad_max=2, activa=True)
+        self.p1, self.p2, self.p3 = [
+            Pista.objects.create(sede=self.sede, numero=n, superficie="TIERRA")
+            for n in (1, 2, 3)
+        ]
+        self.m1, _ = Turno.objects.get_or_create(
+            codigo="M1", defaults={"nombre": "M1", "bloque": Turno.Bloque.MANANA,
+                                   "hora_inicio": time(8, 30),
+                                   "hora_fin": time(10, 0), "orden": 1})
+        self.m2, _ = Turno.objects.get_or_create(
+            codigo="M2", defaults={"nombre": "M2", "bloque": Turno.Bloque.MANANA,
+                                   "hora_inicio": time(10, 30),
+                                   "hora_fin": time(12, 30), "orden": 2})
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        self.coach = Entrenador.objects.create(nombre="Blas")
+        a, b = [Jugador.objects.create(nombre=n) for n in ("Ana", "Bruno")]
+        # El mismo entrenador ya da la pista 3 en M2.
+        Asignacion.objects.create(
+            semana=self.semana, dia=0, turno=self.m1, pista=self.p1,
+            jugador=a, entrenador=self.coach)
+        Asignacion.objects.create(
+            semana=self.semana, dia=0, turno=self.m2, pista=self.p3,
+            jugador=b, entrenador=self.coach)
+
+    def test_no_deja_al_entrenador_en_dos_pistas(self):
+        r = self.api.post("/api/asignaciones/mover_pista/", {
+            "semana": self.semana.id, "dia": 0, "turno": self.m2.id,
+            "pista": self.p2.id, "desde_pista": self.p1.id,
+            "desde_dia": 0, "desde_turno": self.m1.id}, format="json")
+        self.assertEqual(r.status_code, 409, r.data)
+        self.assertIn("otra pista", r.data["error"])
+        self.assertEqual(
+            Asignacion.objects.filter(turno=self.m1, pista=self.p1).count(), 1)

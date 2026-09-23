@@ -680,10 +680,13 @@ class RepartoConPocosEntrenadoresTests(SimpleTestCase):
         self.assertEqual(len(set(asignado.values())), 5)
         self.assertEqual(repetidos, [])
 
-    def test_sin_numeros_de_pista_repite_como_antes(self):
-        asignado, repetidos = _emparejar({10: [1], 11: [2], 12: [3]}, [100])
-        self.assertEqual(set(asignado), {10, 11, 12})
-        self.assertEqual(len(repetidos), 2)
+    def test_nunca_repite_y_avisa_de_las_huerfanas(self):
+        # Un entrenador y tres pistas: da una, y las otras dos se listan como
+        # huérfanas. Antes se le repetía en las tres, que es justo lo que el
+        # club no quiere.
+        asignado, huerfanas = _emparejar({10: [1], 11: [2], 12: [3]}, [100])
+        self.assertEqual(set(asignado), {10})
+        self.assertEqual(huerfanas, [11, 12])
 
     def test_los_porcentajes_deciden_quien_va_a_cada_pista_elegida(self):
         # Tres pistas y dos entrenadores: van a la 1 y la 3, cada uno a la de
@@ -693,3 +696,90 @@ class RepartoConPocosEntrenadoresTests(SimpleTestCase):
         pesos = {1: {101: 1.0}, 3: {100: 1.0}}
         asignado, _ = _emparejar(courts, [100, 101], pesos=pesos, info=info)
         self.assertEqual(asignado, {201: 101, 203: 100})
+
+
+class TardeYMananaTests(SimpleTestCase):
+    """Por la tarde caben tres en una pista y por la mañana nunca; y a la
+    segunda franja de la tarde solo se va cuando la primera está llena."""
+
+    def _pistas(self, n, cap=4):
+        return [Court(id=i, venue_id=1, capacity=cap, normal_density=2)
+                for i in range(1, n + 1)]
+
+    def _jugadores(self, n):
+        return [Player(id=i, division=5) for i in range(1, n + 1)]
+
+    def test_por_la_manana_nunca_tres_en_una_pista(self):
+        res = solve_pairing(PairingInput(
+            players=self._jugadores(6), courts=self._pistas(3),
+            capacidad_max=2, min_occupancy=1,
+        ))
+        self.assertTrue(all(len(m) <= 2 for m in res.courts.values()))
+
+    def test_por_la_tarde_tres_antes_que_abrir_otra_franja(self):
+        # Dos pistas en T1 y seis jugadores: con tope de pistas, tres por pista.
+        res = solve_pairing(PairingInput(
+            players=self._jugadores(6), courts=self._pistas(4),
+            franjas=[1, 2], capacidad_max=3, max_pistas={1: 2, 2: 2},
+            coste_franja={1: 0, 2: 2500}, min_occupancy=1, w_assign=1000,
+        ))
+        en_t1 = sum(len(m) for m in res.franjas.get(1, {}).values())
+        self.assertEqual(en_t1, 6)
+        self.assertFalse(any(res.franjas.get(2, {}).values()))
+
+    def test_no_abre_mas_pistas_que_entrenadores(self):
+        res = solve_pairing(PairingInput(
+            players=self._jugadores(6), courts=self._pistas(6),
+            franjas=[1], max_pistas={1: 2}, capacidad_max=3, min_occupancy=1,
+        ))
+        self.assertEqual(len([m for m in res.franjas[1].values() if m]), 2)
+
+
+class AntesUnaParejaQueDosIndividualesTests(SimpleTestCase):
+    """Preferimos una pareja y una pista vacía; y antes de dejar a dos solos,
+    se estira una división o un año."""
+
+    def test_prefiere_pareja_a_dos_individuales(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=5), Player(id=2, division=5)],
+            courts=[Court(id=i, venue_id=1, capacity=2) for i in (1, 2)],
+            min_occupancy=1, w_individual=1200,
+        ))
+        self.assertEqual([sorted(m) for m in res.courts.values() if m], [[1, 2]])
+
+    def test_estira_la_division_antes_que_dejarlos_solos(self):
+        # Dos divisiones de distancia: prohibido con ±1, pero sale más barato
+        # que dos pistas individuales.
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=4), Player(id=2, division=6)],
+            courts=[Court(id=i, venue_id=1, capacity=2) for i in (1, 2)],
+            min_occupancy=1, w_individual=1200, span_extra=1, w_relajar=800,
+        ))
+        self.assertEqual([sorted(m) for m in res.courts.values() if m], [[1, 2]])
+
+    def test_sin_estiron_siguen_separados(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=4), Player(id=2, division=6)],
+            courts=[Court(id=i, venue_id=1, capacity=2) for i in (1, 2)],
+            min_occupancy=1, w_individual=1200,
+        ))
+        self.assertEqual(sorted(len(m) for m in res.courts.values() if m), [1, 1])
+
+    def test_el_estiron_no_rompe_chico_y_chica(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=4, sexo="CHICO"),
+                     Player(id=2, division=6, sexo="CHICA")],
+            courts=[Court(id=i, venue_id=1, capacity=2) for i in (1, 2)],
+            min_occupancy=1, w_individual=1200, span_extra=1, w_relajar=800,
+        ))
+        self.assertEqual(sorted(len(m) for m in res.courts.values() if m), [1, 1])
+
+    def test_el_estiron_no_toca_la_horquilla_de_la_ficha(self):
+        # El 1 tiene declarado «solo su división»: no se estira por él.
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=5, div_arriba=0, div_abajo=0),
+                     Player(id=2, division=6)],
+            courts=[Court(id=i, venue_id=1, capacity=2) for i in (1, 2)],
+            min_occupancy=1, w_individual=1200, span_extra=1, w_relajar=800,
+        ))
+        self.assertEqual(sorted(len(m) for m in res.courts.values() if m), [1, 1])
