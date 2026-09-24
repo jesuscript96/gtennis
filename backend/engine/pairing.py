@@ -113,6 +113,11 @@ class PairingInput:
     # Parejas preferidas (#5): HARD = misma pista obligatoria; SOFT = bonus.
     pairs_hard: set[frozenset[int]] = field(default_factory=set)
     pairs_soft: set[frozenset[int]] = field(default_factory=set)
+    # Parejas declaradas a mano en la ficha. Mandan sobre las reglas de
+    # emparejamiento —división, edad, chico/chica—, porque quien las declara
+    # conoce el caso mejor que el motor. Lo único que no saltan es una
+    # rencilla: si dos no deben coincidir, no coinciden.
+    pairs_declaradas: set[frozenset[int]] = field(default_factory=set)
     w_pair: int = 300
     # Premio por emparejar a quien lo pide hacia su lado de división, y la
     # mitad en contra si cae hacia el otro. Pequeño frente a colocar a todos:
@@ -403,6 +408,10 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                              data.neighbor_span, data.span_extra,
                              data.edad_extra)
             if motivo is None:
+                continue
+            # Pareja declarada a mano: manda sobre la regla que la separaba.
+            if (frozenset((a.id, b.id)) in data.pairs_declaradas
+                    and _normalise(a.id, b.id) not in data.vetoes):
                 continue
             juntos = [(f, c) for f in franjas for c in courts
                       if (a.id, f, c.id) in x and (b.id, f, c.id) in x]

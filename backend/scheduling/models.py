@@ -383,6 +383,12 @@ class ConfiguracionMotor(models.Model):
         help_text="Coste de abrir una pista. Hace que el motor agrupe de dos "
                   "en dos en vez de repartir clases individuales.",
     )
+    nivel_protegido = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name="Divisiones que nunca se quedan sin entrenador",
+        help_text="Sus pistas se cubren las primeras y, si no llega el reparto, "
+                  "se saca a un entrenador del banquillo. 0 lo desactiva.",
+    )
     peso_individual = models.PositiveIntegerField(
         default=1200,
         verbose_name="Coste de una pista de un solo jugador",

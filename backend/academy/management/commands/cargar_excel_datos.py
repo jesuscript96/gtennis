@@ -528,11 +528,18 @@ class Command(BaseCommand):
             for dia in range(6):
                 franjas = {f for d, f in vistos_c[c.id] if d == dia}
                 if not franjas:
+                    # Al de banquillo no se le marca ausente por no salir en el
+                    # cuadrante: está en el club justo para eso, para no estar
+                    # en ninguna pista hasta que hace falta.
+                    if c.reserva:
+                        continue
                     DisponibilidadEntrenador.objects.create(
                         semana=semana, entrenador=c, dia=dia,
                         estado=DisponibilidadEntrenador.EstadoCoach.AUSENTE,
                         nota="No aparece en el cuadrante real")
                     n_c += 1
+                    continue
+                if c.reserva:
                     continue
                 ini = min(horas[f][0] for f in franjas)
                 fin = max(horas[f][1] for f in franjas)

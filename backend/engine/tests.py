@@ -99,7 +99,7 @@ class _Ent:
 
 def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
                info=None, con_quien=None, sesiones=None, load=None, vetos=None,
-               banquillo=frozenset()):
+               banquillo=frozenset(), divisiones=None, nivel=0):
     from collections import Counter
 
     from .service import _emparejar_entrenadores
@@ -109,7 +109,7 @@ def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
         load if load is not None else Counter(),
         pesos=pesos, con_quien=con_quien, sesiones=sesiones,
         blandos=blandos, info_pistas=info, vetos=vetos,
-        solo_si_atado=banquillo,
+        solo_si_atado=banquillo, divisiones=divisiones, nivel_protegido=nivel,
     )
 
 
@@ -783,3 +783,73 @@ class AntesUnaParejaQueDosIndividualesTests(SimpleTestCase):
             min_occupancy=1, w_individual=1200, span_extra=1, w_relajar=800,
         ))
         self.assertEqual(sorted(len(m) for m in res.courts.values() if m), [1, 1])
+
+
+class GrupoAltoSiempreConEntrenadorTests(SimpleTestCase):
+    """Las pistas de división 1-2 se cubren las primeras y, si no llega el
+    reparto, se saca a uno del banquillo."""
+
+    def test_cubre_antes_la_pista_de_division_alta(self):
+        # Dos pistas y un entrenador: la de D1-D2 se lleva al entrenador.
+        asignado, _ = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100],
+            info={10: ("resort", 1, 0), 11: ("resort", 5, 0)},
+            divisiones={1: 7, 2: 7, 3: 2, 4: 3}, nivel=2)
+        self.assertEqual(set(asignado), {11})
+
+    def test_saca_al_banquillo_si_no_queda_nadie(self):
+        # El único del reparto se va con los suyos a la pista 10; la 11, que es
+        # de grupo alto, se queda sin nadie y la cubre el del banquillo.
+        pesos = {1: {100: 1.0}, 2: {100: 1.0}}
+        asignado, _ = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos,
+            divisiones={1: 7, 2: 7, 3: 1, 4: 2}, nivel=2, banquillo={101})
+        self.assertEqual(asignado, {10: 100, 11: 101})
+
+    def test_sin_nivel_protegido_el_banquillo_sigue_fuera(self):
+        pesos = {1: {100: 1.0}, 2: {100: 1.0}}
+        asignado, _ = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos,
+            divisiones={1: 7, 2: 7, 3: 1, 4: 2}, nivel=0, banquillo={101})
+        self.assertNotIn(101, asignado.values())
+
+    def test_el_veto_gana_al_rescate(self):
+        # El 3 no puede entrenar con el 101, así que su pista se queda sin
+        # entrenador aunque sea de grupo alto.
+        pesos = {1: {100: 1.0}, 2: {100: 1.0}}
+        asignado, _ = _emparejar(
+            {10: [1, 2], 11: [3, 4]}, [100, 101], pesos=pesos,
+            divisiones={1: 7, 2: 7, 3: 1, 4: 2}, nivel=2, banquillo={101},
+            vetos={3: {101}})
+        self.assertNotIn(11, asignado)
+
+
+class ParejaDeclaradaMandaTests(SimpleTestCase):
+    """Lo que el club declara a mano manda sobre las reglas de emparejamiento
+    —división, edad, chico/chica—, pero nunca sobre una rencilla."""
+
+    def _pistas(self):
+        return [Court(id=1, venue_id=1, capacity=2)]
+
+    def _dos(self):
+        # Un chico de división mejor y una chica de división peor: prohibido.
+        return [Player(id=1, division=6, sexo="CHICO", edad=14),
+                Player(id=2, division=7, sexo="CHICA", edad=14)]
+
+    def test_sin_declarar_no_comparten_pista(self):
+        res = solve_pairing(PairingInput(
+            players=self._dos(), courts=self._pistas(), min_occupancy=1))
+        self.assertNotEqual(sorted(res.courts.get(1, [])), [1, 2])
+
+    def test_declarada_comparten_pista(self):
+        res = solve_pairing(PairingInput(
+            players=self._dos(), courts=self._pistas(), min_occupancy=1,
+            pairs_declaradas={frozenset((1, 2))}, pairs_soft={frozenset((1, 2))},
+            w_pair=5000))
+        self.assertEqual(sorted(res.courts[1]), [1, 2])
+
+    def test_la_rencilla_sigue_mandando(self):
+        res = solve_pairing(PairingInput(
+            players=self._dos(), courts=self._pistas(), min_occupancy=1,
+            vetoes={(1, 2)}, pairs_declaradas={frozenset((1, 2))}))
+        self.assertNotEqual(sorted(res.courts.get(1, [])), [1, 2])

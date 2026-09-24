@@ -535,6 +535,7 @@ def _emparejar_entrenadores(
     courts, sponsors, elegibles, load, pesos=None, con_quien=None,
     sesiones=None, blandos=None, info_pistas=None, divisiones=None,
     peso_division=0, vetos=None, solo_si_atado=frozenset(),
+    nivel_protegido=0,
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
@@ -544,6 +545,11 @@ def _emparejar_entrenadores(
 
     `solo_si_atado` son los del banquillo: no entran en el reparto, pero si un
     contrato o una preferencia de franja les llama a una pista concreta, van.
+
+    `nivel_protegido` son las divisiones que nunca se quedan sin entrenador
+    (grupo 1-2). Sus pistas se cubren las primeras, por delante del criterio
+    geométrico de vecindad, y si aun así queda alguna suelta se saca a uno del
+    banquillo: esa es la petición explícita que los justifica.
 
     Quién va a cada pista lo deciden los porcentajes de sus alumnos (`pesos`,
     {jugador: {entrenador: fracción}}) y lo que llevan hecho esta semana con
@@ -586,13 +592,19 @@ def _emparejar_entrenadores(
         pista: {cid for j in miembros for cid in vetos.get(j, ())}
         for pista, miembros in courts.items()
     }
+    divisiones = divisiones or {}
+    protegidas = {
+        pista for pista, miembros in courts.items()
+        if nivel_protegido and any(
+            divisiones.get(j) is not None and divisiones[j] <= nivel_protegido
+            for j in miembros)
+    }
     afin = {
         (pista, cid): _afinidad(miembros, cid, pesos, con_quien, sesiones)
         for pista, miembros in courts.items() for cid in ids_elegibles
     }
 
     por_id = {c.id: c for c in elegibles}
-    divisiones = divisiones or {}
 
     def valor(pista, cid):
         if cid in vetado.get(pista, ()):
@@ -661,7 +673,8 @@ def _emparejar_entrenadores(
         opciones = {}
         for x in sedes:
             fijas = {n for n, p in por_sede[x].items()
-                     if contratados(courts[p], sponsors) & ids_elegibles}
+                     if p in protegidas
+                     or contratados(courts[p], sponsors) & ids_elegibles}
             opciones[x] = [
                 {por_sede[x][n] for n in elegidas}
                 for elegidas in opciones_de_pistas(
@@ -726,6 +739,19 @@ def _emparejar_entrenadores(
                     <= sum(huerfana(p, asignado) for p in todas)):
                 asignado = prueba
                 break
+
+    # Grupo 1-2 nunca sin entrenador: si el reparto no ha llegado, se saca a
+    # uno del banquillo. Es el único caso en que entran sin que les llame un
+    # contrato o una franja.
+    for pista in sorted(protegidas - set(asignado)):
+        ocupados = set(asignado.values())
+        libres = [c for c in sorted(solo_si_atado & ids_elegibles)
+                  if c not in ocupados and c not in vetado.get(pista, ())]
+        if libres:
+            asignado[pista] = min(libres, key=lambda c: (
+                _penalizacion_division(courts[pista], por_id[c], divisiones,
+                                       peso_division),
+                load[c], c))
 
     # Un entrenador no puede estar en dos pistas del mismo turno: el club lo
     # ve mal y prefiere la pista sin entrenador, vigilada desde la de al lado.
@@ -836,6 +862,9 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     for pp in PreferenciaPareja.objects.filter(activa=True):
         key = frozenset((pp.jugador_id, pp.jugador_objetivo_id))
         (pairs_hard if pp.tipo == "HARD" else pairs_soft).add(key)
+    # Las declaradas a mano saltan las reglas de emparejamiento; las parejas
+    # que el motor se inventa por la mañana para repetirlas por la tarde, no.
+    pairs_declaradas = pairs_hard | pairs_soft
 
     # Recuento de sesiones para acercarse a los % objetivo a lo largo de la semana.
     coach_share: Counter = Counter()      # (jugador_id, coach_id) -> nº sesiones
@@ -994,6 +1023,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     w_court=cfg.peso_pista_abierta,
                     pairs_hard=pairs_hard,
                     pairs_soft=pairs_soft | (parejas_manana if es_tarde else set()),
+                    pairs_declaradas=pairs_declaradas,
                     w_pair=cfg.peso_pareja,
                     franjas=[t.id for t in grupo],
                     franjas_de=franjas_de,
@@ -1037,6 +1067,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                                  for c in turno_courts},
                     divisiones=divisiones_jugador,
                     peso_division=cfg.peso_division_entrenador,
+                    nivel_protegido=cfg.nivel_protegido,
                 )
                 sin_entrenador = [p for p in pistas if p not in entrenador_de]
                 if sin_entrenador:
@@ -1092,6 +1123,18 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                         "status": result.status,
                     }
                 )
+
+    # Una pareja obligatoria puede seguir siendo imposible (uno entrena por la
+    # mañana y el otro por la tarde, superficies incompatibles…). Antes se
+    # quedaban los dos fuera sin explicación; ahora el informe lo dice.
+    if pairs_hard:
+        juntos = defaultdict(set)
+        for a in Asignacion.objects.filter(semana=semana):
+            juntos[(a.dia, a.turno_id, a.pista_id)].add(a.jugador_id)
+        cumplidas = {frozenset((x, y)) for m in juntos.values()
+                     for x in m for y in m if x != y}
+        for pareja in pairs_hard - cumplidas:
+            report.setdefault("parejas_imposibles", []).append(sorted(pareja))
 
     semana.generado_at = datetime.now(timezone.utc)
     semana.save(update_fields=["generado_at"])
