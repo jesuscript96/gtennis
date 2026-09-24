@@ -65,6 +65,9 @@ DIAS_COL = {0: (1, 3), 1: (4, 6), 2: (7, 9), 3: (10, 12), 4: (13, 15),
 BANDAS = [("M1", 317, 332), ("M2", 350, 365), ("T1", 367, 382), ("T2", 384, 388)]
 BANDA_TORNEO = (334, 348)
 
+# El único día que el cuadrante real puede AÑADIR al horario habitual.
+SABADO = 5
+
 # Cómo firma cada entrenador en el cuadrante.
 ALIAS_COACH = {
     "blas g": "Blas Gallego", "dani g": "Daniel Gimeno",
@@ -511,11 +514,15 @@ class Command(BaseCommand):
                                   else "Cuadrante real de la semana"),
                         )
                         n_aus += 1
-                    elif vino and not toca:
+                    elif vino and not toca and dia == SABADO:
+                        # Entre semana manda el horario habitual: que alguien
+                        # apareciera un día suelto no le añade ese día. El
+                        # sábado es la excepción, porque en la plantilla casi
+                        # nadie lo tiene declarado y sin esto saldría vacío.
                         Disponibilidad.objects.create(
                             semana=semana, jugador=j, dia=dia, ambito=bloque,
                             estado=Estado.EXTRA,
-                            nota="Cuadrante real de la semana",
+                            nota="Cuadrante real del sábado",
                         )
                         n_extra += 1
 
