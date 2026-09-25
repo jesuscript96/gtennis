@@ -99,7 +99,7 @@ class _Ent:
 
 def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
                info=None, con_quien=None, sesiones=None, load=None, vetos=None,
-               banquillo=frozenset(), divisiones=None, nivel=0):
+               banquillo=frozenset(), divisiones=None, nivel=0, tolerancia=None):
     from collections import Counter
 
     from .service import _emparejar_entrenadores
@@ -110,6 +110,7 @@ def _emparejar(courts, entrenadores, pesos=None, duros=None, blandos=None,
         pesos=pesos, con_quien=con_quien, sesiones=sesiones,
         blandos=blandos, info_pistas=info, vetos=vetos,
         solo_si_atado=banquillo, divisiones=divisiones, nivel_protegido=nivel,
+        tolerancia_division=tolerancia,
     )
 
 
@@ -853,3 +854,100 @@ class ParejaDeclaradaMandaTests(SimpleTestCase):
             players=self._dos(), courts=self._pistas(), min_occupancy=1,
             vetoes={(1, 2)}, pairs_declaradas={frozenset((1, 2))}))
         self.assertNotEqual(sorted(res.courts.get(1, [])), [1, 2])
+
+
+class _EntGrupo:
+    """Entrenador con su grupo de divisiones, para el límite de tolerancia."""
+
+    def __init__(self, id, desde=None, hasta=None):
+        self.id, self.division_desde, self.division_hasta = id, desde, hasta
+
+    def distancia_division(self, nivel):
+        if nivel is None or (self.division_desde is None and self.division_hasta is None):
+            return 0
+        desde = self.division_desde if self.division_desde is not None else nivel
+        hasta = self.division_hasta if self.division_hasta is not None else nivel
+        return max(0, desde - nivel, nivel - hasta)
+
+
+def _emparejar_grupos(courts, entrenadores, divisiones, tolerancia=None, **kw):
+    from collections import Counter
+
+    from .service import _emparejar_entrenadores
+
+    return _emparejar_entrenadores(
+        courts, {}, entrenadores, Counter(), divisiones=divisiones,
+        tolerancia_division=tolerancia, **kw)
+
+
+class ToleranciaDeGrupoTests(SimpleTestCase):
+    """El grupo del entrenador es un límite, no un coste: Dani Gimeno lleva el
+    1-2 y llega hasta la 4, pero no acaba con un D7."""
+
+    def test_no_le_dan_una_pista_fuera_de_su_grupo(self):
+        # 100 lleva el grupo 1-2; 101, del 4 al 9. La pista de D7 es del 101.
+        asignado, _ = _emparejar_grupos(
+            {10: [1], 11: [2]}, [_EntGrupo(100, 1, 2), _EntGrupo(101, 4, 9)],
+            {1: 7, 2: 2}, tolerancia=2)
+        self.assertEqual(asignado, {10: 101, 11: 100})
+
+    def test_llega_hasta_la_tolerancia(self):
+        asignado, _ = _emparejar_grupos(
+            {10: [1]}, [_EntGrupo(100, 1, 2)], {1: 4}, tolerancia=2)
+        self.assertEqual(asignado, {10: 100})
+
+    def test_cede_antes_que_dejar_la_pista_sin_nadie(self):
+        asignado, _ = _emparejar_grupos(
+            {10: [1]}, [_EntGrupo(100, 1, 2)], {1: 9}, tolerancia=2)
+        self.assertEqual(asignado, {10: 100})
+
+    def test_sin_tolerancia_se_comporta_como_antes(self):
+        asignado, _ = _emparejar_grupos(
+            {10: [1]}, [_EntGrupo(100, 1, 2)], {1: 9})
+        self.assertEqual(asignado, {10: 100})
+
+
+class PatronAlternoConBanquilloTests(SimpleTestCase):
+    """Los de banquillo no cuentan para decidir el patrón alterno: si contaran,
+    bastaría con tenerlos ahí para que dejara de aplicarse."""
+
+    def test_el_patron_sigue_saliendo_con_banquillo_disponible(self):
+        courts = {200 + n: [n * 10, n * 10 + 1] for n in range(1, 8)}
+        info = {200 + n: ("resort", n, 0) for n in range(1, 8)}
+        # Cinco del reparto y tres de banquillo, para siete pistas.
+        asignado, _ = _emparejar(
+            courts, [100, 101, 102, 103, 104, 900, 901, 902],
+            info=info, banquillo={900, 901, 902})
+        self.assertEqual({p - 200 for p in asignado}, {1, 3, 4, 6, 7})
+
+    def test_la_protegida_entre_dos_cubiertas_no_llama_al_banquillo(self):
+        courts = {201: [1], 202: [2], 203: [3]}
+        info = {201: ("resort", 1, 0), 202: ("resort", 2, 0), 203: ("resort", 3, 0)}
+        # La pista del medio es de grupo 1-2 pero tiene vecinas cubiertas.
+        asignado, _ = _emparejar(
+            courts, [100, 101, 900], info=info, banquillo={900},
+            divisiones={1: 5, 2: 2, 3: 5}, nivel=2)
+        self.assertEqual(set(asignado), {201, 203})
+        self.assertNotIn(900, asignado.values())
+
+
+class PrimerasPistasParaLosMejoresTests(SimpleTestCase):
+    """Los mejores grupos, en las primeras pistas, y sin dejar huecos."""
+
+    def _pistas(self, n):
+        return [Court(id=i, venue_id=1, capacity=2, number=i) for i in range(1, n + 1)]
+
+    def test_el_mejor_grupo_va_a_la_pista_mas_baja(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=2), Player(id=2, division=2),
+                     Player(id=3, division=7), Player(id=4, division=7)],
+            courts=self._pistas(4), w_pista_division=50))
+        pistas = {c: sorted(m) for c, m in res.courts.items() if m}
+        self.assertEqual(pistas[min(pistas)], [1, 2])
+
+    def test_no_deja_la_primera_pista_vacia(self):
+        # Nadie es de división 1: antes la pista 1 se quedaba libre.
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=2), Player(id=2, division=2)],
+            courts=self._pistas(5), w_pista_division=50, w_orden_pista=60))
+        self.assertEqual(sorted(res.courts.get(1, [])), [1, 2])

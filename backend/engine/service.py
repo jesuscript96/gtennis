@@ -29,7 +29,7 @@ from scheduling.models import (
     Semana,
 )
 
-from .pairing import Court, PairingInput, Player, solve_pairing
+from .pairing import NIVEL_MAX, Court, PairingInput, Player, solve_pairing
 
 
 def _build_courts(usar_satelites: bool = True) -> list[Court]:
@@ -141,11 +141,6 @@ def _effective_state(overrides, jugador_id, turno, fecha=None):
             continue
         return d.estado
     return Estado.DISPONIBLE
-
-
-# Nivel más bajo posible de división. La división 1 es la élite, así que la
-# prioridad de colocación se invierte respecto al nivel.
-NIVEL_MAX = 9  # nueve niveles desde septiembre de 2026 («GRUPOS TODOS»)
 
 
 def _player_priority(division, state, banquillo=0):
@@ -535,7 +530,7 @@ def _emparejar_entrenadores(
     courts, sponsors, elegibles, load, pesos=None, con_quien=None,
     sesiones=None, blandos=None, info_pistas=None, divisiones=None,
     peso_division=0, vetos=None, solo_si_atado=frozenset(),
-    nivel_protegido=0,
+    nivel_protegido=0, tolerancia_division=None,
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
@@ -546,10 +541,15 @@ def _emparejar_entrenadores(
     `solo_si_atado` son los del banquillo: no entran en el reparto, pero si un
     contrato o una preferencia de franja les llama a una pista concreta, van.
 
-    `nivel_protegido` son las divisiones que nunca se quedan sin entrenador
-    (grupo 1-2). Sus pistas se cubren las primeras, por delante del criterio
-    geométrico de vecindad, y si aun así queda alguna suelta se saca a uno del
-    banquillo: esa es la petición explícita que los justifica.
+    `nivel_protegido` son las divisiones que nunca se quedan sin nadie que las
+    vigile (grupo 1-2). Sus pistas se cubren las primeras, por delante del
+    criterio geométrico, y si alguna queda además huérfana —sin entrenador y
+    sin vecina que lo tenga— se saca a uno del banquillo.
+
+    `tolerancia_division` es cuántas divisiones se le admite a un entrenador
+    salirse de su grupo. Es límite, no coste: Dani Gimeno lleva el grupo 1-2 y
+    con tolerancia 2 llega hasta la 4, pero no acaba con un D7. Se levanta en
+    la pista que, con el límite puesto, no admitiría a nadie.
 
     Quién va a cada pista lo deciden los porcentajes de sus alumnos (`pesos`,
     {jugador: {entrenador: fracción}}) y lo que llevan hecho esta semana con
@@ -599,6 +599,28 @@ def _emparejar_entrenadores(
             divisiones.get(j) is not None and divisiones[j] <= nivel_protegido
             for j in miembros)
     }
+    # Grupo del entrenador como límite, no como coste.
+    por_id_todos = {c.id: c for c in elegibles}
+
+    def dentro_del_grupo(pista, cid):
+        if tolerancia_division is None:
+            return True
+        ent = por_id_todos[cid]
+        for j in courts[pista]:
+            nivel = divisiones.get(j)
+            if nivel is None:
+                continue
+            if ent.distancia_division(nivel) > tolerancia_division:
+                return False
+        return True
+
+    grupo_ok = {pista: {c for c in ids_elegibles if dentro_del_grupo(pista, c)}
+                for pista in courts}
+    for pista, admite in grupo_ok.items():
+        # Si con el límite no queda nadie, se levanta: antes un entrenador de
+        # otro grupo que una pista sin nadie.
+        if not admite - vetado.get(pista, set()):
+            grupo_ok[pista] = set(ids_elegibles)
     afin = {
         (pista, cid): _afinidad(miembros, cid, pesos, con_quien, sesiones)
         for pista, miembros in courts.items() for cid in ids_elegibles
@@ -607,7 +629,7 @@ def _emparejar_entrenadores(
     por_id = {c.id: c for c in elegibles}
 
     def valor(pista, cid):
-        if cid in vetado.get(pista, ()):
+        if cid in vetado.get(pista, ()) or cid not in grupo_ok[pista]:
             return -VALOR_PROHIBIDO
         if cid in solo_si_atado and cid not in contratados(courts[pista], sponsors):
             return -VALOR_PROHIBIDO
@@ -619,7 +641,7 @@ def _emparejar_entrenadores(
     candidatos = {}
     for pista, miembros in courts.items():
         duros = contratados(miembros, sponsors)
-        posibles = ids_elegibles - vetado.get(pista, set())
+        posibles = (ids_elegibles & grupo_ok[pista]) - vetado.get(pista, set())
         posibles -= {c for c in solo_si_atado if c not in duros}
         candidatos[pista] = sorted(
             posibles,
@@ -654,7 +676,12 @@ def _emparejar_entrenadores(
 
     # --- Pocos entrenadores: qué pistas llevan uno -----------------------
     permitidas = set(todas)
-    modo_vecinas = bool(info_pistas) and 0 < len(ids_elegibles) < len(todas)
+    # El patrón alterno (1-3-4-6-7, cada pista descubierta entre dos cubiertas)
+    # se decide con los entrenadores que entran en el reparto. Los de banquillo
+    # no cuentan: si contaran, bastaría con tenerlos ahí para que el patrón
+    # dejara de aplicarse.
+    del_reparto = ids_elegibles - set(solo_si_atado)
+    modo_vecinas = bool(info_pistas) and 0 < len(del_reparto) < len(todas)
     por_sede, orden_sede, ubicacion = defaultdict(dict), {}, {}
     if modo_vecinas:
         for pista in todas:
@@ -668,17 +695,18 @@ def _emparejar_entrenadores(
     if modo_vecinas:
         sedes = sorted(por_sede, key=lambda x: (orden_sede[x], str(x)))
         reparto = repartir_entre_sedes(
-            {x: list(por_sede[x]) for x in sedes}, len(ids_elegibles), sedes,
+            {x: list(por_sede[x]) for x in sedes}, len(del_reparto), sedes,
         )
         opciones = {}
         for x in sedes:
             fijas = {n for n, p in por_sede[x].items()
-                     if p in protegidas
-                     or contratados(courts[p], sponsors) & ids_elegibles}
+                     if contratados(courts[p], sponsors) & ids_elegibles}
+            prefer = {n for n, p in por_sede[x].items() if p in protegidas}
             opciones[x] = [
                 {por_sede[x][n] for n in elegidas}
                 for elegidas in opciones_de_pistas(
                     list(por_sede[x]), reparto[x], fijas=fijas,
+                    preferidas=prefer,
                 )
             ]
         # El reparto geométricamente mejor puede no cubrirse entero (un
@@ -688,6 +716,9 @@ def _emparejar_entrenadores(
         # (si ninguno, el que más cubre).
         elegido = {x: opciones[x][0] for x in sedes}
         for x in sedes:
+            # Las opciones ya vienen ordenadas —geometría primero y, a
+            # igualdad, las de grupo alto cubiertas—; aquí solo se descartan
+            # las que no se pueden cubrir enteras.
             mejor, mejor_n = elegido[x], -1
             for opcion in opciones[x][:200]:
                 prueba = set(opcion)
@@ -713,7 +744,7 @@ def _emparejar_entrenadores(
 
     def completar(asig):
         """Lo previsto que no se pudo cubrir se intenta con los que sobran."""
-        if modo_vecinas and ids_elegibles - set(asig.values()):
+        if modo_vecinas and del_reparto - set(asig.values()):
             resto = [p for p in todas if p not in asig]
             asig.update(emparejar(resto, ocupados=set(asig.values())))
         return asig
@@ -744,6 +775,10 @@ def _emparejar_entrenadores(
     # uno del banquillo. Es el único caso en que entran sin que les llame un
     # contrato o una franja.
     for pista in sorted(protegidas - set(asignado)):
+        # Entre dos pistas con entrenador no está sola: la vigila el de al
+        # lado, y el club lo da por bueno.
+        if not huerfana(pista, asignado):
+            continue
         ocupados = set(asignado.values())
         libres = [c for c in sorted(solo_si_atado & ids_elegibles)
                   if c not in ocupados and c not in vetado.get(pista, ())]
@@ -1014,6 +1049,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     w_central=cfg.peso_central,
                     w_resina=cfg.peso_resina,
                     w_pista_division=cfg.peso_pista_division,
+                    w_orden_pista=cfg.peso_orden_pista,
                     w_repeat=cfg.peso_repeticion,
                     apply_neighbor=cfg.aplicar_vecindad,
                     neighbor_span=cfg.vecindad_max,
@@ -1036,7 +1072,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     # Tantas pistas como entrenadores: tope por la tarde,
                     # preferencia por la mañana (con dos por pista no siempre
                     # salen las cuentas).
-                    max_pistas=n_entrenadores if es_tarde else {},
+                    # Por la tarde el tope cuenta también al banquillo: si hay
+                    # un entrenador libre, se abre pista en vez de hacer un trío.
+                    max_pistas=({t.id: len(elegibles_para(t)) for t in grupo}
+                                if es_tarde else {}),
                     pistas_objetivo={} if es_tarde else n_entrenadores,
                     w_exceso_pistas=0 if es_tarde else cfg.peso_exceso_pistas,
                     w_individual=cfg.peso_individual,
@@ -1068,6 +1107,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     divisiones=divisiones_jugador,
                     peso_division=cfg.peso_division_entrenador,
                     nivel_protegido=cfg.nivel_protegido,
+                    tolerancia_division=cfg.tolerancia_division,
                 )
                 sin_entrenador = [p for p in pistas if p not in entrenador_de]
                 if sin_entrenador:

@@ -383,6 +383,18 @@ class ConfiguracionMotor(models.Model):
         help_text="Coste de abrir una pista. Hace que el motor agrupe de dos "
                   "en dos en vez de repartir clases individuales.",
     )
+    tolerancia_division = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name="Divisiones que un entrenador se sale de su grupo",
+        help_text="Límite, no coste: Dani Gimeno lleva el grupo 1-2 y con 2 "
+                  "llega hasta la 4, pero no acaba con un D7. Solo cede en la "
+                  "pista que, con el límite puesto, no admitiría a nadie.",
+    )
+    peso_orden_pista = models.PositiveIntegerField(
+        default=60,
+        verbose_name="Coste de abrir una pista lejos de la primera",
+        help_text="Cierra los huecos: antes de abrir la 5 se abre la 4.",
+    )
     nivel_protegido = models.PositiveSmallIntegerField(
         default=2,
         verbose_name="Divisiones que nunca se quedan sin entrenador",
@@ -424,11 +436,13 @@ class ConfiguracionMotor(models.Model):
         verbose_name="Máximo de jugadores por pista (tarde)",
     )
     peso_densidad_tarde = models.PositiveIntegerField(
-        default=200,
+        default=1000,
         verbose_name="Coste del tercer jugador en una pista (tarde)",
-        help_text="Por la tarde vale más una pista de tres que dejar a alguien "
-                  "fuera, así que apretar cuesta mucho menos que por la "
-                  "mañana. Tiene que estar por debajo de peso_asignacion.",
+        help_text="Tiene que estar POR ENCIMA de peso_pista_abierta, para que "
+                  "mientras quede un entrenador libre se abra otra pista en vez "
+                  "de meter a un tercero; y por debajo de peso_pista_abierta + "
+                  "peso_individual, para que con un número impar salga el trío "
+                  "y no la clase individual.",
     )
     estiron_division = models.PositiveSmallIntegerField(
         default=1,

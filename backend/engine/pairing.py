@@ -92,9 +92,14 @@ class PairingInput:
     w_assign: int = 1000
     w_satellite: int = 5
     w_central: int = 100
-    # Cada división tira hacia su pista: la 1 a la pista 1, la 2 a la 2… Es un
-    # desempate por cada pista de distancia, no una regla.
+    # Los mejores grupos, en las primeras pistas. No es que la división N vaya
+    # a la pista N —con solo tres jugadores de D1 eso dejaba la pista 1 vacía
+    # media semana—: es que cuanto mejor es el grupo más cuesta alejarlo de la
+    # pista 1, así que se ordenan de arriba abajo sobre las pistas que haya.
     w_pista_division: int = 50
+    # Coste de abrir una pista por cada número que se aleja de la primera.
+    # Cierra los huecos: antes de abrir la 5 se abre la 4.
+    w_orden_pista: int = 0
     # Coste de abrir una pista de resina: el club entrena en tierra y la resina
     # es el recurso de última hora. Por debajo de lo que vale colocar a
     # alguien, así que nadie se queda fuera por no pisar resina.
@@ -181,6 +186,10 @@ def _normalise(a: int, b: int) -> tuple[int, int]:
 # Diferencia de edad que admite cada franja de edad: (desde, hasta, años). Los
 # críos entrenan con críos — de 10 a 14 años, como mucho dos años de
 # diferencia; de 15 a 18, tres. Fuera de esas edades el club no pone tope.
+# Nivel más bajo posible de división. La división 1 es la élite, así que
+# cuanto MENOR es el número, mejor es el grupo.
+NIVEL_MAX = 9
+
 BANDAS_EDAD = ((10, 12, 2), (13, 14, 2), (15, 18, 3))
 # Por debajo de esto la edad no es de un alumno, es un error de tecleo: se
 # trata como si no estuviera declarada en vez de dejar a nadie sin compañero.
@@ -461,7 +470,11 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         # empata.
         division = pidx[pid].division
         if division and court.number and not court.is_satellite:
-            bonus -= data.w_pista_division * abs(court.number - division)
+            # (número de pista − 1) × lo bueno que es el grupo, normalizado
+            # para que siga siendo un desempate y nunca una razón para dejar a
+            # nadie fuera.
+            bonus -= (data.w_pista_division * (court.number - 1)
+                      * (NIVEL_MAX + 1 - division)) // NIVEL_MAX
         # T1 antes que T2: estar en la franja cara solo compensa cuando en la
         # barata ya no se cabe.
         bonus -= data.coste_franja.get(f, 0)
@@ -472,6 +485,9 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             #    overflow order (fill_rank).
             if c.is_satellite:
                 terms.append(-data.w_satellite * max(1, c.fill_rank) * used[f, c.id])
+            elif c.number and data.w_orden_pista:
+                terms.append(
+                    -data.w_orden_pista * (c.number - 1) * used[f, c.id])
             # Primero la tierra: la resina solo se abre cuando la tierra está
             # llena (o cuando la pide quien juega en ella).
             if c.surface == "RESINA":

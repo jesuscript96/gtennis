@@ -13,7 +13,7 @@ además descarta los repartos que no puede cubrir enteros.
 from itertools import combinations
 
 
-def opciones_de_pistas(numeros, k, fijas=()):
+def opciones_de_pistas(numeros, k, fijas=(), preferidas=()):
     """Todas las formas de poner `k` entrenadores, de la mejor a la peor.
 
     `numeros` son las pistas OCUPADAS de una sede y `k` los entrenadores que
@@ -28,7 +28,11 @@ def opciones_de_pistas(numeros, k, fijas=()):
       2. Que ningún entrenador tenga que vigilar dos pistas además de la suya:
          con 1-3-4-6-8 la pista 6 vigilaría la 5 y la 7.
       3. Que las pistas sin entrenador lo tengan a ambos lados.
-      4. Que la pista más baja lleve entrenador, y que las que se quedan sin él
+      4. Que lleven entrenador las pistas `preferidas` (las de grupo 1-2). Es
+         un desempate DENTRO del patrón, no por encima: una pista de grupo alto
+         entre dos cubiertas la vigila el de al lado, y eso el club lo da por
+         bueno; lo que no quiere es que se quede además huérfana.
+      5. Que la pista más baja lleve entrenador, y que las que se quedan sin él
          sean las de número más bajo. Es el desempate que reproduce el
          1-3-4-6-7 de Iván; cualquier otra que empate en 1-3 vale igual.
 
@@ -38,6 +42,7 @@ def opciones_de_pistas(numeros, k, fijas=()):
     """
     numeros = sorted(set(numeros))
     fijas = set(fijas) & set(numeros)
+    preferidas = set(preferidas) & set(numeros)
     if k >= len(numeros):
         return [set(numeros)]
     if len(fijas) >= k:
@@ -61,7 +66,8 @@ def opciones_de_pistas(numeros, k, fijas=()):
             (sum(1 for m in (c - 1, c + 1) if m in sin) for c in con),
             default=0,
         )
-        clave = (huerfanas, carga, -dobles, numeros[0] not in con, sin)
+        clave = (huerfanas, carga, -dobles, -len(con & preferidas),
+                 numeros[0] not in con, sin)
         puntuadas.append((clave, con))
     puntuadas.sort(key=lambda par: par[0])
     return [con for _clave, con in puntuadas]
