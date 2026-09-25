@@ -383,6 +383,12 @@ class ConfiguracionMotor(models.Model):
         help_text="Coste de abrir una pista. Hace que el motor agrupe de dos "
                   "en dos en vez de repartir clases individuales.",
     )
+    nivel_solo_tierra = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name="Divisiones que no pisan resina",
+        help_text="Las divisiones hasta esta no entrenan en resina salvo que "
+                  "se les declare la superficie en la ficha. 0 lo desactiva.",
+    )
     tolerancia_division = models.PositiveSmallIntegerField(
         default=2,
         verbose_name="Divisiones que un entrenador se sale de su grupo",

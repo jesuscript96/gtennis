@@ -951,3 +951,42 @@ class PrimerasPistasParaLosMejoresTests(SimpleTestCase):
             players=[Player(id=1, division=2), Player(id=2, division=2)],
             courts=self._pistas(5), w_pista_division=50, w_orden_pista=60))
         self.assertEqual(sorted(res.courts.get(1, [])), [1, 2])
+
+
+class ArribaSiempreEnTierraTests(SimpleTestCase):
+    """Las divisiones 1 y 2 no pisan resina salvo que se les declare."""
+
+    def _pistas(self):
+        return [Court(id=1, venue_id=1, capacity=2, number=1, surface="TIERRA"),
+                Court(id=2, venue_id=1, capacity=2, number=2, surface="RESINA")]
+
+    def test_un_d2_no_acaba_en_resina(self):
+        # Cuatro jugadores para dos pistas: los de arriba, a la de tierra.
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=2, surface_pref="TIERRA"),
+                     Player(id=2, division=2, surface_pref="TIERRA"),
+                     Player(id=3, division=7), Player(id=4, division=7)],
+            courts=self._pistas(), w_resina=1200))
+        self.assertEqual(sorted(res.courts[1]), [1, 2])
+
+    def test_si_se_le_declara_la_resina_va(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=1, division=2, surface_pref="RESINA"),
+                     Player(id=2, division=2, surface_pref="RESINA")],
+            courts=self._pistas(), w_resina=1200))
+        self.assertEqual(sorted(res.courts[2]), [1, 2])
+
+
+class NadieSoloPorLaTardeTests(SimpleTestCase):
+    """Antes una pista de tres que alguien solo."""
+
+    def test_nueve_jugadores_salen_en_cuatro_pistas(self):
+        res = solve_pairing(PairingInput(
+            players=[Player(id=i, division=7) for i in range(1, 10)],
+            courts=[Court(id=i, venue_id=1, capacity=3, normal_density=2,
+                          number=i) for i in range(1, 8)],
+            capacidad_max=3, min_occupancy=2, w_density=1000,
+        ))
+        tamanos = sorted(len(m) for m in res.courts.values() if m)
+        self.assertEqual(tamanos, [2, 2, 2, 3])
+        self.assertEqual(res.unassigned, [])

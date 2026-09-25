@@ -235,7 +235,8 @@ def motivo_no_disponible(c, dia, turno, fecha, vacaciones, jornada, partes):
     return None
 
 
-def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
+def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central,
+                   nivel_solo_tierra=0):
     """El `Player` del solver para la ficha `j` ese día."""
     coach = next(iter(sponsors.get(j.id, set())), None)
     # Superficie preferida activa en la fecha (#1).
@@ -244,6 +245,11 @@ def _jugador_motor(j, fecha, sponsors, surface_prefs, priority, solo_central):
         if (desde is None or fecha >= desde) and (hasta is None or fecha <= hasta):
             pref = sup
             break
+    # Los de arriba entrenan en tierra. Solo pisan resina si alguien se lo
+    # declara expresamente en la ficha, que es lo que hace el `if` de antes.
+    if (pref is None and nivel_solo_tierra and j.division
+            and j.division.nivel <= nivel_solo_tierra):
+        pref = "TIERRA"
     arriba, abajo = HORQUILLA_VECINDAD.get(j.vecindad, (None, None))
     return Player(
         division_pref={"ARRIBA": -1, "ABAJO": 1}.get(j.pareja_division, 0),
@@ -364,6 +370,7 @@ def _candidatos_bloque(
         _unico, solo_central = escuela_cfg.get(j.escuela_id, (None, False))
         jugadores.append(_jugador_motor(
             j, fecha, sponsors, surface_prefs, max(opciones.values()), solo_central,
+            cfg.nivel_solo_tierra if cfg else 0,
         ))
         franjas_de[j.id] = opciones
         # Una sesión por bloque. Quien viene además a dos franjas concretas
@@ -1053,7 +1060,12 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     w_repeat=cfg.peso_repeticion,
                     apply_neighbor=cfg.aplicar_vecindad,
                     neighbor_span=cfg.vecindad_max,
-                    min_occupancy=1 if cfg.permitir_individuales else 2,
+                    # Por la tarde preferimos una pista de tres con entrenador
+                    # a alguien solo, así que ahí no se abren individuales
+                    # mientras haya con quién juntarse (con capacidad 3
+                    # cualquier número de dos para arriba se reparte).
+                    min_occupancy=(2 if (es_tarde and len(players) > 1)
+                                   else (1 if cfg.permitir_individuales else 2)),
                     w_density=(cfg.peso_densidad_tarde if es_tarde
                                else cfg.peso_densidad),
                     w_court=cfg.peso_pista_abierta,
