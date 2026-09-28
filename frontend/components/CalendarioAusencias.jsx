@@ -30,6 +30,12 @@ const fmtCorta = (s) => {
   const d = deIso(s);
   return `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
 };
+// El lunes de la semana en la que cae esa fecha.
+const lunesDe = (d) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return iso(x);
+};
 
 // Lo que se declara, en el idioma de quien lo declara. Para el alumno, por
 // dentro son el estado y el subtipo de la matriz de estados.
@@ -106,6 +112,11 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   origenRef.current = origen;
 
   const hoy = new Date();
+  // Por defecto, las tres semanas que importan: la pasada, la de ahora y la
+  // que viene. Es lo que se declara el 95% de las veces, y no se parte cuando
+  // caen en dos meses distintos. El mes entero sigue estando a un clic.
+  const [vista, setVista] = useState("semanas");
+  const [desdeLunes, setDesdeLunes] = useState(() => sumaDias(lunesDe(hoy), -7));
   const [mes, setMes] = useState(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
   const [ausencias, setAusencias] = useState([]);
   // La selección manda desde una ref y se refleja en el estado. Leyéndola del
@@ -210,17 +221,26 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
     setGuardando(false);
   }
 
-  // Rejilla del mes, empezando en lunes y completando la primera semana.
-  const primero = new Date(mes.getFullYear(), mes.getMonth(), 1);
-  const hueco = (primero.getDay() + 6) % 7;
+  // Rejilla: tres semanas seguidas, o el mes entero empezando en lunes.
   const celdas = [];
-  for (let i = 0; i < hueco; i++) celdas.push(null);
-  const ultimo = new Date(mes.getFullYear(), mes.getMonth() + 1, 0).getDate();
-  for (let d = 1; d <= ultimo; d++) {
-    celdas.push(iso(new Date(mes.getFullYear(), mes.getMonth(), d)));
+  if (vista === "semanas") {
+    for (let i = 0; i < 21; i++) celdas.push(sumaDias(desdeLunes, i));
+  } else {
+    const primero = new Date(mes.getFullYear(), mes.getMonth(), 1);
+    for (let i = 0; i < (primero.getDay() + 6) % 7; i++) celdas.push(null);
+    const ultimo = new Date(mes.getFullYear(), mes.getMonth() + 1, 0).getDate();
+    for (let d = 1; d <= ultimo; d++) {
+      celdas.push(iso(new Date(mes.getFullYear(), mes.getMonth(), d)));
+    }
   }
 
-  const mover = (n) => setMes(new Date(mes.getFullYear(), mes.getMonth() + n, 1));
+  const mover = (n) => {
+    if (vista === "semanas") setDesdeLunes(sumaDias(desdeLunes, n * 7));
+    else setMes(new Date(mes.getFullYear(), mes.getMonth() + n, 1));
+  };
+  const titulo = vista === "semanas"
+    ? `${fmtCorta(desdeLunes)} – ${fmtCorta(sumaDias(desdeLunes, 20))}`
+    : `${MESES[mes.getMonth()]} ${mes.getFullYear()}`;
   const isoHoy = iso(hoy);
   const ambitoDe = (a) => AMBITOS.find((x) => x.value === a.ambito);
 
@@ -228,10 +248,22 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
     <div className="calendario-ausencias">
       <div className="cal-head">
         <button type="button" className="cal-nav" onClick={() => mover(-1)}
-          aria-label="Mes anterior">‹</button>
-        <strong>{MESES[mes.getMonth()]} {mes.getFullYear()}</strong>
+          aria-label={vista === "semanas" ? "Semana anterior" : "Mes anterior"}>‹</button>
+        <strong>{titulo}</strong>
         <button type="button" className="cal-nav" onClick={() => mover(1)}
-          aria-label="Mes siguiente">›</button>
+          aria-label={vista === "semanas" ? "Semana siguiente" : "Mes siguiente"}>›</button>
+        <button type="button" className="cal-vista" onClick={() => {
+          if (vista === "semanas") {
+            const d = deIso(desdeLunes);
+            setMes(new Date(d.getFullYear(), d.getMonth(), 1));
+            setVista("mes");
+          } else {
+            setDesdeLunes(sumaDias(lunesDe(hoy), -7));
+            setVista("semanas");
+          }
+        }}>
+          {vista === "semanas" ? "Ver el mes" : "Ver 3 semanas"}
+        </button>
       </div>
 
       <div className="cal-rejilla">

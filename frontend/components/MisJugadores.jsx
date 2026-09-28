@@ -46,7 +46,9 @@ export default function MisJugadores() {
     <div className="page">
       <h1>Mis jugadores</h1>
       <p className="hint">
-        Declara cuándo entrena cada uno. Toca un nombre para abrirlo.
+        Declara cuándo entrena cada uno y sus faltas. Toca un nombre para
+        abrirlo. En el calendario puedes marcar varios días —sueltos o
+        arrastrando— y declararlos de una vez.
       </p>
 
       <input className="buscador" placeholder="Buscar jugador…" value={busca}
