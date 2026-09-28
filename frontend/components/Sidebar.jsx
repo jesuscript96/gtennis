@@ -36,6 +36,9 @@ const SECTIONS = [
     ["/avisos", "Avisos"],
     ["/feedback", "Feedback"],
   ] },
+  { items: [
+    ["/mi-cuenta", "Mi cuenta"],
+  ] },
 ];
 
 const NEED = { direccion: 3, coach: 2 };
@@ -50,6 +53,9 @@ const SECTIONS_ENTRENADOR = [
     ["/jugadores", "Mis jugadores"],
     ["/ausencias", "Ausencias de la semana"],
     ["/ausencias-fechas", "Bajas por fechas"],
+  ] },
+  { items: [
+    ["/mi-cuenta", "Mi cuenta"],
   ] },
 ];
 

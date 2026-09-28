@@ -69,6 +69,33 @@ class MeView(APIView):
         return Response(_user_payload(request.user))
 
 
+class CambiarPasswordView(APIView):
+    """Cada uno cambia su propia contraseña.
+
+    Hace falta la actual: si alguien se deja la sesión abierta, que no le puedan
+    cambiar la contraseña sin saberla. Al cambiarla se renueva el token, así que
+    las sesiones abiertas en otros sitios dejan de valer.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        actual = request.data.get("actual") or ""
+        nueva = request.data.get("nueva") or ""
+        if not request.user.check_password(actual):
+            raise ValidationError({"actual": "La contraseña actual no es correcta."})
+        if len(nueva) < 8:
+            raise ValidationError(
+                {"nueva": "La contraseña nueva necesita al menos 8 caracteres."})
+        if nueva == actual:
+            raise ValidationError({"nueva": "La nueva tiene que ser distinta."})
+        request.user.set_password(nueva)
+        request.user.save(update_fields=["password"])
+        Token.objects.filter(user=request.user).delete()
+        token = Token.objects.create(user=request.user)
+        return Response({"ok": True, "token": token.key})
+
+
 class CreateUserView(APIView):
     """Alta de usuarios con rol (#16):
       * Coach      → solo la dirección deportiva (Super Admin).

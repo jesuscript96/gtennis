@@ -118,6 +118,14 @@ export const deshacerSemana = (id) =>
   req(`/semanas/${id}/deshacer/`, { method: "POST", body: "{}" });
 export const getCambios = (id) => req(`/semanas/${id}/cambios/`);
 
+export const cambiarPassword = (actual, nueva) =>
+  req("/auth/password/", { method: "POST", body: JSON.stringify({ actual, nueva }) })
+    .then((r) => {
+      // El token viejo deja de valer: guardamos el nuevo para no perder la sesión.
+      if (r?.token) try { localStorage.setItem("gt_token", r.token); } catch {}
+      return r;
+    });
+
 export const getConfig = () => req("/configuracion/");
 export const saveConfig = (body) =>
   req("/configuracion/", { method: "PATCH", body: JSON.stringify(body) });
