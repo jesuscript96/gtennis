@@ -35,3 +35,8 @@ npm-debug.log*
 backend/db.sqlite3.bak-*
 backend/backup_*.json
 frontend/.claude/
+
+# Credenciales repartidas a mano, nunca al repositorio
+contrasenas_iniciales.txt
+manual_entrenador.html
+cuadrante_*.html
