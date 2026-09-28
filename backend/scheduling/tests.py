@@ -314,3 +314,61 @@ class MoverPistaSinDuplicarEntrenadorTests(TestCase):
         self.assertIn("otra pista", r.data["error"])
         self.assertEqual(
             Asignacion.objects.filter(turno=self.m1, pista=self.p1).count(), 1)
+
+
+class CoachDeclaraPorSuEquipoTests(TestCase):
+    """El coach recoge el parte de los entrenadores que tiene a su cargo y lo
+    mete por ellos; fuera de su equipo, no."""
+
+    def setUp(self):
+        from academy.models import Coach
+        self.api = APIClient()
+        self.blas = Entrenador.objects.create(nombre="Blas")
+        self.ajeno = Entrenador.objects.create(nombre="Ajeno")
+        self.sergio_ent = Entrenador.objects.create(nombre="Sergio")
+        self.user = User.objects.create_user(
+            username="sergio.g", password="x", role=User.Role.COACH)
+        self.coach = Coach.objects.create(nombre="Sergio", user=self.user)
+        self.coach.entrenadores.set([self.blas, self.sergio_ent])
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        self.api.force_authenticate(self.user)
+
+    def _crear(self, entrenador):
+        return self.api.post("/api/disponibilidades-entrenador/", {
+            "semana": self.semana.id, "entrenador": entrenador.id,
+            "dia": 0, "estado": "AUSENTE"}, format="json")
+
+    def test_declara_por_un_entrenador_de_su_equipo(self):
+        r = self._crear(self.blas)
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(
+            DisponibilidadEntrenador.objects.get().entrenador_id, self.blas.id)
+
+    def test_no_declara_por_uno_de_fuera(self):
+        r = self._crear(self.ajeno)
+        self.assertEqual(r.status_code, 403, r.data)
+        self.assertEqual(DisponibilidadEntrenador.objects.count(), 0)
+
+    def test_no_edita_la_de_uno_de_fuera(self):
+        fila = DisponibilidadEntrenador.objects.create(
+            semana=self.semana, entrenador=self.ajeno, dia=0, estado="AUSENTE")
+        r = self.api.patch(f"/api/disponibilidades-entrenador/{fila.id}/",
+                           {"estado": "DISPONIBLE"}, format="json")
+        self.assertIn(r.status_code, (403, 404), r.data)
+        fila.refresh_from_db()
+        self.assertEqual(fila.estado, "AUSENTE")
+
+    def test_el_entrenador_suelto_sigue_solo_con_lo_suyo(self):
+        otro = User.objects.create_user(
+            username="blas", password="x", role=User.Role.ENTRENADOR)
+        self.blas.user = otro
+        self.blas.save(update_fields=["user"])
+        api = APIClient()
+        api.force_authenticate(otro)
+        r = api.post("/api/disponibilidades-entrenador/", {
+            "semana": self.semana.id, "entrenador": self.ajeno.id,
+            "dia": 1, "estado": "AUSENTE"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        # Se ignora el entrenador que manda y se guarda el suyo.
+        self.assertEqual(
+            DisponibilidadEntrenador.objects.get(dia=1).entrenador_id, self.blas.id)

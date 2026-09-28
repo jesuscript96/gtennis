@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manual del entrenador</title><style>
+:root{--bg:#fff;--fg:#14181d;--mut:#6b7480;--bor:#dfe3e8;--sur:#f7f8fa;
+--ac:#2f6fb5;--warn:#b07d2a;--bad:#c0392b;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+--bg:#14181d;--fg:#e8ecf1;--mut:#9aa4b0;--bor:#2c333c;--sur:#1b2129;
+--ac:#6fa8e0;--warn:#d6a84e;--bad:#e0705f;}}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 16px 64px;background:var(--bg);color:var(--fg);
+font:15.5px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-size:27px;margin:0 0 6px;letter-spacing:-.01em}
+.sub{color:var(--mut);margin:0 0 32px}
+h2{font-size:20px;margin:36px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--bor)}
+h3{font-size:16px;margin:24px 0 6px}
+p,li{margin:0 0 10px} ul,ol{padding-left:22px}
+code{background:var(--sur);border:1px solid var(--bor);border-radius:4px;
+padding:1px 5px;font-size:13.5px}
+.card{background:var(--sur);border:1px solid var(--bor);border-radius:10px;
+padding:14px 16px;margin:14px 0}
+.card.warn{border-color:var(--warn)}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;
+table-layout:fixed}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--bor);vertical-align:top}
+th{font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+td.ent{font-weight:600} td.g,td.n{text-align:center;color:var(--mut)}
+td.j{font-size:13.5px;line-height:1.5;word-break:break-word}
+.falta{color:var(--bad);font-size:13px} .nada{color:var(--mut)}
+.tag{display:inline-block;margin-left:6px;font-size:11px;font-weight:400;
+color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 5px}
+.paso{display:flex;gap:12px;margin:0 0 14px}
+.num{flex:0 0 26px;height:26px;border-radius:50%;background:var(--ac);color:#fff;
+display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+@media(max-width:600px){td.j{font-size:12.5px}th,td{padding:6px 5px}
+  table{table-layout:auto}colgroup{display:none}}
+</style></head><body><div class="wrap">
+
+<h1>G Tennis · manual del entrenador</h1>
+<p class="sub">Qué tienes que declarar cada semana, dónde se declara y de qué
+jugadores eres responsable.</p>
+
+<h2>1. Entrar</h2>
+<p>Se entra con <b>usuario y contraseña</b> desde el enlace que os pase la
+dirección. Al entrar verás tu agenda; en el menú de la izquierda tienes el resto.</p>
+<div class="card warn"><b>Importante:</b> de momento la contraseña no se puede
+cambiar desde la aplicación. Si necesitas otra, pídesela a la dirección.</div>
+
+<h2>2. Lo que hay que declarar cada semana</h2>
+<p>El cuadrante se genera con lo que esté declarado. <b>Lo que no se declara, se
+da por hecho que viene.</b> Es decir: solo hay que apuntar lo que se sale de lo
+normal.</p>
+
+<div class="paso"><div class="num">1</div><div>
+<b>Tu disponibilidad</b> — menú <i>Disponibilidad entrenador</i>.<br>
+Un día que no estás, o que solo puedes a ciertas horas (torneo por la tarde,
+entras a las 10:30…). Se declara por día de la semana, y puedes acotar la
+franja horaria en la que sí estás.</div></div>
+
+<div class="paso"><div class="num">2</div><div>
+<b>Las ausencias de tus jugadores, de esta semana</b> — menú <i>Ausencias</i>.<br>
+Una fila por jugador y día. Puedes decir si falta todo el día, solo la mañana,
+solo la tarde, o una franja concreta (M1, M2, T1, T2), y el motivo: lesión,
+enfermedad, estudios, prueba médica, vacaciones, torneo.</div></div>
+
+<div class="paso"><div class="num">3</div><div>
+<b>Las ausencias largas</b> — menú <i>Ausencias por fechas</i>.<br>
+Para una lesión de tres semanas o unas vacaciones: se pone la fecha de ida y la
+de vuelta una sola vez, y el motor la respeta todos los días que caigan dentro.
+No hace falta repetirla cada semana.</div></div>
+
+<div class="paso"><div class="num">4</div><div>
+<b>El horario habitual, si cambia</b> — menú <i>Horario del jugador</i>.<br>
+Esto no es una ausencia: es el patrón de siempre. «Los martes no viene por la
+tarde», «los lunes entrena a primera hora». Se toca cuando cambia de verdad,
+no cada semana.</div></div>
+
+<h2>3. Cuándo</h2>
+<p>Antes del <b>viernes a las 17:00</b>, que es cuando se cierra el parte y se
+genera el cuadrante de la semana siguiente.</p>
+<div class="card"><b>Si algo cambia a mitad de semana</b>, declara la ausencia
+igual y avisa a la dirección: el cuadrante <b>no se rehace solo</b>. Hasta que
+alguien lo rehaga, el jugador seguirá apareciendo en su pista.</div>
+
+<h2>4. De qué jugadores eres responsable</h2>
+<p>Cada uno solo ve y declara <b>sus</b> jugadores: los que gestiona y aquellos
+con los que tiene porcentaje de entrenamiento. En <b>negrita</b>, los que además
+tiene como responsable de gestión.</p>
+<table>
+<colgroup><col style="width:19%"><col style="width:14%">
+<col style="width:7%"><col style="width:5%"><col style="width:55%"></colgroup>
+<thead><tr><th>Entrenador</th><th>Usuario</th><th>Grupo</th><th>N.º</th><th>Jugadores</th></tr></thead>
+<tbody><tr><td class="ent">Blas Gallego</td><td><code>blas.gallego</code></td><td class="g">1-3</td><td class="n">17</td><td class="j">Alejandro Garcia Carbajal, Carles Cordoba Martinez, <b>Carlos López Montagud</b>, Carlos Sanchez Jover, Chimo Minguez Ribera, Ciaran Kanani, Enzo Helguera Casado, <b>Fermin Barcala López</b>, Ignacio Parisca, Lucca Helguera, Marc Martin Roca, Maria Adrienko, <b>Mateo Álvarez Sarmiento</b>, Raul Brancaccio, <b>Sergio Planella Hernández</b>, Toprak Avcibasi, Yanaki Milev</td></tr><tr><td class="ent">Emilio Sorio</td><td><code>emilio.sorio</code></td><td class="g">1-3</td><td class="n">19</td><td class="j">Alejandro Garcia Carbajal, Carla Guerrero Blanco, <b>Carles Cordoba Martinez</b>, Carlos López Montagud, Carlos Sanchez Jover, <b>Chimo Minguez Ribera</b>, Ciaran Kanani, <b>Enzo Helguera Casado</b>, Eric Badenes Giner, Ignacio Parisca, Javier Ballester Galarza, <b>Lucca Helguera</b>, Marc Martin Roca, Maria Adrienko, Mateo Álvarez Sarmiento, Raul Brancaccio, Sergio Planella Hernández, Toprak Avcibasi, <b>Yanaki Milev</b></td></tr><tr><td class="ent">Javi Gimenez</td><td><code>javier.gimenez</code></td><td class="g">1-3</td><td class="n">19</td><td class="j"><b>Alejandro Garcia Carbajal</b>, Carles Cordoba Martinez, Carlos López Montagud, Carlos Sanchez Jover, Carlos Taberner Segarra, Chimo Minguez Ribera, Ciaran Kanani, Enzo Helguera Casado, <b>Ignacio Parisca</b>, <b>Javier Ballester Galarza</b>, Lucca Helguera, <b>Marc Martin Roca</b>, Marcos Romero Ramos, Maria Adrienko, Mateo Álvarez Sarmiento, Raul Brancaccio, Sergio Planella Hernández, <b>Toprak Avcibasi</b>, Yanaki Milev</td></tr><tr><td class="ent">Jorge Ibañez<span class="tag">no disponible esta semana</span> <span class="tag">sin jugadores asignados</span></td><td><code>jorge.ibanez</code></td><td class="g">4-6</td><td class="n">0</td><td class="j"><span class="nada">— ninguno —</span></td></tr><tr><td class="ent">Mario Muniesa</td><td><code>mario.muniesa</code></td><td class="g">4-6</td><td class="n">15</td><td class="j">Amparo Gil Pitarque, Anjali Vasanthan, <b>Carla Guerrero Blanco</b>, <b>Ciaran Kanani</b>, <b>Diego Vilches Revuelta</b>, Eric Badenes Giner, Huaqi Li (Yu), Jinxuan Liao (Yu) Bonnie, Manuel Méndez Domínguez, <b>Marcos Romero Ramos</b>, Marta Crespo de Olano, <b>Ojas Malhotra</b>, Rodrigo Lopez Salinas, Valeriia Bokova, <b>Vicent Baixauli Sospedra</b></td></tr><tr><td class="ent">Nacho Calvo</td><td><code>nacho.calvo</code></td><td class="g">7-8</td><td class="n">12</td><td class="j">Amparo Gil Pitarque, <b>Anjali Vasanthan</b>, Arrow Meister, <b>Huaqi Li (Yu)</b>, Jinxuan Liao (Yu) Bonnie, Manuel Méndez Domínguez, Maria Ruiz Naranjo, <b>Natalia Ioana Botea</b>, Ojas Malhotra, Rodrigo Lopez Salinas, Shiying Xia 14 Silvia, Valeriia Bokova</td></tr><tr><td class="ent">Patricio rodriguez</td><td><code>patricio.rodriguez</code></td><td class="g">7-8</td><td class="n">10</td><td class="j"><b>Amparo Gil Pitarque</b>, Dani Martins Enguidanos, <b>Eugenia Alvarez Santiago</b>, Huaqi Li (Yu), <b>Jinxuan Liao (Yu) Bonnie</b>, <b>Marta Crespo de Olano</b>, Ojas Malhotra, <b>Rodrigo Lopez Salinas</b>, <b>Valeriia Bokova</b>, <b>Victoria Schneider De Mello</b></td></tr><tr><td class="ent">Salva Barcala</td><td><code>salva.barcala</code></td><td class="g">4-6</td><td class="n">6</td><td class="j">Amparo Gil Pitarque, <b>Dani Martins Enguidanos</b>, <b>Manuel Méndez Domínguez</b>, Ojas Malhotra, Rodrigo Lopez Salinas, Vicent Baixauli Sospedra</td></tr><tr><td class="ent">Victor Redondo</td><td><code>victor.redondo</code></td><td class="g">1-3</td><td class="n">15</td><td class="j">Alejandro Garcia Carbajal, Carla Guerrero Blanco, Carlos López Montagud, <b>Carlos Sanchez Jover</b>, Carlos Taberner Segarra, Chimo Minguez Ribera, Enzo Helguera Casado, Ignacio Parisca, Lucca Helguera, Marc Martin Roca, Mateo Álvarez Sarmiento, <b>Raul Brancaccio</b>, Sergio Planella Hernández, Toprak Avcibasi, Yanaki Milev</td></tr><tr><td class="ent">Alberto Sanz</td><td><span class="falta">sin usuario</span></td><td class="g">9-9</td><td class="n">3</td><td class="j"><b>Maria Ruiz Naranjo</b>, Valentina Andrea, <b>Xu Guilin (Yu) Nik</b></td></tr><tr><td class="ent">Alvaro Mantoan</td><td><span class="falta">sin usuario</span></td><td class="g">9-9</td><td class="n">2</td><td class="j"><b>Arrow Meister</b>, Valentina Andrea</td></tr><tr><td class="ent">Daniel Gimeno</td><td><span class="falta">sin usuario</span></td><td class="g">1-2</td><td class="n">15</td><td class="j">Alejandro Garcia Carbajal, Carles Cordoba Martinez, Carlos López Montagud, Carlos Sanchez Jover, <b>Carlos Taberner Segarra</b>, Chimo Minguez Ribera, Enzo Helguera Casado, Ignacio Parisca, Lucca Helguera, Marc Martin Roca, Mateo Álvarez Sarmiento, Raul Brancaccio, Sergio Planella Hernández, Toprak Avcibasi, Yanaki Milev</td></tr><tr><td class="ent">Ivan Gallego<span class="tag">banquillo</span></td><td><span class="falta">sin usuario</span></td><td class="g">1-4</td><td class="n">2</td><td class="j">Ignacio Parisca, Javier Ballester Galarza</td></tr><tr><td class="ent">Jorge Garcia<span class="tag">banquillo</span></td><td><span class="falta">sin usuario</span></td><td class="g">1-4</td><td class="n">1</td><td class="j"><b>Elina Avanesian</b></td></tr><tr><td class="ent">Jorge Milla</td><td><span class="falta">sin usuario</span></td><td class="g">9-9</td><td class="n">2</td><td class="j"><b>Shiying Xia 14 Silvia</b>, <b>Valentina Andrea</b></td></tr><tr><td class="ent">Pablo Gil</td><td><span class="falta">sin usuario</span></td><td class="g">4-6</td><td class="n">14</td><td class="j">Amparo Gil Pitarque, Carla Guerrero Blanco, Ciaran Kanani, <b>Eric Badenes Giner</b>, Javier Ballester Galarza, Jinxuan Liao (Yu) Bonnie, Manuel Méndez Domínguez, Marcos Romero Ramos, <b>Maria Adrienko</b>, Marta Crespo de Olano, Ojas Malhotra, Rodrigo Lopez Salinas, Valeriia Bokova, Vicent Baixauli Sospedra</td></tr><tr><td class="ent">Santi Panzarasa</td><td><span class="falta">sin usuario</span></td><td class="g">7-8</td><td class="n">5</td><td class="j">Amparo Gil Pitarque, Huaqi Li (Yu), Jinxuan Liao (Yu) Bonnie, Manuel Méndez Domínguez, Xu Guilin (Yu) Nik</td></tr><tr><td class="ent">Sergio Gallego<span class="tag">banquillo</span> <span class="tag">sin jugadores asignados</span></td><td><span class="falta">sin usuario</span></td><td class="g">1-3</td><td class="n">0</td><td class="j"><span class="nada">— ninguno —</span></td></tr></tbody></table>
+
+<h2>5. Lo que NO toca el entrenador</h2>
+<p>Estas cosas las lleva la dirección o el coach. Si algo de esto hay que
+cambiar, se pide:</p>
+<ul>
+<li>El cuadrante: mover jugadores o entrenadores entre pistas.</li>
+<li>La división de un jugador y con qué divisiones puede entrenar.</li>
+<li>Los contratos con entrenador, las rencillas y las parejas preferentes.</li>
+<li>Las vacaciones largas de entrenador y las preferencias de superficie.</li>
+</ul>
+
+<h2>6. Usuarios pendientes de arreglar</h2>
+<p>Estos usuarios existen pero <b>no están enlazados a ningún entrenador</b>, así
+que al entrar no verían ningún jugador ni podrían declarar nada:</p>
+<ul><li><code>sergio</code> · rol ENTRENADOR</li><li><code>sergio.gallego</code> · rol ENTRENADOR</li><li><code>daniel.gimeno</code> · rol COACH</li><li><code>pablo.gil</code> · rol COACH</li><li><code>santi.panzarassa</code> · rol COACH</li></ul>
+<p>Y hay <b>9 entrenadores sin usuario</b>: Alberto Sanz, Alvaro Mantoan, Daniel Gimeno, Ivan Gallego, Jorge Garcia, Jorge Milla, Pablo Gil, Santi Panzarasa, Sergio Gallego.</p>
+
+</div></body></html>

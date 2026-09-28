@@ -535,14 +535,38 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
 class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
     """Disponibilidad del entrenador (torneo / franjas horarias, #10).
 
-    Un entrenador solo ve y edita SUS filas; el Super Admin, todas. Al crear,
-    si es un coach se fuerza `entrenador` = el suyo (ignora lo que envíe)."""
+    Un entrenador solo ve y edita SUS filas. Un coach, las de los entrenadores
+    que tiene a su cargo: es quien recoge el parte del equipo y lo mete por
+    ellos. El Super Admin, todas. Un entrenador suelto que mande otro
+    `entrenador` se lo ignoramos y se guarda el suyo.
+    """
 
     serializer_class = DisponibilidadEntrenadorSerializer
     permission_classes = [IsAuthenticated]
 
     def _entrenador(self):
         return getattr(self.request.user, "entrenador", None)
+
+    def _a_cargo(self):
+        """Entrenadores por los que este usuario puede declarar, o None si
+        puede por todos (dirección)."""
+        user = self.request.user
+        if user.is_superadmin:
+            return None
+        coach = getattr(user, "coach", None)
+        if coach is not None and coach.activo:
+            return set(coach.entrenadores.values_list("id", flat=True))
+        ent = self._entrenador()
+        return {ent.id} if ent else set()
+
+    def _comprobar(self, entrenador):
+        permitidos = self._a_cargo()
+        if permitidos is None:
+            return
+        if entrenador is None or entrenador.id not in permitidos:
+            raise PermissionDenied(
+                "Solo puedes declarar la disponibilidad de los entrenadores "
+                "que tienes a tu cargo.")
 
     def get_queryset(self):
         qs = DisponibilidadEntrenador.objects.select_related("entrenador", "semana")
@@ -561,17 +585,30 @@ class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_superadmin:
             serializer.save()
-        else:
-            ent = self._entrenador()
-            if ent is None:
-                raise PermissionDenied("Tu usuario no está enlazado a un entrenador.")
+            return
+        coach = getattr(user, "coach", None)
+        if coach is not None and coach.activo:
+            # El coach declara por su equipo, así que respeta el entrenador que
+            # venga (y si no viene ninguno, el suyo).
+            ent = serializer.validated_data.get("entrenador") or self._entrenador()
+            self._comprobar(ent)
             serializer.save(entrenador=ent)
+            return
+        ent = self._entrenador()
+        if ent is None:
+            raise PermissionDenied("Tu usuario no está enlazado a un entrenador.")
+        serializer.save(entrenador=ent)
 
     def perform_update(self, serializer):
-        user = self.request.user
-        if not user.is_superadmin and serializer.instance.entrenador != self._entrenador():
-            raise PermissionDenied("Solo puedes editar tu propia disponibilidad.")
+        self._comprobar(serializer.instance.entrenador)
+        nuevo = serializer.validated_data.get("entrenador")
+        if nuevo is not None:
+            self._comprobar(nuevo)
         serializer.save()
+
+    def perform_destroy(self, instance):
+        self._comprobar(instance.entrenador)
+        instance.delete()
 
 
 class AsignacionViewSet(viewsets.ModelViewSet):
