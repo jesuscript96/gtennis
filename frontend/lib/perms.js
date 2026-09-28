@@ -34,7 +34,10 @@ export function canWrite(endpoint, user = getUser()) {
 const PATH_MIN = {
   // Rutas del panel general que el entrenador no necesita ver.
   "/": "coach", "/cuadrante": "coach", "/semana": "coach", "/semanas": "coach",
-  "/disponibilidad-entrenador": "coach", "/vacaciones": "coach",
+  // El entrenador declara su propia disponibilidad de la semana: el backend ya
+  // le deja ver y editar solo sus filas, así que esconderle la página solo le
+  // impedía hacer lo único que se le pide.
+  "/vacaciones": "coach",
   "/preferencias-superficie": "coach", "/invitados": "coach",
   "/mantenimiento": "coach", "/feedback": "coach", "/avisos": "coach",
   "/sedes": "direccion", "/pistas": "direccion", "/divisiones": "direccion",
