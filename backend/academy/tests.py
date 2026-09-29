@@ -560,3 +560,48 @@ class TorneoSacaDelCuadranteTests(TestCase):
         ids = [p.id for p in _available_players(semana, 0, turno, {})]
         self.assertNotIn(fuera.id, ids)
         self.assertIn(queda.id, ids)
+
+
+class TopeDiasParejaTests(TestCase):
+    """Dos alumnos no comparten pista más de 3 días a la semana, aunque su
+    pareja esté declarada y sean los únicos de su nivel."""
+
+    def _dias_juntos(self, tope):
+        from academy.models import PreferenciaPareja
+        from scheduling.models import ConfiguracionMotor
+
+        cfg = ConfiguracionMotor.objects.first() or ConfiguracionMotor.objects.create()
+        cfg.max_dias_misma_pista = tope
+        cfg.peso_repeticion = 0
+        cfg.time_limit_s = 2
+        cfg.save()
+        # Una pista y un entrenador: o entrenan juntos o uno se queda fuera.
+        # Las migraciones siembran alumnos, entrenadores y pistas reales: fuera.
+        Jugador.objects.update(activo=False)
+        Entrenador.objects.update(activo=False)
+        Pista.objects.update(activa=False)
+        sede = Sede.objects.create(nombre="Prueba tope pareja")
+        Pista.objects.create(sede=sede, numero=1)
+        Entrenador.objects.create(nombre="Uno")
+        semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        a = Jugador.objects.create(nombre="A", activo=True)
+        b = Jugador.objects.create(nombre="B", activo=True)
+        PreferenciaPareja.objects.create(jugador=a, jugador_objetivo=b, tipo="SOFT")
+        for j in (a, b):
+            for d in range(6):
+                HorarioJugador.objects.create(
+                    jugador=j, dia=d, entrena_manana=d < 5, entrena_tarde=False)
+        generate(semana, dias=[0, 1, 2, 3, 4])
+        celdas = {}
+        for x in Asignacion.objects.filter(semana=semana):
+            celdas.setdefault((x.dia, x.turno_id, x.pista_id), set()).add(x.jugador_id)
+        return {d for (d, _t, _p), ids in celdas.items() if {a.id, b.id} <= ids}
+
+    def test_no_pasan_de_tres_dias_juntos(self):
+        self.assertLessEqual(len(self._dias_juntos(3)), 3)
+
+    def test_sin_tope_repiten_mas(self):
+        # Control: sin tope y sin penalizar la repetición, la pareja declarada
+        # sale junta los cinco días. Si esto falla, el test de arriba no prueba
+        # nada.
+        self.assertGreater(len(self._dias_juntos(0)), 3)

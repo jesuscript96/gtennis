@@ -12,7 +12,7 @@ const NUM_FIELDS = [
   ["peso_pista_division", "Peso · pista según división", "Cada división tira hacia su pista: la 1 a la pista 1 y así. Desempata cuando hay sitio; nunca deja a nadie fuera."],
   ["peso_resina", "Peso · evitar la resina", "Coste de abrir una pista de resina. El club entrena en tierra: la resina solo se usa cuando no queda tierra o cuando el alumno la tiene declarada."],
   ["peso_equilibrio_franjas", "Peso · equilibrar franjas", "Reparte a los jugadores entre 8:30 y 10:30 (y entre las franjas de la tarde) en proporción a los entrenadores de cada una. Más alto = más igualadas."],
-  ["max_dias_misma_pista", "Máx. días misma pista", "A partir de estas repeticiones en la semana, se penaliza fuerte."],
+  ["max_dias_misma_pista", "Máx. días juntos a la semana", "Regla dura: dos alumnos no comparten pista más de estos días en la semana, aunque tengan la pareja declarada. Mañana y tarde del mismo día cuentan como uno. 0 = sin tope."],
   ["time_limit_s", "Límite del solver (s)", "Tiempo máximo de cálculo por turno."],
 ];
 

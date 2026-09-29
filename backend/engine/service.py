@@ -29,7 +29,7 @@ from scheduling.models import (
     Semana,
 )
 
-from .pairing import NIVEL_MAX, Court, PairingInput, Player, solve_pairing
+from .pairing import NIVEL_MAX, Court, PairingInput, Player, _normalise, solve_pairing
 
 
 def _build_courts(usar_satelites: bool = True) -> list[Court]:
@@ -411,6 +411,28 @@ def _grupos_de_turnos(turnos, exclusivos):
         clave = ("propio", turno.id) if turno.id in exclusivos else ("bloque", turno.bloque)
         grupos.setdefault(clave, []).append(turno)
     return sorted(grupos.values(), key=lambda g: min(t.orden for t in g))
+
+
+def _dias_juntos(semana, dia, rehechos=()) -> dict[tuple[int, int], set[int]]:
+    """(a, b) -> los OTROS días de la semana en que ya comparten pista.
+
+    Cuenta toda la semana, no solo lo anterior: si se rehace el miércoles con
+    el jueves y el viernes ya hechos, esos días también cuentan. Lo que no
+    cuenta es lo que está a punto de rehacerse (los días posteriores de esta
+    misma generación), porque se va a borrar. Mañana y tarde del mismo día
+    son un solo día.
+    """
+    por_celda = defaultdict(list)
+    qs = Asignacion.objects.filter(semana=semana).exclude(dia=dia).exclude(
+        dia__in=[d for d in rehechos if d > dia])
+    for a in qs.values_list("dia", "turno_id", "pista_id", "jugador_id"):
+        por_celda[a[:3]].append(a[3])
+    out: dict[tuple[int, int], set[int]] = defaultdict(set)
+    for (d, _t, _p), ids in por_celda.items():
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                out[_normalise(ids[i], ids[j])].add(d)
+    return out
 
 
 def _recent_partners(semana, before_dia) -> dict[frozenset[int], int]:
@@ -967,11 +989,18 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         ocupacion_coach: dict[int, list] = defaultdict(list)
         overrides = _overrides(semana, dia)
         recent = _recent_partners(semana, dia)
-        # Strongly penalise pairs that already hit the per-week repeat limit.
-        recent = {
-            pair: count * (5 if count >= cfg.max_dias_misma_pista else 1)
-            for pair, count in recent.items()
+        # Tope duro de días juntos a la semana (3 en el club): la pareja que ya
+        # lo ha alcanzado no comparte pista hoy, tampoco si está declarada. Se
+        # trata como una rencilla solo para este día.
+        topados = {
+            par for par, dias_par in _dias_juntos(semana, dia, dias).items()
+            if cfg.max_dias_misma_pista and len(dias_par) >= cfg.max_dias_misma_pista
         }
+        vetoes_dia = vetoes | topados
+        libres = {frozenset(p) for p in topados}
+        pairs_hard_dia = pairs_hard - libres
+        pairs_soft_dia = pairs_soft - libres
+        pairs_declaradas_dia = pairs_declaradas - libres
         # Entrenadores fuera por vacaciones ese día (#11) y overrides del día (#10).
         fecha = semana.fecha_inicio + timedelta(days=dia)
         # Ausencias del entrenador ese día. Pueden ser de un bloque o de una
@@ -1056,7 +1085,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 PairingInput(
                     players=players,
                     courts=turno_courts,
-                    vetoes=vetoes,
+                    vetoes=vetoes_dia,
                     recent_partners=recent,
                     time_limit_s=cfg.time_limit_s * len(grupo),
                     w_assign=cfg.peso_asignacion,
@@ -1077,9 +1106,9 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     w_density=(cfg.peso_densidad_tarde if es_tarde
                                else cfg.peso_densidad),
                     w_court=cfg.peso_pista_abierta,
-                    pairs_hard=pairs_hard,
-                    pairs_soft=pairs_soft | (parejas_manana if es_tarde else set()),
-                    pairs_declaradas=pairs_declaradas,
+                    pairs_hard=pairs_hard_dia,
+                    pairs_soft=pairs_soft_dia | (parejas_manana if es_tarde else set()),
+                    pairs_declaradas=pairs_declaradas_dia,
                     w_pair=cfg.peso_pareja,
                     franjas=[t.id for t in grupo],
                     franjas_de=franjas_de,
@@ -1099,8 +1128,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     pistas_objetivo={} if es_tarde else n_entrenadores,
                     w_exceso_pistas=0 if es_tarde else cfg.peso_exceso_pistas,
                     w_individual=cfg.peso_individual,
-                    span_extra=cfg.estiron_division,
-                    edad_extra=cfg.estiron_edad,
+                    # El estirón (una división o un año de más) solo por la
+                    # tarde, cuando falta gente: por la mañana ±1 estricto.
+                    span_extra=cfg.estiron_division if es_tarde else 0,
+                    edad_extra=cfg.estiron_edad if es_tarde else 0,
                     w_relajar=cfg.peso_relajar_vecindad,
                 )
             )

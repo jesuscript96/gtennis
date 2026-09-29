@@ -343,7 +343,11 @@ class ConfiguracionMotor(models.Model):
         default=10, help_text="Penalización por repetir pareja (rotación)."
     )
     max_dias_misma_pista = models.PositiveSmallIntegerField(
-        default=2, help_text="Repeticiones a partir de las cuales se penaliza fuerte."
+        default=3,
+        verbose_name="Máx. días juntos a la semana",
+        help_text="Regla dura: dos alumnos no comparten pista más de estos "
+                  "días en la semana, aunque tengan la pareja declarada. "
+                  "Mañana y tarde del mismo día cuentan como uno. 0 = sin tope.",
     )
     aplicar_vecindad = models.BooleanField(
         default=True, help_text="Aplicar la regla de vecindad de divisiones."
@@ -456,8 +460,9 @@ class ConfiguracionMotor(models.Model):
     estiron_division = models.PositiveSmallIntegerField(
         default=1,
         verbose_name="Divisiones que se pueden estirar",
-        help_text="Solo para quien usa la horquilla del club; el alumno que "
-                  "tiene la suya declarada en la ficha no se estira nunca.",
+        help_text="Solo por la tarde, y solo para quien usa la horquilla del "
+                  "club; el alumno que tiene la suya declarada en la ficha no "
+                  "se estira nunca.",
     )
     estiron_edad = models.PositiveSmallIntegerField(
         default=1, verbose_name="Años de edad que se pueden estirar",
