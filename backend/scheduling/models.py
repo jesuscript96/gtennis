@@ -45,16 +45,19 @@ class Ambito(models.TextChoices):
 # club y no puede ocupar una plaza de pista. Antes solo se le bajaba la
 # prioridad, con lo que marcar una ausencia no la sacaba del cuadrante y el
 # parte de los viernes no servía de nada.
+#
+# EN_TORNEO también: el que se va a un torneo no está en el club. Antes solo
+# le bajaba la prioridad y el motor lo metía a rellenar hueco, con lo que el
+# entrenador declaraba el torneo y el alumno seguía saliendo en pista.
 ESTADOS_EXCLUYENTES = {
     Estado.CLIMATOLOGIA,
     Estado.AUSENCIA_JUGADOR,
+    Estado.EN_TORNEO,
 }
 
 # Estados que solo restan prioridad: el jugador sigue por el club y llena
-# hueco después de los plenamente disponibles.
-ESTADOS_DEPRIORIZADOS = {
-    Estado.EN_TORNEO,
-}
+# hueco después de los plenamente disponibles. Hoy ninguno.
+ESTADOS_DEPRIORIZADOS: set = set()
 
 DIAS = [
     (0, "Lunes"), (1, "Martes"), (2, "Miércoles"),

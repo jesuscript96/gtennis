@@ -538,3 +538,25 @@ class EntrenadorSoloManualTests(TestCase):
         self.assertTrue(asignadas.exists())
         self.assertFalse(asignadas.filter(entrenador=manual).exists())
         self.assertTrue(asignadas.filter(entrenador=normal).exists())
+
+
+class TorneoSacaDelCuadranteTests(TestCase):
+    """«En torneo» es una falta: el alumno no está en el club y no sale en
+    pista, igual que con una lesión."""
+
+    def test_en_torneo_no_entra(self):
+        from scheduling.models import AusenciaJugador
+
+        turno, _ = Turno.objects.get_or_create(
+            codigo="M1",
+            defaults={"nombre": "M1", "bloque": Turno.Bloque.MANANA,
+                      "hora_inicio": time(8, 30), "hora_fin": time(10, 0), "orden": 1},
+        )
+        semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        fuera = Jugador.objects.create(nombre="De torneo", activo=True)
+        queda = Jugador.objects.create(nombre="En casa", activo=True)
+        AusenciaJugador.objects.create(
+            jugador=fuera, fecha_inicio=LUNES, fecha_fin=LUNES, estado=Estado.EN_TORNEO)
+        ids = [p.id for p in _available_players(semana, 0, turno, {})]
+        self.assertNotIn(fuera.id, ids)
+        self.assertIn(queda.id, ids)
