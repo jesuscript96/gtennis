@@ -890,8 +890,14 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     # Preferencias de superficie estrictas por jugador (#1).
     from academy.models import PreferenciaSuperficie
 
+    # Las que tienen fechas van delante: «del 5 al 9, resina» —declarada en el
+    # calendario para preparar un torneo— manda sobre la superficie fija de la
+    # ficha, y `_jugador_motor` se queda con la primera que cubre el día.
     surface_prefs: dict[int, list] = defaultdict(list)
-    for ps in PreferenciaSuperficie.objects.filter(estricta=True):
+    for ps in sorted(
+        PreferenciaSuperficie.objects.filter(estricta=True),
+        key=lambda ps: (ps.fecha_desde is None and ps.fecha_hasta is None, -ps.id),
+    ):
         surface_prefs[ps.jugador_id].append(
             (ps.superficie, ps.fecha_desde, ps.fecha_hasta)
         )

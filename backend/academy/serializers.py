@@ -251,6 +251,33 @@ class PreferenciaSuperficieSerializer(serializers.ModelSerializer):
             "fecha_desde", "fecha_hasta", "estricta",
         ]
 
+    def validate(self, data):
+        inst = self.instance
+        jugador = data.get("jugador", getattr(inst, "jugador", None))
+        superficie = data.get("superficie", getattr(inst, "superficie", None))
+        desde = data.get("fecha_desde", getattr(inst, "fecha_desde", None))
+        hasta = data.get("fecha_hasta", getattr(inst, "fecha_hasta", None))
+        if desde and hasta and hasta < desde:
+            raise serializers.ValidationError(
+                "La preferencia no puede acabar antes de empezar."
+            )
+        # Dos preferencias con fechas que se pisan y dicen superficies
+        # distintas: el motor tendría que elegir a ciegas. Se corta aquí.
+        if jugador and (desde or hasta):
+            otras = PreferenciaSuperficie.objects.filter(jugador=jugador).exclude(
+                superficie=superficie
+            ).exclude(fecha_desde__isnull=True, fecha_hasta__isnull=True)
+            if inst is not None:
+                otras = otras.exclude(pk=inst.pk)
+            for o in otras:
+                if ((o.fecha_hasta is None or desde is None or desde <= o.fecha_hasta)
+                        and (o.fecha_desde is None or hasta is None or o.fecha_desde <= hasta)):
+                    raise serializers.ValidationError(
+                        f"Ya tiene {o.get_superficie_display().lower()} declarada "
+                        f"en esas fechas. Quítala antes de poner otra."
+                    )
+        return data
+
 
 class AvisoSerializer(serializers.ModelSerializer):
     tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)

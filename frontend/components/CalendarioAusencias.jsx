@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  addAusenciaFechas, delAusenciaFechas, getAusenciasFechas,
+  addAusenciaFechas, addPreferenciaSuperficie, delAusenciaFechas,
+  delPreferenciaSuperficie, getAusenciasFechas, getPreferenciasSuperficie,
 } from "../lib/api";
-import { ESTADO_COLOR } from "../lib/format";
+import { ESTADO_COLOR, SUPERFICIE_COLOR } from "../lib/format";
 
 const MESES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -41,6 +42,11 @@ export const MOTIVOS_JUGADOR = [
   { value: "VACACIONES", label: "Vacaciones", estado: "AUSENCIA_JUGADOR", subtipo: "VACACIONES" },
   { value: "TORNEO", label: "Torneo", estado: "EN_TORNEO", subtipo: "" },
   { value: "OTRO", label: "Otro", estado: "AUSENCIA_JUGADOR", subtipo: "" },
+  // No son faltas: viene, pero esos días entrena en esa superficie (preparar
+  // un torneo en rápida, por ejemplo). Van a su propio modelo y el motor no
+  // le pone en otra.
+  { value: "SUP_TIERRA", label: "Entrena en tierra", superficie: "TIERRA" },
+  { value: "SUP_RESINA", label: "Entrena en resina", superficie: "RESINA" },
 ];
 export const MOTIVOS_ENTRENADOR = [
   { value: "VACACIONES", label: "Vacaciones" },
@@ -64,22 +70,47 @@ const SUBTIPO_CORTO = {
   PRUEBA_MEDICA: "prueba médica", VACACIONES: "vacaciones", MILONGA: "milonga",
 };
 
-// De dónde salen las faltas de un alumno y cómo se escriben.
+// De dónde salen las faltas de un alumno y cómo se escriben. Junto a ellas,
+// la superficie que tiene declarada por fechas: se pinta en el mismo
+// calendario, con el día entero (la superficie no va por franjas).
 function fuenteDeJugador(jugador) {
   return {
     clave: `jugador-${jugador.id}`,
-    cargar: () => getAusenciasFechas(jugador.id),
-    crear: ({ desde, hasta, ambito, motivo, nota }) => addAusenciaFechas({
-      jugador: jugador.id, fecha_inicio: desde, fecha_fin: hasta, ambito,
-      estado: motivo.estado, subtipo: motivo.subtipo, nota,
-    }),
-    borrar: (a) => delAusenciaFechas(a.id),
-    describir: (a) => [
-      a.subtipo && SUBTIPO_CORTO[a.subtipo],
-      a.estado === "EN_TORNEO" && "torneo",
-      a.nota,
-    ].filter(Boolean).join(" · "),
-    colorDe: (a) => ESTADO_COLOR[a.estado] || "#999",
+    cargar: async () => {
+      const [faltas, prefs] = await Promise.all([
+        getAusenciasFechas(jugador.id), getPreferenciasSuperficie(jugador.id),
+      ]);
+      // La superficie fija de la ficha (sin fechas) no se pinta: cubriría
+      // todos los días y taparía las faltas.
+      const conFechas = prefs
+        .filter((p) => p.fecha_desde && p.fecha_hasta)
+        .map((p) => ({
+          ...p, id: `sup-${p.id}`, prefId: p.id, esSuperficie: true,
+          fecha_inicio: p.fecha_desde, fecha_fin: p.fecha_hasta, ambito: "DIA",
+        }));
+      return [...faltas, ...conFechas]
+        .sort((a, b) => (a.fecha_inicio < b.fecha_inicio ? 1 : -1));
+    },
+    crear: ({ desde, hasta, ambito, motivo, nota }) => (motivo.superficie
+      ? addPreferenciaSuperficie({
+        jugador: jugador.id, superficie: motivo.superficie,
+        fecha_desde: desde, fecha_hasta: hasta, estricta: true,
+      })
+      : addAusenciaFechas({
+        jugador: jugador.id, fecha_inicio: desde, fecha_fin: hasta, ambito,
+        estado: motivo.estado, subtipo: motivo.subtipo, nota,
+      })),
+    borrar: (a) => (a.esSuperficie
+      ? delPreferenciaSuperficie(a.prefId) : delAusenciaFechas(a.id)),
+    describir: (a) => (a.esSuperficie
+      ? `entrena en ${a.superficie === "RESINA" ? "resina" : "tierra"}`
+      : [
+        a.subtipo && SUBTIPO_CORTO[a.subtipo],
+        a.estado === "EN_TORNEO" && "torneo",
+        a.nota,
+      ].filter(Boolean).join(" · ")),
+    colorDe: (a) => (a.esSuperficie
+      ? SUPERFICIE_COLOR[a.superficie] : ESTADO_COLOR[a.estado]) || "#999",
   };
 }
 
@@ -198,7 +229,7 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
 
   async function borrar(a) {
     if (!window.confirm(
-      `¿Quitar la falta del ${fmtCorta(a.fecha_inicio)}` +
+      `¿Quitar ${a.esSuperficie ? "la superficie" : "la falta"} del ${fmtCorta(a.fecha_inicio)}` +
       `${a.fecha_fin !== a.fecha_inicio ? ` al ${fmtCorta(a.fecha_fin)}` : ""}?`
     )) return;
     setGuardando(true);
@@ -222,6 +253,8 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   const mover = (n) => setMes(new Date(mes.getFullYear(), mes.getMonth() + n, 1));
   const isoHoy = iso(hoy);
   const ambitoDe = (a) => AMBITOS.find((x) => x.value === a.ambito);
+  const motivoSel = lista.find((m) => m.value === motivo) || lista[0];
+  const esSuperficie = Boolean(motivoSel.superficie);
 
   return (
     <div className="calendario-ausencias">
@@ -258,7 +291,8 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
               <span className="marcas">
                 {faltas.slice(0, 3).map((f) => (
                   <i key={f.id} style={{ background: origen.colorDe(f) }}
-                    className={!f.ambito || f.ambito === "DIA" ? "marca llena" : "marca"} />
+                    className={f.esSuperficie ? "marca sup"
+                      : !f.ambito || f.ambito === "DIA" ? "marca llena" : "marca"} />
                 ))}
               </span>
             </button>
@@ -270,6 +304,8 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
         <p className="cal-leyenda">
           <i className="marca llena" /> todo el día ·
           <i className="marca" /> solo una parte
+          {ausencias.some((a) => a.esSuperficie) && <> ·
+            <i className="marca sup" style={{ background: SUPERFICIE_COLOR.RESINA }} /> superficie</>}
         </p>
       )}
 
@@ -283,25 +319,43 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
             {tramos([...sel].sort()).length > 1 && ` en ${tramos([...sel].sort()).length} tramos`}
           </p>
           <div className="fila-form">
-            <label>Falta
-              <select value={ambito} onChange={(e) => setAmbito(e.target.value)}>
-                {AMBITOS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-              </select>
-            </label>
             <label>Motivo
               <select value={motivo} onChange={(e) => setMotivo(e.target.value)}>
-                {lista.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                <optgroup label="Falta">
+                  {lista.filter((m) => !m.superficie).map((m) =>
+                    <option key={m.value} value={m.value}>{m.label}</option>)}
+                </optgroup>
+                {lista.some((m) => m.superficie) && (
+                  <optgroup label="Viene, pero en otra pista">
+                    {lista.filter((m) => m.superficie).map((m) =>
+                      <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </optgroup>
+                )}
               </select>
             </label>
-            <label className="crece">Nota (opcional)
-              <input value={nota} onChange={(e) => setNota(e.target.value)}
-                placeholder="Ej. vuelve el lunes" />
-            </label>
+            {!esSuperficie && <>
+              <label>Falta
+                <select value={ambito} onChange={(e) => setAmbito(e.target.value)}>
+                  {AMBITOS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                </select>
+              </label>
+              <label className="crece">Nota (opcional)
+                <input value={nota} onChange={(e) => setNota(e.target.value)}
+                  placeholder="Ej. vuelve el lunes" />
+              </label>
+            </>}
           </div>
+          {esSuperficie && (
+            <p className="hint">
+              Esos días el motor solo le pone en pistas de {motivoSel.superficie === "RESINA"
+                ? "resina" : "tierra"}, en todas sus sesiones.
+            </p>
+          )}
           <div className="cal-acciones">
             <button type="button" className="btn" disabled={guardando}
               onClick={declarar}>
-              {guardando ? "Guardando…" : "Declarar la falta"}
+              {guardando ? "Guardando…"
+                : esSuperficie ? "Declarar la superficie" : "Declarar la falta"}
             </button>
             <button type="button" className="btn ghost sm"
               onClick={() => marcar(new Set())}>Quitar la marca</button>
@@ -323,11 +377,13 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
                 {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
               </span>
               <span className="que">
-                {[ambitoDe(a)?.corto || a.ambito || "día", origen.describir(a)]
+                {(a.esSuperficie ? [origen.describir(a)]
+                  : [ambitoDe(a)?.corto || a.ambito || "día", origen.describir(a)])
                   .filter(Boolean).join(" · ")}
               </span>
               <button type="button" className="quitar" disabled={guardando}
-                title="Quitar esta falta" onClick={() => borrar(a)}>✕</button>
+                title={a.esSuperficie ? "Quitar esta superficie" : "Quitar esta falta"}
+                onClick={() => borrar(a)}>✕</button>
             </li>
           ))}
         </ul>

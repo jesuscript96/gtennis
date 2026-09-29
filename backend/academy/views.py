@@ -652,15 +652,52 @@ class EscuelaViewSet(viewsets.ModelViewSet):
 
 
 class PreferenciaSuperficieViewSet(viewsets.ModelViewSet):
-    """Preferencias de superficie por jugador (#1)."""
+    """Preferencias de superficie por jugador (#1).
+
+    Se declaran también desde el calendario de faltas («del 5 al 9, resina»),
+    así que llevan el mismo alcance que una falta: cada entrenador solo ve y
+    toca las de sus alumnos.
+    """
 
     serializer_class = PreferenciaSuperficieSerializer
     queryset = PreferenciaSuperficie.objects.select_related("jugador").all()
 
     def get_queryset(self):
         qs = super().get_queryset()
+        user = self.request.user
+        if not user.is_superadmin:
+            from .scope import jugadores_visibles
+
+            qs = qs.filter(jugador__in=jugadores_visibles(user))
         jugador = self.request.query_params.get("jugador")
         return qs.filter(jugador=jugador) if jugador else qs
+
+    def _assert_puede(self, jugador):
+        user = self.request.user
+        if user.is_superadmin:
+            return
+        from .scope import puede_ver_jugador
+
+        if getattr(user, "coach", None) is not None:
+            ok = puede_ver_jugador(user, jugador)
+        else:
+            ent = getattr(user, "entrenador", None)
+            ok = ent is not None and ent.puede_gestionar(jugador)
+        if not ok:
+            raise PermissionDenied("No tienes acceso para gestionar a este jugador.")
+
+    def perform_create(self, serializer):
+        self._assert_puede(serializer.validated_data["jugador"])
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._assert_puede(serializer.instance.jugador)
+        self._assert_puede(serializer.validated_data.get("jugador", serializer.instance.jugador))
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._assert_puede(instance.jugador)
+        instance.delete()
 
 
 class AvisoViewSet(viewsets.ModelViewSet):

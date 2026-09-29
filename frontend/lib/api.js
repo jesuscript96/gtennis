@@ -221,3 +221,11 @@ export const addAusenciaFechas = (body) =>
   req("/ausencias-fechas/", { method: "POST", body: JSON.stringify(body) });
 export const delAusenciaFechas = (id) =>
   req(`/ausencias-fechas/${id}/`, { method: "DELETE" });
+
+// --- Superficie por fechas («del 5 al 9, resina») ----------------------------
+export const getPreferenciasSuperficie = async (jugador) =>
+  rows(await req(`/preferencias-superficie/${jugador ? `?jugador=${jugador}` : ""}`));
+export const addPreferenciaSuperficie = (body) =>
+  req("/preferencias-superficie/", { method: "POST", body: JSON.stringify(body) });
+export const delPreferenciaSuperficie = (id) =>
+  req(`/preferencias-superficie/${id}/`, { method: "DELETE" });

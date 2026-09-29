@@ -1080,6 +1080,8 @@ body.arrastrando * { cursor: grabbing !important; }
   display: inline-block; margin-left: .35rem;
 }
 .cal-leyenda .marca.llena { width: 10px; border-radius: 2px; }
+/* Superficie por fechas: rombo, para no confundirla con una falta. */
+.cal-dia .marca.sup, .cal-leyenda .marca.sup { width: 5px; height: 5px; border-radius: 0; transform: rotate(45deg) scale(.9); }
 
 .cal-declarar { margin-top: .6rem; }
 .cal-resumen { margin: 0 0 .3rem; font-size: .82rem; }

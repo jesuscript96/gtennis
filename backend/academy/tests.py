@@ -465,3 +465,55 @@ class MananaEnteraMotorTests(TestCase):
         self.assertEqual(len(fuera_el_lunes), 1)
         self.assertTrue(fuera_el_lunes <= martes)
 
+
+
+class SuperficiePorFechasTests(TestCase):
+    """«Del 5 al 9, resina»: se declara desde el calendario de faltas, con el
+    alcance de una falta, y manda sobre la superficie fija de la ficha."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        usuario = User.objects.create_user(
+            username="dani", password="x", role=User.Role.ENTRENADOR)
+        self.dani = Entrenador.objects.create(nombre="Dani", user=usuario)
+        self.suyo = Jugador.objects.create(nombre="Carlos", entrenador_responsable=self.dani)
+        self.ajeno = Jugador.objects.create(nombre="Otro")
+        self.api = APIClient()
+        self.api.force_authenticate(usuario)
+
+    def _crear(self, jugador, sup, desde, hasta):
+        return self.api.post("/api/preferencias-superficie/", {
+            "jugador": jugador.id, "superficie": sup,
+            "fecha_desde": desde, "fecha_hasta": hasta, "estricta": True,
+        }, format="json")
+
+    def test_el_entrenador_la_declara_para_su_alumno_y_no_para_otro(self):
+        self.assertEqual(self._crear(self.suyo, "RESINA", "2026-10-05", "2026-10-09").status_code, 201)
+        self.assertEqual(self._crear(self.ajeno, "RESINA", "2026-10-05", "2026-10-09").status_code, 403)
+        r = self.api.get("/api/preferencias-superficie/")
+        filas = r.json().get("results", r.json())
+        self.assertEqual([f["jugador"] for f in filas], [self.suyo.id])
+
+    def test_no_se_pisan_dos_superficies_en_las_mismas_fechas(self):
+        self._crear(self.suyo, "RESINA", "2026-10-05", "2026-10-09")
+        r = self._crear(self.suyo, "TIERRA", "2026-10-08", "2026-10-12")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._crear(self.suyo, "TIERRA", "2026-10-10", "2026-10-12").status_code, 201)
+
+    def test_la_de_fechas_manda_sobre_la_fija_de_la_ficha(self):
+        from academy.models import PreferenciaSuperficie
+        from engine.service import _jugador_motor
+
+        PreferenciaSuperficie.objects.create(jugador=self.suyo, superficie="TIERRA")
+        self._crear(self.suyo, "RESINA", "2026-10-05", "2026-10-09")
+        prefs = sorted(
+            PreferenciaSuperficie.objects.filter(estricta=True),
+            key=lambda ps: (ps.fecha_desde is None and ps.fecha_hasta is None, -ps.id),
+        )
+        tabla = {self.suyo.id: [(p.superficie, p.fecha_desde, p.fecha_hasta) for p in prefs]}
+        dentro = _jugador_motor(self.suyo, date(2026, 10, 7), {}, tabla, 1, False)
+        fuera = _jugador_motor(self.suyo, date(2026, 10, 12), {}, tabla, 1, False)
+        self.assertEqual((dentro.surface_pref, fuera.surface_pref), ("RESINA", "TIERRA"))
