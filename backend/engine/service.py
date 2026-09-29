@@ -873,8 +873,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
     # Los de reserva no entran en el reparto: están para ponerlos a mano.
     # Los de banquillo (Sergio, Iván, Jorge) no entran en el reparto, pero sí
     # cuando un contrato o una preferencia de franja les llama por su nombre.
+    # Los de «nunca en automático» ni siquiera eso: solo a mano.
     all_coaches = list(
-        Entrenador.objects.filter(activo=True, disponible_semana=True)
+        Entrenador.objects.filter(
+            activo=True, disponible_semana=True, solo_manual=False)
     )
     de_banquillo = {c.id for c in all_coaches if c.reserva}
     pesos = pesos_de_entrenamiento()

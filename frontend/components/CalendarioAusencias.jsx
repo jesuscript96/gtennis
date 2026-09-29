@@ -65,6 +65,27 @@ const AMBITOS = [
   { value: "T1", label: "Solo T1 · 14:15", corto: "T1" },
   { value: "T2", label: "Solo T2 · 15:30", corto: "T2" },
 ];
+// Qué franjas tapa cada opción: marcar «Toda la mañana» deja sin sentido M1 y
+// M2 sueltas, y al revés.
+const CUBRE = {
+  DIA: ["MANANA", "TARDE", "M1", "M2", "T1", "T2"],
+  MANANA: ["M1", "M2"], TARDE: ["T1", "T2"],
+  M1: ["MANANA"], M2: ["MANANA"], T1: ["TARDE"], T2: ["TARDE"],
+};
+
+// Marcar o desmarcar una franja. Se pueden elegir varias («M1 y T1»); el día
+// entero va solo, y un bloque sustituye a sus franjas sueltas. Nunca se queda
+// vacío: sin nada marcado vuelve a «Todo el día».
+export function alternarAmbito(actuales, valor) {
+  if (actuales.includes(valor)) {
+    const resto = actuales.filter((a) => a !== valor);
+    return resto.length ? resto : ["DIA"];
+  }
+  if (valor === "DIA") return ["DIA"];
+  const fuera = new Set(["DIA", ...(CUBRE[valor] || [])]);
+  return [...actuales.filter((a) => !fuera.has(a)), valor];
+}
+
 const SUBTIPO_CORTO = {
   LESION: "lesión", ENFERMEDAD: "enfermedad", ESTUDIOS: "estudios",
   PRUEBA_MEDICA: "prueba médica", VACACIONES: "vacaciones", MILONGA: "milonga",
@@ -145,7 +166,7 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   // que se hace aquí.
   const selRef = useRef(new Set());
   const [sel, setSel] = useState(() => new Set());
-  const [ambito, setAmbito] = useState("DIA");
+  const [ambitos, setAmbitos] = useState(["DIA"]);
   const [motivo, setMotivo] = useState(lista[0].value);
   const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -216,11 +237,17 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
     const m = lista.find((x) => x.value === motivo) || lista[0];
     setGuardando(true); setError("");
     try {
+      // Una falta por tramo y por franja marcada: el motor las lee de una en
+      // una. La superficie va siempre al día entero.
+      const franjas = m.superficie ? ["DIA"] : ambitos;
       for (const [desde, hasta] of tramos(dias)) {
-        await origenRef.current.crear({ desde, hasta, ambito, motivo: m, nota });
+        for (const ambito of franjas) {
+          await origenRef.current.crear({ desde, hasta, ambito, motivo: m, nota });
+        }
       }
       marcar(new Set());
       setNota("");
+      setAmbitos(["DIA"]);
       await cargar();
       onCambio?.();
     } catch (e) { setError(e.message); }
@@ -334,17 +361,25 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
               </select>
             </label>
             {!esSuperficie && <>
-              <label>Falta
-                <select value={ambito} onChange={(e) => setAmbito(e.target.value)}>
-                  {AMBITOS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-                </select>
-              </label>
               <label className="crece">Nota (opcional)
                 <input value={nota} onChange={(e) => setNota(e.target.value)}
                   placeholder="Ej. vuelve el lunes" />
               </label>
             </>}
           </div>
+          {!esSuperficie && (
+            <div className="cal-ambitos" role="group" aria-label="Qué falta">
+              <span className="cal-ambitos-tit">Falta <small>(puedes marcar varias)</small></span>
+              {AMBITOS.map((a) => (
+                <button key={a.value} type="button"
+                  className={ambitos.includes(a.value) ? "chip on" : "chip"}
+                  aria-pressed={ambitos.includes(a.value)}
+                  onClick={() => setAmbitos((prev) => alternarAmbito(prev, a.value))}>
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          )}
           {esSuperficie && (
             <p className="hint">
               Esos días el motor solo le pone en pistas de {motivoSel.superficie === "RESINA"

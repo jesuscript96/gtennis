@@ -430,7 +430,7 @@ class SemanaViewSet(viewsets.ModelViewSet):
                 }
             entrenadores.append({
                 "id": c.id, "nombre": c.nombre, "foto_url": c.foto_url or "",
-                "reserva": c.reserva, "franjas": franjas,
+                "reserva": c.reserva or c.solo_manual, "franjas": franjas,
             })
 
         return Response({

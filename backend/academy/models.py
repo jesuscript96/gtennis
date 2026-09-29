@@ -135,6 +135,16 @@ class Entrenador(models.Model):
         help_text="El motor no le asigna pistas; se le coloca a mano desde el "
                   "cuadrante.",
     )
+    # Más estricto que el banquillo: el motor no le pone NUNCA, ni aunque un
+    # contrato le llame ni para cubrir una pista de grupo alto. Solo entra si
+    # alguien lo arrastra a una pista en el cuadrante. Es lo de Álvaro
+    # Mantoan, Alberto Sanz y Jorge Milla: no llevan alumnos.
+    solo_manual = models.BooleanField(
+        default=False,
+        verbose_name="Nunca en automático",
+        help_text="El motor nunca le asigna pistas; solo se le coloca a mano "
+                  "desde el cuadrante.",
+    )
     # Photo in EU object storage (S3-compatible); signed-URL ref.
     foto_url = models.URLField(blank=True)
 

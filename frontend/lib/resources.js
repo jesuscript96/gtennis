@@ -164,6 +164,7 @@ export const RESOURCES = {
       { key: "activo", label: "Activo", type: "bool" },
       { key: "disponible_semana", label: "Disp. semana", type: "bool" },
       { key: "reserva", label: "Banquillo", type: "bool" },
+      { key: "solo_manual", label: "Solo a mano", type: "bool" },
     ],
     fields: [
       { name: "nombre", label: "Nombre", type: "text", required: true },
@@ -174,6 +175,7 @@ export const RESOURCES = {
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },
       { name: "disponible_semana", label: "Disponible esta semana (fallback manual)", type: "bool", default: true },
       { name: "reserva", label: "Solo a mano (banquillo)", type: "bool", help: "El motor no le da pistas. Sigue en la tabla de entrenadores del cuadrante para colocarlo a mano cuando haga falta." },
+      { name: "solo_manual", label: "Nunca en automático", type: "bool", help: "Más estricto que el banquillo: el motor no le pone nunca, ni por contrato ni para cubrir una pista. Solo entra si lo arrastras a una pista en el cuadrante." },
       { name: "activo", label: "Activo", type: "bool", default: true },
     ],
   },

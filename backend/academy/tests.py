@@ -517,3 +517,24 @@ class SuperficiePorFechasTests(TestCase):
         dentro = _jugador_motor(self.suyo, date(2026, 10, 7), {}, tabla, 1, False)
         fuera = _jugador_motor(self.suyo, date(2026, 10, 12), {}, tabla, 1, False)
         self.assertEqual((dentro.surface_pref, fuera.surface_pref), ("RESINA", "TIERRA"))
+
+
+class EntrenadorSoloManualTests(TestCase):
+    """Álvaro, Alberto y Jorge Milla: el motor no les pone nunca, ni siendo
+    los responsables del alumno. Solo entran a mano desde el cuadrante."""
+
+    def test_el_motor_no_le_pone_aunque_sea_el_responsable(self):
+        sede = Sede.objects.create(nombre="Prueba solo manual")
+        Pista.objects.create(sede=sede, numero=1)
+        manual = Entrenador.objects.create(nombre="Solo a mano", solo_manual=True)
+        normal = Entrenador.objects.create(nombre="Normal")
+        semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        for n in ("A", "B"):
+            j = Jugador.objects.create(nombre=n, activo=True, entrenador_responsable=manual)
+            ResponsableJugador.objects.create(
+                jugador=j, entrenador=manual, prioridad=1, porcentaje_objetivo=100)
+        generate(semana, dias=[0])
+        asignadas = Asignacion.objects.filter(semana=semana)
+        self.assertTrue(asignadas.exists())
+        self.assertFalse(asignadas.filter(entrenador=manual).exists())
+        self.assertTrue(asignadas.filter(entrenador=normal).exists())
