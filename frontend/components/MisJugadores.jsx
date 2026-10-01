@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { getAgendaJugador, jugadorExtra, quitarExtra, resource } from "../lib/api";
+import { getAgendaJugador, getUser, jugadorExtra, quitarExtra, resource } from "../lib/api";
+import { roleRank } from "../lib/perms";
 import CalendarioAusencias from "./CalendarioAusencias";
 import PanelTurnos, { SemanaHabitual } from "./PanelTurnos";
 
@@ -29,6 +30,13 @@ export default function MisJugadores() {
   const visibles = jugadores.filter((j) =>
     j.nombre.toLowerCase().includes(busca.trim().toLowerCase())
   );
+  // Los que gestiona (es su responsable) van primero y marcados: sigue viendo
+  // a todos los de antes, pero a los suyos llega sin buscarlos.
+  const yo = getUser();
+  const miId = yo?.entrenador_id;
+  const esCoach = roleRank(yo) >= 2;
+  const mios = miId ? visibles.filter((j) => j.entrenador_responsable === miId) : [];
+  const resto = visibles.filter((j) => !mios.includes(j));
 
   function resumen(j) {
     const m = turnos.find((t) => t.id === j.turno_manana);
@@ -41,6 +49,43 @@ export default function MisJugadores() {
 
   const actualizar = (nuevo) =>
     setJugadores((prev) => prev.map((x) => (x.id === nuevo.id ? nuevo : x)));
+
+  const fila = (j, gestion) => {
+    const activo = abierto === j.id;
+    return (
+      <li key={j.id} className={activo ? "abierto" : ""}>
+        <button type="button" className="fila-jugador"
+          aria-expanded={activo}
+          onClick={() => setAbierto(activo ? null : j.id)}>
+          <span className="nombre">
+            {j.nombre}
+            {gestion && <span className="marca-gestion">Gestión</span>}
+          </span>
+          <span className="resumen">
+            {resumen(j)}
+            {/* El coach ve a todos: le sirve saber quién lleva a cada uno. */}
+            {esCoach && j.entrenador_nombre && ` · gestiona ${j.entrenador_nombre}`}
+          </span>
+          <span className="chevron" aria-hidden="true">{activo ? "−" : "+"}</span>
+        </button>
+
+        {activo && (
+          <div className="detalle-jugador">
+            <AgendaJugador jugador={j} turnos={turnos} onGuardado={actualizar} />
+
+            <div className="bloque-faltas">
+              <h3>Faltas</h3>
+              <CalendarioAusencias jugador={j} />
+            </div>
+
+            <div className="accesos">
+              <Link href={`/ausencias?jugador=${j.id}`}>Parte de esta semana</Link>
+            </div>
+          </div>
+        )}
+      </li>
+    );
+  };
 
   return (
     <div className="page">
@@ -56,37 +101,14 @@ export default function MisJugadores() {
 
       {error && <p className="error">{error}</p>}
 
-      <ul className="lista-jugadores">
-        {visibles.map((j) => {
-          const activo = abierto === j.id;
-          return (
-            <li key={j.id} className={activo ? "abierto" : ""}>
-              <button type="button" className="fila-jugador"
-                aria-expanded={activo}
-                onClick={() => setAbierto(activo ? null : j.id)}>
-                <span className="nombre">{j.nombre}</span>
-                <span className="resumen">{resumen(j)}</span>
-                <span className="chevron" aria-hidden="true">{activo ? "−" : "+"}</span>
-              </button>
-
-              {activo && (
-                <div className="detalle-jugador">
-                  <AgendaJugador jugador={j} turnos={turnos} onGuardado={actualizar} />
-
-                  <div className="bloque-faltas">
-                    <h3>Faltas</h3>
-                    <CalendarioAusencias jugador={j} />
-                  </div>
-
-                  <div className="accesos">
-                    <Link href={`/ausencias?jugador=${j.id}`}>Parte de esta semana</Link>
-                  </div>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {mios.length > 0 && <>
+        <h2 className="titulo-lista">Los que gestionas <small>({mios.length})</small></h2>
+        <ul className="lista-jugadores">{mios.map((j) => fila(j, true))}</ul>
+        {resto.length > 0 && (
+          <h2 className="titulo-lista">Resto de jugadores <small>({resto.length})</small></h2>
+        )}
+      </>}
+      <ul className="lista-jugadores">{resto.map((j) => fila(j, false))}</ul>
 
       {!visibles.length && <p className="hint">Ningún jugador con ese nombre.</p>}
     </div>

@@ -175,11 +175,19 @@ class JugadorTurnosSerializer(GuardaHorarioJugador, serializers.ModelSerializer)
     """
 
     horario = HorarioJugadorSerializer(many=True, required=False)
+    # Quién lo gestiona, solo para leer: el entrenador ve primero a los suyos
+    # (los que tiene de responsable) y marcados.
+    entrenador_nombre = serializers.CharField(
+        source="entrenador_responsable.nombre", read_only=True, default=None
+    )
 
     class Meta:
         model = Jugador
-        fields = ["id", "nombre", "turno_manana", "turno_tarde", "horario"]
-        read_only_fields = ["id", "nombre"]
+        fields = [
+            "id", "nombre", "turno_manana", "turno_tarde", "horario",
+            "entrenador_responsable", "entrenador_nombre",
+        ]
+        read_only_fields = ["id", "nombre", "entrenador_responsable"]
 
 
 class HorarioEntrenadorSerializer(serializers.ModelSerializer):

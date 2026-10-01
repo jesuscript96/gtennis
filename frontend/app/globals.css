@@ -1210,3 +1210,16 @@ ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6
   .tabla-dias tr.excepcion { background: #fdf8ec; }
   .tabla-dias tr.excepcion td { background: none; }
 }
+
+/* ---- Mis jugadores: los que gestiona, primero y marcados ---- */
+.titulo-lista {
+  margin: 1rem 0 .4rem; font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--muted); font-weight: 600;
+}
+.titulo-lista small { font-weight: 400; }
+.marca-gestion {
+  display: inline-block; margin-left: .45rem; vertical-align: middle;
+  font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  padding: .1rem .45rem; border-radius: 999px;
+  background: var(--accent); color: #fff;
+}

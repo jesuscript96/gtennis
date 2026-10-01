@@ -480,6 +480,7 @@ class SuperficiePorFechasTests(TestCase):
             username="dani", password="x", role=User.Role.ENTRENADOR)
         self.dani = Entrenador.objects.create(nombre="Dani", user=usuario)
         self.suyo = Jugador.objects.create(nombre="Carlos", entrenador_responsable=self.dani)
+        self.dani.jugadores_gestionados.add(self.suyo)
         self.ajeno = Jugador.objects.create(nombre="Otro")
         self.api = APIClient()
         self.api.force_authenticate(usuario)
@@ -605,3 +606,42 @@ class TopeDiasParejaTests(TestCase):
         # sale junta los cinco días. Si esto falla, el test de arriba no prueba
         # nada.
         self.assertGreater(len(self._dias_juntos(0)), 3)
+
+
+class ResponsableGestionTests(TestCase):
+    """El responsable de un alumno («Gestión») lo ve —y lo tiene el primero de
+    su lista—, y quien lo tiene a su cargo (`jugadores_gestionados`) también,
+    aunque ya no sea su responsable."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        usuario = User.objects.create_user(
+            username="victor", password="x", role=User.Role.ENTRENADOR)
+        self.victor = Entrenador.objects.create(nombre="Victor", user=usuario)
+        self.otro = Entrenador.objects.create(nombre="Otro")
+        self.api = APIClient()
+        self.api.force_authenticate(usuario)
+
+    def test_ve_a_los_suyos_y_a_los_que_tiene_a_cargo(self):
+        from academy.scope import jugadores_visibles
+
+        suyo = Jugador.objects.create(nombre="Suyo", entrenador_responsable=self.victor)
+        a_cargo = Jugador.objects.create(nombre="A cargo", entrenador_responsable=self.otro)
+        self.victor.jugadores_gestionados.add(a_cargo)
+        Jugador.objects.create(nombre="Ajeno", entrenador_responsable=self.otro)
+        ids = set(jugadores_visibles(self.victor.user).values_list("id", flat=True))
+        self.assertEqual(ids, {suyo.id, a_cargo.id})
+
+    def test_el_entrenador_ve_quien_lo_gestiona_pero_no_lo_cambia(self):
+        j = Jugador.objects.create(nombre="Carlos", entrenador_responsable=self.victor)
+        fila = self.api.get("/api/jugadores/").json()
+        fila = fila.get("results", fila)[0]
+        self.assertEqual((fila["entrenador_responsable"], fila["entrenador_nombre"]),
+                         (self.victor.id, "Victor"))
+        self.api.patch(f"/api/jugadores/{j.id}/", {"entrenador_responsable": self.otro.id},
+                       format="json")
+        j.refresh_from_db()
+        self.assertEqual(j.entrenador_responsable_id, self.victor.id)
