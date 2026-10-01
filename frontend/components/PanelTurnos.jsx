@@ -135,8 +135,10 @@ export default function PanelTurnos({ jugador, onGuardado, compacto = false }) {
         </p>
       )}
 
-      <details className="por-dias" open={!compacto && porDia.size > 0}>
-        <summary>¿Algún día distinto?</summary>
+      <div className="por-dias">
+        <p className="por-dias-tit">
+          Días distintos <small>(valen para todas las semanas)</small>
+        </p>
         <table className="tabla-dias">
           <thead>
             <tr><th>Día</th><th>Mañana</th><th>Tarde</th><th /></tr>
@@ -146,14 +148,17 @@ export default function PanelTurnos({ jugador, onGuardado, compacto = false }) {
               const f = porDia.get(d);
               return (
                 <tr key={d} className={f ? "excepcion" : ""}>
-                  <td>{nombre}</td>
+                  <td>
+                    <span className="largo">{nombre}</span>
+                    <span className="corto">{nombre.slice(0, 3)}</span>
+                  </td>
                   <td>{celda(d, "manana", manana)}</td>
                   <td>{celda(d, "tarde", tarde)}</td>
                   <td>
                     {f && (
-                      <button type="button" className="link-menor"
-                        onClick={() => quitarDia(d)}>
-                        como siempre
+                      <button type="button" className="btn ghost sm"
+                        disabled={guardando} onClick={() => quitarDia(d)}>
+                        Como siempre
                       </button>
                     )}
                   </td>
@@ -162,7 +167,65 @@ export default function PanelTurnos({ jugador, onGuardado, compacto = false }) {
             })}
           </tbody>
         </table>
-      </details>
+      </div>
     </div>
+  );
+}
+
+
+/**
+ * Lo que tiene un día en uno de sus bloques, según su horario habitual:
+ * «cerrado» (miércoles tarde), «no» entrena, una franja concreta, o «libre»
+ * — la que salga. Es la misma lectura que hace la tabla de arriba.
+ */
+export function bloqueHabitual(jugador, turnos, dia, bloque) {
+  if (bloque === "tarde" && CERRADO.has(`${dia}-tarde`)) return { tipo: "cerrado" };
+  const f = (jugador.horario || []).find((x) => x.dia === dia);
+  const campo = bloque === "manana" ? "turno_manana" : "turno_tarde";
+  const entrena = bloque === "manana" ? "entrena_manana" : "entrena_tarde";
+  if (f && f[entrena] === false) return { tipo: "no" };
+  const id = f ? f[campo] : jugador[campo];
+  const t = id && turnos.find((x) => x.id === id);
+  return t ? { tipo: "franja", turno: t } : { tipo: "libre" };
+}
+
+/**
+ * La semana tipo del alumno, solo para leer: qué franja tiene cada día por la
+ * mañana y por la tarde y qué días se salen de lo normal. Es lo que el motor
+ * respeta en cualquier semana; qué días entrena al final lo decide el cuadrante.
+ */
+export function SemanaHabitual({ jugador, turnos }) {
+  const distintos = new Set((jugador.horario || []).map((f) => f.dia));
+  const chip = (dia, bloque) => {
+    const b = bloqueHabitual(jugador, turnos, dia, bloque);
+    const nombre = bloque === "manana" ? "mañana" : "tarde";
+    if (b.tipo === "cerrado") return <span className="chip-hab cerrado">tarde cerrada</span>;
+    if (b.tipo === "no") return <span className="chip-hab no">{nombre}: no entrena</span>;
+    if (b.tipo === "libre") return <span className="chip-hab libre">{nombre}: la que salga</span>;
+    return (
+      <span className="chip-hab">
+        {b.turno.codigo} · {b.turno.hora_inicio.slice(0, 5)}
+      </span>
+    );
+  };
+  return (
+    <>
+      <ul className="semana-jugador habitual">
+        {DIAS.map(([d, nombre]) => (
+          <li key={d} className={distintos.has(d) ? "distinto" : ""}>
+            <span className="dia">{nombre.slice(0, 3)}</span>
+            <div className="celdas">
+              {chip(d, "manana")}
+              {chip(d, "tarde")}
+              {distintos.has(d) && <span className="tag-distinto">día distinto</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="hint">
+        Es lo que tiene declarado para cualquier semana. Qué días entrena al
+        final lo decide el cuadrante.
+      </p>
+    </>
   );
 }

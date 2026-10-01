@@ -31,6 +31,9 @@ const fmtCorta = (s) => {
   const d = deIso(s);
   return `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
 };
+const cuando = (a) => (a.fecha_fin !== a.fecha_inicio
+  ? `del ${fmtCorta(a.fecha_inicio)} al ${fmtCorta(a.fecha_fin)}`
+  : `del ${fmtCorta(a.fecha_inicio)}`);
 
 // Lo que se declara, en el idioma de quien lo declara. Para el alumno, por
 // dentro son el estado y el subtipo de la matriz de estados.
@@ -256,8 +259,7 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
 
   async function borrar(a) {
     if (!window.confirm(
-      `¿Quitar ${a.esSuperficie ? "la superficie" : "la falta"} del ${fmtCorta(a.fecha_inicio)}` +
-      `${a.fecha_fin !== a.fecha_inicio ? ` al ${fmtCorta(a.fecha_fin)}` : ""}?`
+      `¿Quitar ${a.esSuperficie ? "la superficie" : "la falta"} ${cuando(a)}?`
     )) return;
     setGuardando(true);
     try {
@@ -280,6 +282,33 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   const mover = (n) => setMes(new Date(mes.getFullYear(), mes.getMonth() + n, 1));
   const isoHoy = iso(hoy);
   const ambitoDe = (a) => AMBITOS.find((x) => x.value === a.ambito);
+  // Lo ya declarado en los días marcados: tocar un día con algo es la forma
+  // natural de llegar a quitarlo, sobre todo en el móvil.
+  const enLaMarca = ausencias.filter((a) =>
+    [...sel].some((d) => a.fecha_inicio <= d && d <= a.fecha_fin));
+  // Las pasadas no se quitan nunca y alargan la lista: van plegadas.
+  const vigentes = ausencias.filter((a) => a.fecha_fin >= isoHoy)
+    .sort((a, b) => (a.fecha_inicio < b.fecha_inicio ? -1 : 1));
+  const pasadas = ausencias.filter((a) => a.fecha_fin < isoHoy);
+  const queEs = (a) => (a.esSuperficie ? [origen.describir(a)]
+    : [ambitoDe(a)?.corto || a.ambito || "día", origen.describir(a)])
+    .filter(Boolean).join(" · ");
+  const fila = (a) => (
+    <li key={a.id}>
+      <i className="punto" style={{ background: origen.colorDe(a) }} />
+      <span className="texto">
+        <span className="cuando">
+          {fmtCorta(a.fecha_inicio)}
+          {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
+        </span>
+        <span className="que">{queEs(a)}</span>
+      </span>
+      <button type="button" className="btn danger sm quitar" disabled={guardando}
+        onClick={() => borrar(a)}>
+        {a.esSuperficie ? "Quitar superficie" : "Quitar falta"}
+      </button>
+    </li>
+  );
   const motivoSel = lista.find((m) => m.value === motivo) || lista[0];
   const esSuperficie = Boolean(motivoSel.superficie);
 
@@ -345,6 +374,14 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
             {sel.size === 1 ? "" : "s"}
             {tramos([...sel].sort()).length > 1 && ` en ${tramos([...sel].sort()).length} tramos`}
           </p>
+          {enLaMarca.length > 0 && (
+            <div className="cal-ya">
+              <p className="cal-ya-tit">
+                Ya tiene{sel.size === 1 ? " ese día" : " en esos días"}:
+              </p>
+              <ul className="cal-lista">{enLaMarca.map(fila)}</ul>
+            </div>
+          )}
           <div className="fila-form">
             <label>Motivo
               <select value={motivo} onChange={(e) => setMotivo(e.target.value)}>
@@ -399,29 +436,21 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
       ) : (
         <p className="hint">
           Toca los días que falta —o arrastra para marcar varios— y di de qué va.
+          Para quitar algo, toca su día o usa «Quitar» en la lista de abajo.
         </p>
       )}
 
-      {ausencias.length > 0 && (
-        <ul className="cal-lista">
-          {ausencias.map((a) => (
-            <li key={a.id}>
-              <i className="punto" style={{ background: origen.colorDe(a) }} />
-              <span className="cuando">
-                {fmtCorta(a.fecha_inicio)}
-                {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
-              </span>
-              <span className="que">
-                {(a.esSuperficie ? [origen.describir(a)]
-                  : [ambitoDe(a)?.corto || a.ambito || "día", origen.describir(a)])
-                  .filter(Boolean).join(" · ")}
-              </span>
-              <button type="button" className="quitar" disabled={guardando}
-                title={a.esSuperficie ? "Quitar esta superficie" : "Quitar esta falta"}
-                onClick={() => borrar(a)}>✕</button>
-            </li>
-          ))}
-        </ul>
+      {vigentes.length > 0 && (
+        <div className="cal-declaradas">
+          <p className="cal-ya-tit">Declarado</p>
+          <ul className="cal-lista">{vigentes.map(fila)}</ul>
+        </div>
+      )}
+      {pasadas.length > 0 && (
+        <details className="cal-pasadas">
+          <summary>Ya pasadas ({pasadas.length})</summary>
+          <ul className="cal-lista">{pasadas.map(fila)}</ul>
+        </details>
       )}
     </div>
   );

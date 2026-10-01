@@ -780,7 +780,10 @@ body.nav-locked { overflow: hidden; }
    la pantalla de dirección: sin margen propio encaja en los dos. */
 .card > .panel-turnos { padding: 4px 2px; }
 .card > .panel-turnos .fila-form { margin-top: 0; }
-.por-dias summary { cursor: pointer; font-size: .82rem; color: var(--accent); }
+.por-dias { margin-top: .8rem; }
+.por-dias-tit { margin: 0; font-size: .82rem; font-weight: 600; }
+.por-dias-tit small { font-weight: 400; color: var(--muted); }
+.tabla-dias .corto { display: none; }
 .tabla-dias { width: 100%; border-collapse: collapse; margin-top: .5rem; font-size: .85rem; }
 .tabla-dias th {
   text-align: left;
@@ -1097,20 +1100,28 @@ body.arrastrando * { cursor: grabbing !important; }
 .calendario-ausencias .hint { margin: .6rem 0 0; }
 
 ul.cal-lista {
-  list-style: none; margin: .7rem 0 0; padding: .6rem 0 0;
-  border-top: 1px solid var(--border); display: grid; gap: .2rem;
+  list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .35rem;
 }
 ul.cal-lista > li {
-  display: flex; align-items: center; gap: .45rem; font-size: .78rem;
+  display: flex; align-items: center; gap: .5rem; font-size: .8rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: .4rem .45rem .4rem .6rem;
 }
 ul.cal-lista .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+ul.cal-lista .texto { display: flex; flex-wrap: wrap; gap: .1rem .45rem; min-width: 0; flex: 1; }
 ul.cal-lista .cuando { font-weight: 600; white-space: nowrap; }
-ul.cal-lista .que { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-ul.cal-lista .quitar {
-  margin-left: auto; background: none; border: 0; cursor: pointer;
-  color: var(--border-strong); padding: .1rem .3rem; border-radius: 5px;
+ul.cal-lista .que { color: var(--muted); }
+/* Botón con su palabra, no una ✕: en el móvil la cruz no se entendía. */
+ul.cal-lista .quitar { flex: none; white-space: nowrap; }
+.cal-declaradas, .cal-pasadas {
+  margin-top: .7rem; padding-top: .6rem; border-top: 1px solid var(--border);
 }
-ul.cal-lista .quitar:hover { color: var(--st-ausencia); background: var(--surface); }
+.cal-ya { margin: .3rem 0 .7rem; }
+.cal-ya-tit {
+  margin: 0; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); font-weight: 600;
+}
+.cal-pasadas summary { cursor: pointer; font-size: .78rem; color: var(--muted); }
 
 /* ---- «Viene además»: excepción puntual apuntada por el entrenador ---- */
 ul.sesiones .sesion.extra { border-left-color: #0f8b8d; }
@@ -1121,8 +1132,9 @@ ul.sesiones .sesion.extra { border-left-color: #0f8b8d; }
   border: 1px dashed #0f8b8d; color: #0f6f71;
 }
 .chip-extra button {
-  background: none; border: 0; cursor: pointer; color: inherit;
-  font-size: .72rem; padding: 0 .25rem;
+  background: var(--surface); border: 1px solid #e6b3b3; border-radius: 999px;
+  cursor: pointer; color: var(--st-ausencia); font-size: .7rem; font-weight: 600;
+  padding: .05rem .45rem; margin-left: .2rem;
 }
 .agenda-extra {
   display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
@@ -1148,3 +1160,53 @@ ul.sesiones .sesion.extra { border-left-color: #0f8b8d; }
 .cell:hover .cell-grip { opacity: .7; }
 .cell-grip:hover { opacity: 1; }
 .cell { position: relative; }
+
+/* ---- Semana habitual y «Declarar algo distinto» (Mis jugadores) ---- */
+.acciones-horario { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .7rem; }
+.chip-hab {
+  font-size: .74rem; padding: .18rem .5rem; border-radius: 999px;
+  background: #eef3ee; color: #2f6b4a; white-space: nowrap;
+}
+.chip-hab.libre { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border-strong); }
+.chip-hab.no { background: #fbeaea; color: var(--st-ausencia); }
+.chip-hab.cerrado { background: none; color: var(--muted); font-style: italic; }
+ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6px; }
+.tag-distinto {
+  font-size: .68rem; font-weight: 600; color: #8a6a1f; text-transform: uppercase;
+  letter-spacing: .4px; align-self: center;
+}
+.semana-jugador.habitual + .hint { margin-top: .4rem; }
+.declarar-distinto {
+  border: 1px solid var(--accent); border-radius: var(--r);
+  padding: .7rem .8rem; background: var(--surface);
+}
+.declarar-distinto .dd-cab {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+}
+.declarar-distinto .dd-cab h3 { margin: 0; }
+.declarar-distinto section { margin-top: .8rem; }
+.declarar-distinto section + section { border-top: 1px solid var(--border); padding-top: .7rem; }
+.declarar-distinto h4 { margin: 0 0 .35rem; font-size: .85rem; }
+.declarar-distinto .hint { margin: .4rem 0 0; }
+.declarar-distinto .panel-turnos .fila-form { margin-top: .2rem; }
+
+@media (max-width: 640px) {
+  .tabla-dias .largo { display: none; }
+  .tabla-dias .corto { display: inline; }
+  /* Cada día en su rejilla: los dos desplegables a lo ancho y «Como
+     siempre» debajo, que en cuatro columnas no cabía nada. */
+  .tabla-dias thead tr { border-top: 0; padding-bottom: 0; }
+  .tabla-dias th:last-child { display: none; }
+  .tabla-dias tr {
+    display: grid; grid-template-columns: 2.4rem 1fr 1fr; gap: .3rem;
+    align-items: center; padding: .3rem .2rem; border-top: 1px solid var(--border);
+  }
+  .tabla-dias td { border-top: 0; padding: 0; }
+  .tabla-dias th:first-child, .tabla-dias td:first-child { width: auto; }
+  .tabla-dias th, .tabla-dias td:last-child { width: auto; }
+  .tabla-dias td:last-child { grid-column: 2 / -1; text-align: left; }
+  .tabla-dias td:last-child:empty { display: none; }
+  .tabla-dias select { max-width: none; }
+  .tabla-dias tr.excepcion { background: #fdf8ec; }
+  .tabla-dias tr.excepcion td { background: none; }
+}

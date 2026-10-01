@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getAgendaJugador, jugadorExtra, quitarExtra, resource } from "../lib/api";
 import CalendarioAusencias from "./CalendarioAusencias";
-import PanelTurnos from "./PanelTurnos";
+import PanelTurnos, { SemanaHabitual } from "./PanelTurnos";
 
 /**
  * Los jugadores de un entrenador: una lista de nombres y nada más.
@@ -71,9 +71,7 @@ export default function MisJugadores() {
 
               {activo && (
                 <div className="detalle-jugador">
-                  <AgendaJugador jugador={j} />
-
-                  <PanelTurnos jugador={j} onGuardado={actualizar} compacto />
+                  <AgendaJugador jugador={j} turnos={turnos} onGuardado={actualizar} />
 
                   <div className="bloque-faltas">
                     <h3>Faltas</h3>
@@ -104,8 +102,11 @@ export default function MisJugadores() {
  * general a buscarlo. Si dirección todavía no ha generado la semana se enseña
  * lo previsto por su horario, dicho como tal para no confundirlo con lo real.
  */
-function AgendaJugador({ jugador }) {
+function AgendaJugador({ jugador, turnos, onGuardado }) {
   const [datos, setDatos] = useState(null);
+  // «Esta semana» (lo real o lo previsto) o «habitual» (su semana tipo).
+  const [vista, setVista] = useState("semana");
+  const [declarando, setDeclarando] = useState(false);
   const [error, setError] = useState("");
   const [extraDia, setExtraDia] = useState("");
   const [extraTurno, setExtraTurno] = useState("M1");
@@ -119,6 +120,13 @@ function AgendaJugador({ jugador }) {
   }, [jugador.id]);
 
   useEffect(() => { setDatos(null); setError(""); cargar(); }, [cargar]);
+  // Al cambiar su horario, lo previsto de esta semana cambia con él.
+  const firmaHorario = JSON.stringify([jugador.turno_manana, jugador.turno_tarde, jugador.horario]);
+  const primera = useRef(true);
+  useEffect(() => {
+    if (primera.current) { primera.current = false; return; }
+    cargar();
+  }, [firmaHorario]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error && !datos) return <p className="error">{error}</p>;
   if (!datos) return <p className="hint">Cargando su agenda…</p>;
@@ -127,7 +135,8 @@ function AgendaJugador({ jugador }) {
   const conAlgo = datos.dias.some((d) => d.sesiones.length || (d.extras || []).length);
   // El miércoles por la tarde el club no abre: ese día solo hay mañanas.
   const franjasDe = (d) => (d.dia === 2 ? ["M1", "M2"] : ["M1", "M2", "T1", "T2"]);
-  const diasPosibles = datos.dias.filter((d) => d.alta && d.dia <= 4);
+  // Solo de hoy en adelante: apuntarle «además» un día que ya pasó no sirve.
+  const diasPosibles = datos.dias.filter((d) => d.alta && d.dia <= 4 && (!hoy || d.dia >= hoy.dia));
   const diaElegido = diasPosibles.find((d) => String(d.dia) === extraDia) || diasPosibles[0];
 
   async function apuntarExtra(e) {
@@ -174,67 +183,105 @@ function AgendaJugador({ jugador }) {
       </div>
 
       <div className="agenda-semana">
-        <h3>Esta semana</h3>
-        {!datos.hay_semana && (
-          <p className="hint">
-            La semana todavía no está hecha: esto es lo previsto por su horario.
-          </p>
-        )}
-        {!conAlgo ? (
-          <p className="hint">Sin entrenamientos esta semana.</p>
-        ) : (
-          <ul className="semana-jugador">
-            {datos.dias.map((d) => (
-              <li key={d.dia} className={d.es_hoy ? "hoy" : ""}>
-                <span className="dia">{d.nombre.slice(0, 3)}</span>
-                <div className="celdas">
-                  {d.ausencia && <span className="chip-baja">{d.ausencia.estado}</span>}
-                  {!d.alta && <span className="chip-baja">aún no está de alta</span>}
-                  {d.sesiones.length === 0 && !(d.extras || []).length && !d.ausencia && d.alta && (
-                    <span className="vacio">—</span>
-                  )}
-                  {d.sesiones.map((s, i) => (
-                    <span key={i} className={[
-                      "chip-sesion", s.previsto ? "previsto" : "", s.estado === "EXTRA" ? "extra" : "",
-                    ].filter(Boolean).join(" ")}>
-                      {s.hora_inicio} {s.turno}
-                      {s.pista ? ` · P${s.pista}` : ""}
-                      {s.entrenador ? ` · ${s.entrenador}` : ""}
-                    </span>
-                  ))}
-                  {(d.extras || []).map((t) => (
-                    <span key={`x-${t}`} className="chip-extra">
-                      viene además · {t}
-                      <button type="button" disabled={ocupado} title="Quitar"
-                        onClick={() => quitar(d, t)}>✕</button>
-                    </span>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {diasPosibles.length > 0 && (
-          <form className="agenda-extra" onSubmit={apuntarExtra}>
-            <span className="etiqueta">¿Viene además algún día?</span>
-            <select value={diaElegido ? String(diaElegido.dia) : ""}
-              onChange={(e) => setExtraDia(e.target.value)}>
-              {diasPosibles.map((d) => <option key={d.dia} value={d.dia}>{d.nombre}</option>)}
-            </select>
-            <select value={extraTurno} onChange={(e) => setExtraTurno(e.target.value)}>
-              {(diaElegido ? franjasDe(diaElegido) : []).map((t) => (
-                <option key={t} value={t}>{t}</option>
+        <h3>{vista === "habitual" ? "Semana habitual" : "Esta semana"}</h3>
+        {vista === "habitual" ? (
+          <SemanaHabitual jugador={jugador} turnos={turnos} />
+        ) : (<>
+          {!datos.hay_semana && (
+            <p className="hint">
+              La semana todavía no está hecha: esto es lo previsto por su horario.
+            </p>
+          )}
+          {!conAlgo ? (
+            <p className="hint">Sin entrenamientos esta semana.</p>
+          ) : (
+            <ul className="semana-jugador">
+              {datos.dias.map((d) => (
+                <li key={d.dia} className={d.es_hoy ? "hoy" : ""}>
+                  <span className="dia">{d.nombre.slice(0, 3)}</span>
+                  <div className="celdas">
+                    {d.ausencia && <span className="chip-baja">{d.ausencia.estado}</span>}
+                    {!d.alta && <span className="chip-baja">aún no está de alta</span>}
+                    {d.sesiones.length === 0 && !(d.extras || []).length && !d.ausencia && d.alta && (
+                      <span className="vacio">—</span>
+                    )}
+                    {d.sesiones.map((s, i) => (
+                      <span key={i} className={[
+                        "chip-sesion", s.previsto ? "previsto" : "", s.estado === "EXTRA" ? "extra" : "",
+                      ].filter(Boolean).join(" ")}>
+                        {s.hora_inicio} {s.turno}
+                        {s.pista ? ` · P${s.pista}` : ""}
+                        {s.entrenador ? ` · ${s.entrenador}` : ""}
+                      </span>
+                    ))}
+                    {(d.extras || []).map((t) => (
+                      <span key={`x-${t}`} className="chip-extra">
+                        viene además · {t}
+                        <button type="button" disabled={ocupado}
+                          onClick={() => quitar(d, t)}>Quitar</button>
+                      </span>
+                    ))}
+                  </div>
+                </li>
               ))}
-            </select>
-            <button type="submit" className="btn sm" disabled={ocupado || !diaElegido}>
-              Apuntar
-            </button>
-          </form>
-        )}
-        {mensaje && <p className="ok-msg">{mensaje}</p>}
-        {error && datos && <p className="error">{error}</p>}
+            </ul>
+          )}
+        </>)}
+
+        {error && datos && !declarando && <p className="error">{error}</p>}
+        <div className="acciones-horario">
+          <button type="button" className="btn ghost sm"
+            onClick={() => setVista(vista === "habitual" ? "semana" : "habitual")}>
+            {vista === "habitual" ? "Ver esta semana" : "Ver semana habitual"}
+          </button>
+          <button type="button" className={declarando ? "btn sm" : "btn ghost sm"}
+            aria-expanded={declarando} onClick={() => setDeclarando(!declarando)}>
+            Declarar algo distinto
+          </button>
+        </div>
       </div>
+
+      {declarando && (
+        <div className="declarar-distinto">
+          <div className="dd-cab">
+            <h3>Declarar algo distinto</h3>
+            <button type="button" className="btn ghost sm"
+              onClick={() => setDeclarando(false)}>Cerrar</button>
+          </div>
+
+          <section>
+            <h4>Solo esta semana</h4>
+            {diasPosibles.length > 0 ? (
+              <form className="agenda-extra" onSubmit={apuntarExtra}>
+                <span className="etiqueta">Viene además el</span>
+                <select value={diaElegido ? String(diaElegido.dia) : ""}
+                  onChange={(e) => setExtraDia(e.target.value)}>
+                  {diasPosibles.map((d) => <option key={d.dia} value={d.dia}>{d.nombre}</option>)}
+                </select>
+                <span className="etiqueta">en</span>
+                <select value={extraTurno} onChange={(e) => setExtraTurno(e.target.value)}>
+                  {(diaElegido ? franjasDe(diaElegido) : []).map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <button type="submit" className="btn sm" disabled={ocupado || !diaElegido}>
+                  Apuntar
+                </button>
+              </form>
+            ) : (
+              <p className="hint">Esta semana ya no quedan días para apuntarle.</p>
+            )}
+            {mensaje && <p className="ok-msg">{mensaje}</p>}
+            {error && datos && <p className="error">{error}</p>}
+            <p className="hint">Si algún día no viene, márcalo en Faltas, más abajo.</p>
+          </section>
+
+          <section>
+            <h4>Todas las semanas</h4>
+            <PanelTurnos jugador={jugador} onGuardado={onGuardado} compacto />
+          </section>
+        </div>
+      )}
     </div>
   );
 }
