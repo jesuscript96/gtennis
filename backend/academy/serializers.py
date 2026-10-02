@@ -185,9 +185,9 @@ class JugadorTurnosSerializer(GuardaHorarioJugador, serializers.ModelSerializer)
         model = Jugador
         fields = [
             "id", "nombre", "turno_manana", "turno_tarde", "horario",
-            "entrenador_responsable", "entrenador_nombre",
+            "entrenador_responsable", "entrenador_nombre", "fecha_baja",
         ]
-        read_only_fields = ["id", "nombre", "entrenador_responsable"]
+        read_only_fields = ["id", "nombre", "entrenador_responsable", "fecha_baja"]
 
 
 class HorarioEntrenadorSerializer(serializers.ModelSerializer):

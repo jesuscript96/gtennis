@@ -88,7 +88,9 @@ export default function CourtCard({ pista, players, coach, mode }) {
         {empty && <div className="court-free">Libre</div>}
 
         {players.map((p, i) => (
-          <div key={p.id} className="court-av" style={{ left: `${pos[i].l}%`, top: `${pos[i].t}%` }}>
+          <div key={p.id} className={`court-av${p.falta ? " tachado" : ""}`}
+            title={p.falta ? `Falta: ${p.falta.motivo}` : undefined}
+            style={{ left: `${pos[i].l}%`, top: `${pos[i].t}%` }}>
             <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
             <span className="nm">{first(p.nombre)}</span>
           </div>

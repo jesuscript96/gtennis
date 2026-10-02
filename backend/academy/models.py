@@ -881,6 +881,8 @@ class Aviso(models.Model):
         MOVIMIENTO = "MOVIMIENTO", "Movimiento de escuela"
         INVITADO = "INVITADO", "Invitado"
         MANTENIMIENTO = "MANTENIMIENTO", "Mantenimiento"
+        CORTE = "CORTE", "Cambio tras el corte"
+        GENERACION = "GENERACION", "Generación del día"
         GENERAL = "GENERAL", "General"
 
     # Destinatario concreto (un entrenador) o, si para_direccion=True, la

@@ -467,23 +467,101 @@ class MananaEnteraMotorTests(TestCase):
 
 
 
-class SuperficiePorFechasTests(TestCase):
-    """«Del 5 al 9, resina»: se declara desde el calendario de faltas, con el
-    alcance de una falta, y manda sobre la superficie fija de la ficha."""
+class RespetaLoHechoAManoTests(TestCase):
+    """Rehacer el día (01/10/2026) no deshace lo que se tocó a mano: lo puesto
+    a mano se queda, a quien se quitó no se le vuelve a poner, y una falta
+    declarada después sí manda."""
+
+    # Mismo escenario que la mañana entera, sin heredar sus tests.
+    _jugadores = MananaEnteraMotorTests._jugadores
 
     def setUp(self):
+        MananaEnteraMotorTests.setUp(self)
+        self.a = Entrenador.objects.create(nombre="A")
+        self.b = Entrenador.objects.create(nombre="B")
+        self.jugadores = self._jugadores(6)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+
+    def _fila(self, jugador):
+        return Asignacion.objects.get(semana=self.semana, dia=0, jugador=jugador)
+
+    def test_lo_puesto_a_mano_sigue_igual_tras_rehacer(self):
+        fila = self._fila(self.jugadores[0])
+        fila.manual = True
+        fila.entrenador = self.b
+        fila.save()
+        antes = (fila.turno_id, fila.pista_id, fila.entrenador_id)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        despues = self._fila(self.jugadores[0])
+        self.assertEqual((despues.turno_id, despues.pista_id, despues.entrenador_id), antes)
+        self.assertTrue(despues.manual)
+        # Nadie más entra en esa pista a esa hora.
+        self.assertEqual(Asignacion.objects.filter(
+            semana=self.semana, dia=0, turno_id=antes[0], pista_id=antes[1]).count(), 1)
+
+    def test_el_quitado_a_mano_no_vuelve(self):
         from rest_framework.test import APIClient
 
         from users.models import User
 
-        usuario = User.objects.create_user(
+        admin = User.objects.create_user(
+            username="ivan", password="x", role=User.Role.SUPERADMIN)
+        api = APIClient()
+        api.force_authenticate(admin)
+        fila = self._fila(self.jugadores[1])
+        self.assertEqual(api.delete(f"/api/asignaciones/{fila.id}/").status_code, 204)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertFalse(Asignacion.objects.filter(
+            semana=self.semana, dia=0, jugador=self.jugadores[1]).exists())
+
+    def test_una_falta_despues_saca_al_puesto_a_mano(self):
+        from scheduling.models import AusenciaJugador
+
+        fila = self._fila(self.jugadores[2])
+        fila.manual = True
+        fila.save()
+        AusenciaJugador.objects.create(
+            jugador=self.jugadores[2], fecha_inicio=LUNES, fecha_fin=LUNES,
+            ambito="DIA", estado="AUSENCIA_JUGADOR",
+        )
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertFalse(Asignacion.objects.filter(
+            semana=self.semana, dia=0, jugador=self.jugadores[2]).exists())
+
+
+class SuperficiePorFechasTests(TestCase):
+    """«Del 5 al 9, resina»: se declara desde el calendario de faltas, la pone
+    el coach (01/10/2026) para los alumnos de su grupo, y manda sobre la
+    superficie fija de la ficha."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from academy.models import Coach
+        from users.models import User
+
+        self.usuario_dani = User.objects.create_user(
             username="dani", password="x", role=User.Role.ENTRENADOR)
-        self.dani = Entrenador.objects.create(nombre="Dani", user=usuario)
+        self.dani = Entrenador.objects.create(nombre="Dani", user=self.usuario_dani)
         self.suyo = Jugador.objects.create(nombre="Carlos", entrenador_responsable=self.dani)
         self.dani.jugadores_gestionados.add(self.suyo)
         self.ajeno = Jugador.objects.create(nombre="Otro")
+        usuario = User.objects.create_user(
+            username="pablo", password="x", role=User.Role.COACH)
+        Coach.objects.create(nombre="Pablo", user=usuario).entrenadores.add(self.dani)
         self.api = APIClient()
         self.api.force_authenticate(usuario)
+
+    def test_el_entrenador_no_pone_superficie(self):
+        from rest_framework.test import APIClient
+
+        api = APIClient()
+        api.force_authenticate(self.usuario_dani)
+        r = api.post("/api/preferencias-superficie/", {
+            "jugador": self.suyo.id, "superficie": "RESINA",
+            "fecha_desde": "2026-10-05", "fecha_hasta": "2026-10-09", "estricta": True,
+        }, format="json")
+        self.assertEqual(r.status_code, 403)
 
     def _crear(self, jugador, sup, desde, hasta):
         return self.api.post("/api/preferencias-superficie/", {
@@ -491,7 +569,7 @@ class SuperficiePorFechasTests(TestCase):
             "fecha_desde": desde, "fecha_hasta": hasta, "estricta": True,
         }, format="json")
 
-    def test_el_entrenador_la_declara_para_su_alumno_y_no_para_otro(self):
+    def test_el_coach_la_declara_para_su_grupo_y_no_para_otro(self):
         self.assertEqual(self._crear(self.suyo, "RESINA", "2026-10-05", "2026-10-09").status_code, 201)
         self.assertEqual(self._crear(self.ajeno, "RESINA", "2026-10-05", "2026-10-09").status_code, 403)
         r = self.api.get("/api/preferencias-superficie/")

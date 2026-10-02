@@ -7,6 +7,14 @@ import { roleRank } from "../lib/perms";
 import CalendarioAusencias from "./CalendarioAusencias";
 import PanelTurnos, { SemanaHabitual } from "./PanelTurnos";
 
+// Sigue en la lista (es de alguien) pero ya no entrena: tiene fecha de baja
+// pasada. Comparar el texto ISO basta.
+const hoyIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const noEntrena = (j) => Boolean(j.fecha_baja && j.fecha_baja < hoyIso());
+
 /**
  * Los jugadores de un entrenador: una lista de nombres y nada más.
  *
@@ -60,6 +68,7 @@ export default function MisJugadores() {
           <span className="nombre">
             {j.nombre}
             {gestion && <span className="marca-gestion">Gestión</span>}
+            {noEntrena(j) && <span className="marca-baja">No entrena</span>}
           </span>
           <span className="resumen">
             {resumen(j)}
@@ -230,7 +239,9 @@ function AgendaJugador({ jugador, turnos, onGuardado }) {
                     {d.sesiones.map((s, i) => (
                       <span key={i} className={[
                         "chip-sesion", s.previsto ? "previsto" : "", s.estado === "EXTRA" ? "extra" : "",
-                      ].filter(Boolean).join(" ")}>
+                        s.falta ? "con-falta-tachada" : "",
+                      ].filter(Boolean).join(" ")}
+                        title={s.falta ? `Falta: ${s.falta.motivo}` : undefined}>
                         {s.hora_inicio} {s.turno}
                         {s.pista ? ` · P${s.pista}` : ""}
                         {s.entrenador ? ` · ${s.entrenador}` : ""}
@@ -310,9 +321,10 @@ function AgendaJugador({ jugador, turnos, onGuardado }) {
 
 function Sesion({ s }) {
   return (
-    <li className={["sesion", s.previsto ? "previsto" : "", s.estado === "EXTRA" ? "extra" : ""]
-      .filter(Boolean).join(" ")}>
+    <li className={["sesion", s.previsto ? "previsto" : "", s.estado === "EXTRA" ? "extra" : "",
+      s.falta ? "con-falta-tachada" : ""].filter(Boolean).join(" ")}>
       <span className="hora">{s.hora_inicio}–{s.hora_fin}</span>
+      {s.falta && <span className="falta-tag">falta · {s.falta.motivo}</span>}
       <span className="donde">
         {s.pista ? `${s.sede} · Pista ${s.pista}` : `${s.turno} · previsto`}
       </span>

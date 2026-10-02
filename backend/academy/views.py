@@ -244,9 +244,13 @@ class JugadorViewSet(viewsets.ModelViewSet):
                     companeros[(otro.dia, otro.turno_id, otro.pista_id)].append(
                         otro.jugador.nombre
                     )
+            from scheduling.serializers import falta_de
+
+            faltas = {}
             for a in mias:
                 inicio, fin = a.turno.horas(lunes + timedelta(days=a.dia))
                 sesiones[a.dia].append({
+                    "falta": falta_de(a, faltas),
                     "turno": a.turno.codigo,
                     "hora_inicio": inicio.strftime("%H:%M"),
                     "hora_fin": fin.strftime("%H:%M"),
@@ -377,6 +381,12 @@ class JugadorViewSet(viewsets.ModelViewSet):
             return Response({"error": "Ese día no se entrena en esa franja."}, status=400)
         lunes = fecha - timedelta(days=dia)
 
+        from scheduling.avisos_corte import avisar
+        from scheduling.corte import cerrado
+
+        # Pasado el corte de ese día (01/10/2026) el cuadrante no se toca solo:
+        # se apunta, se avisa y se cambia a mano.
+        cerrada = cerrado(fecha)
         if request.method == "DELETE":
             semana = Semana.objects.filter(fecha_inicio=lunes).first()
             if semana is not None:
@@ -384,16 +394,20 @@ class JugadorViewSet(viewsets.ModelViewSet):
                     semana=semana, jugador=jugador, dia=dia,
                     ambito=turno.codigo, estado=Estado.EXTRA,
                 ).delete()
-                Asignacion.objects.filter(
-                    semana=semana, jugador=jugador, dia=dia, turno=turno,
-                    estado=Estado.EXTRA,
-                ).delete()
+                if cerrada:
+                    avisar(jugador, fecha, fecha, turno.codigo, "falta",
+                           request.user, "ya no viene además")
+                else:
+                    Asignacion.objects.filter(
+                        semana=semana, jugador=jugador, dia=dia, turno=turno,
+                        estado=Estado.EXTRA,
+                    ).delete()
             return Response(status=204)
 
         semana, _ = Semana.objects.get_or_create(fecha_inicio=lunes)
         Disponibilidad.objects.update_or_create(
             semana=semana, jugador=jugador, dia=dia, ambito=turno.codigo,
-            defaults={"estado": Estado.EXTRA,
+            defaults={"estado": Estado.EXTRA, "tardia": cerrada,
                       "nota": str(datos.get("nota", ""))[:200]},
         )
         if Asignacion.objects.filter(
@@ -401,6 +415,13 @@ class JugadorViewSet(viewsets.ModelViewSet):
         ).exists():
             return Response({"ok": True, "colocado": True,
                              "mensaje": "Ya tenía sesión en esa franja."})
+        if cerrada:
+            avisar(jugador, fecha, fecha, turno.codigo, "viene", request.user,
+                   str(datos.get("nota", ""))[:200])
+            return Response({"ok": True, "colocado": False,
+                             "mensaje": "Apuntado. El cuadrante de ese día ya está "
+                                        "cerrado: se ha avisado para que le hagan "
+                                        "hueco a mano."})
         if not semana.generado_at:
             return Response({"ok": True, "colocado": False,
                              "mensaje": "Apuntado. Entrará cuando se genere la semana."})
@@ -678,13 +699,10 @@ class PreferenciaSuperficieViewSet(viewsets.ModelViewSet):
             return
         from .scope import puede_ver_jugador
 
-        if getattr(user, "coach", None) is not None:
-            ok = puede_ver_jugador(user, jugador)
-        else:
-            ent = getattr(user, "entrenador", None)
-            ok = ent is not None and ent.puede_gestionar(jugador)
-        if not ok:
-            raise PermissionDenied("No tienes acceso para gestionar a este jugador.")
+        # La superficie la deciden los coaches (01/10/2026): el entrenador
+        # solo declara faltas.
+        if not (user.is_coach and puede_ver_jugador(user, jugador)):
+            raise PermissionDenied("La superficie la declaran los coaches.")
 
     def perform_create(self, serializer):
         self._assert_puede(serializer.validated_data["jugador"])
@@ -1022,7 +1040,10 @@ class MiAgendaViewSet(viewsets.ViewSet):
         )
         # Se devuelve lo mismo que pinta el cuadrante de dirección —foto,
         # división y estado— para que la pista se dibuje igual aquí.
+        from scheduling.serializers import falta_de
+
         pistas = {}
+        faltas = {}
         for a in filas:
             clave = (a.turno_id, a.pista_id)
             ficha = pistas.get(clave)
@@ -1046,6 +1067,7 @@ class MiAgendaViewSet(viewsets.ViewSet):
                 "foto": a.jugador.foto_url or "",
                 "division": a.jugador.division.nivel if a.jugador.division_id else None,
                 "estado": a.estado,
+                "falta": falta_de(a, faltas),
             })
         return Response({
             "fecha": fecha,

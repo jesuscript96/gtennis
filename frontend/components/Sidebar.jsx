@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { getUser, logout } from "../lib/api";
+import { getAvisos, getUser, logout } from "../lib/api";
 import { roleRank } from "../lib/perms";
 import SettingsMenu from "./SettingsMenu";
 
@@ -48,6 +49,7 @@ const NEED = { direccion: 3, coach: 2 };
 const SECTIONS_ENTRENADOR = [
   { items: [
     ["/mi-agenda", "Mi agenda"],
+    ["/avisos", "Avisos"],
   ] },
   { title: "Mis jugadores", items: [
     ["/jugadores", "Mis jugadores"],
@@ -64,6 +66,12 @@ export default function Sidebar({ onNavigate }) {
   const router = useRouter();
   const user = getUser();
   const secciones = roleRank(user) === 1 ? SECTIONS_ENTRENADOR : SECTIONS;
+  // Avisos sin leer (faltas tras el corte, generación del día…): se miran al
+  // cambiar de página, sin sondear.
+  const [sinLeer, setSinLeer] = useState(0);
+  useEffect(() => {
+    getAvisos().then((a) => setSinLeer(a.filter((x) => !x.leido).length)).catch(() => {});
+  }, [pathname]);
 
   function onLogout() {
     logout();
@@ -82,6 +90,7 @@ export default function Sidebar({ onNavigate }) {
               .map(([href, label]) => (
                 <Link key={href} href={href} className={pathname === href ? "active" : ""} onClick={onNavigate}>
                   {label}
+                  {href === "/avisos" && sinLeer > 0 && <span className="nav-badge">{sinLeer}</span>}
                 </Link>
               ))}
           </div>

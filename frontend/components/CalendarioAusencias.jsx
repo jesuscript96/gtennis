@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addAusenciaFechas, addPreferenciaSuperficie, delAusenciaFechas,
   delPreferenciaSuperficie, getAusenciasFechas, getPreferenciasSuperficie,
+  getUser,
 } from "../lib/api";
+import { roleRank } from "../lib/perms";
 import { ESTADO_COLOR, SUPERFICIE_COLOR } from "../lib/format";
 
 const MESES = [
@@ -155,6 +157,12 @@ function fuenteDeJugador(jugador) {
 export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio }) {
   const origen = fuente || fuenteDeJugador(jugador);
   const lista = motivos || MOTIVOS_JUGADOR;
+  // La superficie la declaran los coaches (01/10/2026); el entrenador solo
+  // declara faltas y ve la superficie que le han puesto.
+  const coach = roleRank(getUser()) >= 2;
+  const conSuperficie = coach && lista.some((m) => m.superficie);
+  const motivosFalta = lista.filter((m) => !m.superficie);
+  const superficies = lista.filter((m) => m.superficie);
   // La fuente se rehace en cada render de quien la pasa: se lee de una ref y
   // se recarga solo cuando cambia su clave.
   const origenRef = useRef(origen);
@@ -170,10 +178,11 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   const selRef = useRef(new Set());
   const [sel, setSel] = useState(() => new Set());
   const [ambitos, setAmbitos] = useState(["DIA"]);
-  const [motivo, setMotivo] = useState(lista[0].value);
+  const [motivo, setMotivo] = useState(motivosFalta[0].value);
   const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const pintando = useRef(null);
 
   const cargar = useCallback(async () => {
@@ -238,15 +247,23 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
     const dias = [...selRef.current].sort();
     if (!dias.length) return;
     const m = lista.find((x) => x.value === motivo) || lista[0];
-    setGuardando(true); setError("");
+    setGuardando(true); setError(""); setInfo("");
     try {
       // Una falta por tramo y por franja marcada: el motor las lee de una en
       // una. La superficie va siempre al día entero.
       const franjas = m.superficie ? ["DIA"] : ambitos;
+      let tardia = false;
       for (const [desde, hasta] of tramos(dias)) {
         for (const ambito of franjas) {
-          await origenRef.current.crear({ desde, hasta, ambito, motivo: m, nota });
+          const r = await origenRef.current.crear({ desde, hasta, ambito, motivo: m, nota });
+          if (r?.tardia) tardia = true;
         }
+      }
+      // Pasado el corte (19:00; viernes 16:30 para el sábado) el cuadrante de
+      // ese día ya no cambia solo.
+      if (tardia) {
+        setInfo("Guardada. Ese día ya estaba cerrado: el cuadrante no cambia, sale "
+          + "tachado y se ha avisado a dirección y a su entrenador para moverlo a mano.");
       }
       marcar(new Set());
       setNota("");
@@ -302,14 +319,17 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
           {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
         </span>
         <span className="que">{queEs(a)}</span>
+        {a.tardia && <span className="tag-tardia">tras el corte</span>}
       </span>
-      <button type="button" className="btn danger sm quitar" disabled={guardando}
-        onClick={() => borrar(a)}>
-        {a.esSuperficie ? "Quitar superficie" : "Quitar falta"}
-      </button>
+      {(!a.esSuperficie || coach) && (
+        <button type="button" className="btn danger sm quitar" disabled={guardando}
+          onClick={() => borrar(a)}>
+          {a.esSuperficie ? "Quitar superficie" : "Quitar falta"}
+        </button>
+      )}
     </li>
   );
-  const motivoSel = lista.find((m) => m.value === motivo) || lista[0];
+  const motivoSel = lista.find((m) => m.value === motivo) || motivosFalta[0];
   const esSuperficie = Boolean(motivoSel.superficie);
 
   return (
@@ -366,6 +386,7 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
       )}
 
       {error && <p className="error">{error}</p>}
+      {info && <p className="cal-info">{info}</p>}
 
       {sel.size > 0 ? (
         <div className="cal-declarar">
@@ -382,19 +403,21 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
               <ul className="cal-lista">{enLaMarca.map(fila)}</ul>
             </div>
           )}
+          {conSuperficie && (
+            <div className="cal-tipo" role="group" aria-label="Qué declaras">
+              <button type="button" className={esSuperficie ? "chip" : "chip on"}
+                aria-pressed={!esSuperficie}
+                onClick={() => setMotivo(motivosFalta[0].value)}>Una falta</button>
+              <button type="button" className={esSuperficie ? "chip on" : "chip"}
+                aria-pressed={esSuperficie}
+                onClick={() => setMotivo(superficies[0].value)}>Viene, en otra superficie</button>
+            </div>
+          )}
           <div className="fila-form">
-            <label>Motivo
+            <label>{esSuperficie ? "Superficie" : "Motivo"}
               <select value={motivo} onChange={(e) => setMotivo(e.target.value)}>
-                <optgroup label="Falta">
-                  {lista.filter((m) => !m.superficie).map((m) =>
-                    <option key={m.value} value={m.value}>{m.label}</option>)}
-                </optgroup>
-                {lista.some((m) => m.superficie) && (
-                  <optgroup label="Viene, pero en otra pista">
-                    {lista.filter((m) => m.superficie).map((m) =>
-                      <option key={m.value} value={m.value}>{m.label}</option>)}
-                  </optgroup>
-                )}
+                {(esSuperficie ? superficies : motivosFalta).map((m) =>
+                  <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </label>
             {!esSuperficie && <>

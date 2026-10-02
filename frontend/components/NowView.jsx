@@ -44,7 +44,7 @@ export default function NowView() {
     const items = byPista[p.id] || [];
     const players = items.map((a) => ({
       id: a.jugador, nombre: a.jugador_nombre, foto: a.jugador_foto,
-      division: a.division_nivel, estado: a.estado,
+      division: a.division_nivel, estado: a.estado, falta: a.falta,
     }));
     const c = items.find((a) => a.entrenador_nombre);
     const coach = c ? { nombre: c.entrenador_nombre, foto: c.entrenador_foto } : null;

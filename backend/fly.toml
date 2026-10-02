@@ -22,7 +22,9 @@ console_command = '/code/manage.py shell'
   # gunicorn mataba al trabajador a media faena y el navegador veía la
   # conexión caída.
   app = 'gunicorn --bind :8000 --workers 2 --timeout 600 --graceful-timeout 60 config.wsgi'
-  celery = 'celery -A config worker --loglevel=INFO'
+  # Genera cada día en su corte (19:00 del día anterior; viernes 16:30 para
+  # el sábado). Sustituye a celery, que nunca tuvo Redis en Fly.
+  programador = 'python manage.py programador'
 
 [http_service]
   internal_port = 8000

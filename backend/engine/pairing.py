@@ -166,6 +166,9 @@ class PairingInput:
     span_extra: int = 0
     edad_extra: int = 0
     w_relajar: int = 0
+    # (franja, pista) que ya tienen gente puesta a mano: el motor no mete a
+    # nadie más ahí ni cuenta con ellas.
+    ocupadas: set[tuple[int, int]] = field(default_factory=set)
 
 
 @dataclass
@@ -320,6 +323,8 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             if prioridad(p, f) is None:
                 continue
             for c in courts:
+                if (f, c.id) in data.ocupadas:
+                    continue
                 if p.surface_pref and c.surface and c.surface != p.surface_pref:
                     continue
                 if p.solo_central and c.is_satellite:
@@ -334,6 +339,9 @@ def solve_pairing(data: PairingInput) -> PairingResult:
 
     used = {(f, c.id): model.NewBoolVar(f"used_{f}_{c.id}")
             for f in franjas for c in courts}
+    for f, cid in data.ocupadas:
+        if (f, cid) in used:
+            model.Add(used[f, cid] == 0)
 
     # Una pista como mucho por franja, y `max_franjas` franjas del bloque (una
     # por defecto: nadie repite en la misma mañana). Quedarse sin pista está

@@ -21,6 +21,8 @@ from .models import (
     ConfiguracionMotor,
     Disponibilidad,
     DisponibilidadEntrenador,
+    ESTADOS_EXCLUYENTES,
+    Estado,
     Semana,
 )
 from .serializers import (
@@ -173,12 +175,43 @@ class AhoraView(APIView):
         })
 
 
+def _pide_confirmar(semana, dias, request):
+    """Un día ya cerrado (pasado su corte) se ha revisado y retocado a mano:
+    rehacerlo pide confirmarlo. Devuelve la respuesta 409, o None si se puede
+    seguir."""
+    from .corte import cerrado
+
+    if request.data.get("confirmar"):
+        return None
+    hoy = djtz.localdate()
+    cerrados = []
+    for d in (dias if dias is not None else [d for d, _ in DIAS]):
+        fecha = semana.fecha_inicio + timedelta(days=d)
+        if fecha >= hoy and cerrado(fecha):
+            cerrados.append(d)
+    if not cerrados:
+        return None
+    nombres = " y ".join(dict(DIAS)[d].lower() for d in cerrados)
+    return Response({
+        "cerrado": True, "dias": cerrados,
+        "error": f"El cuadrante del {nombres} ya está cerrado. Rehacerlo "
+                 f"conserva lo puesto a mano, pero puede mover al resto.",
+    }, status=409)
+
+
 class SemanaViewSet(viewsets.ModelViewSet):
     queryset = Semana.objects.all()
     serializer_class = SemanaSerializer
     # Todos consultan el cuadrante; crear semanas y generar/publicar (POST) es
     # de dirección (la generación es global de club).
     permission_classes = [ReadOnlyOrDireccion]
+
+    def get_permissions(self):
+        # Rehacer días también lo pueden los coaches (01/10/2026): cuando no
+        # está Iván, lo hacen Sergio o Dani.
+        if self.action == "generar":
+            return [IsAuthenticated()]
+        return super().get_permissions()
 
     @action(detail=True, methods=["get"])
     def tabla(self, request, pk=None):
@@ -219,6 +252,13 @@ class SemanaViewSet(viewsets.ModelViewSet):
         elif dias is not None:
             dias = [int(d) for d in dias]
 
+        user = request.user
+        if not (user.is_superadmin or user.is_coach):
+            raise PermissionDenied("Generar es de dirección y coaches.")
+        aviso = _pide_confirmar(semana, dias, request)
+        if aviso is not None:
+            return aviso
+
         report = generate(semana, dias=dias, bloques=bloques)
         return Response(report)
 
@@ -227,6 +267,9 @@ class SemanaViewSet(viewsets.ModelViewSet):
         """Regenerate only the afternoon block of one day (PRD §02)."""
         semana = self.get_object()
         dia = int(request.data.get("dia"))
+        aviso = _pide_confirmar(semana, [dia], request)
+        if aviso is not None:
+            return aviso
         report = regenerate_afternoon(semana, dia)
         return Response(report)
 
@@ -516,20 +559,52 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
         semana = self.request.query_params.get("semana")
         return qs.filter(semana=semana) if semana else qs
 
+    def _tras_guardar(self, fila):
+        """Pasado el corte de su día, la falta no entra en la generación:
+        queda marcada como tardía y se avisa si había que mover a alguien."""
+        from .avisos_corte import avisar, rango_de
+        from .corte import cerrado
+
+        desde, hasta = rango_de(fila)
+        tardia = cerrado(desde)
+        if fila.tardia != tardia:
+            fila.tardia = tardia
+            fila.save(update_fields=["tardia"])
+        if fila.estado in ESTADOS_EXCLUYENTES:
+            accion = "falta"
+        elif fila.estado == Estado.EXTRA:
+            accion = "viene"
+        else:
+            return
+        avisar(fila.jugador, desde, hasta, fila.ambito, accion,
+               self.request.user, fila.nota)
+
+    def _tras_quitar(self, fila):
+        from .avisos_corte import avisar, rango_de
+
+        desde, hasta = rango_de(fila)
+        if fila.estado in ESTADOS_EXCLUYENTES:
+            avisar(fila.jugador, desde, hasta, fila.ambito, "quita_falta",
+                   self.request.user)
+        elif fila.estado == Estado.EXTRA:
+            avisar(fila.jugador, desde, hasta, fila.ambito, "falta",
+                   self.request.user, "ya no viene además")
+
     def perform_create(self, serializer):
         self._assert_puede(serializer.validated_data["jugador"])
-        serializer.save()
+        self._tras_guardar(serializer.save())
 
     def perform_update(self, serializer):
         jugador = serializer.validated_data.get(
             "jugador", serializer.instance.jugador
         )
         self._assert_puede(jugador)
-        serializer.save()
+        self._tras_guardar(serializer.save())
 
     def perform_destroy(self, instance):
         self._assert_puede(instance.jugador)
         instance.delete()
+        self._tras_quitar(instance)
 
 
 class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
@@ -623,6 +698,22 @@ class AsignacionViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(manual=True)
+
+    def perform_destroy(self, instance):
+        """Mandar al banquillo desde el cuadrante. Se apunta para que rehacer
+        el día no le vuelva a poner en ese bloque, y se guarda la foto para
+        poder deshacerlo."""
+        from .historial import registrar
+        from .models import QuitadoAMano
+
+        registrar(instance.semana_id,
+                  f"Quitar a {instance.jugador} ({instance.turno.codigo})",
+                  self.request.user)
+        QuitadoAMano.objects.get_or_create(
+            semana_id=instance.semana_id, dia=instance.dia,
+            turno_id=instance.turno_id, jugador_id=instance.jugador_id,
+        )
+        instance.delete()
 
     @action(detail=False, methods=["post"])
     def swap(self, request):
@@ -984,4 +1075,4 @@ class AusenciaJugadorViewSet(DisponibilidadViewSet):
         self._assert_puede(serializer.validated_data["jugador"])
         # Queda registrado quién la declaró: para una baja larga conviene
         # poder preguntar.
-        serializer.save(declarada_por=self._entrenador())
+        self._tras_guardar(serializer.save(declarada_por=self._entrenador()))

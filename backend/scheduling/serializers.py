@@ -30,8 +30,9 @@ class DisponibilidadSerializer(serializers.ModelSerializer):
         fields = [
             "id", "semana", "jugador", "jugador_nombre", "dia", "ambito",
             "ambito_display", "estado", "estado_display", "subtipo",
-            "subtipo_display", "nota",
+            "subtipo_display", "nota", "tardia",
         ]
+        read_only_fields = ["tardia"]
 
 
 class DisponibilidadEntrenadorSerializer(serializers.ModelSerializer):
@@ -80,6 +81,9 @@ class AsignacionSerializer(serializers.ModelSerializer):
     sede = serializers.CharField(source="pista.sede.nombre", read_only=True)
     pista_numero = serializers.IntegerField(source="pista.numero", read_only=True)
     pista_superficie = serializers.CharField(source="pista.superficie", read_only=True)
+    # Falta declarada para esa franja después de colocarle: sale tachado, sin
+    # mover a nadie (01/10/2026). Nulo si viene.
+    falta = serializers.SerializerMethodField()
 
     class Meta:
         model = Asignacion
@@ -87,8 +91,36 @@ class AsignacionSerializer(serializers.ModelSerializer):
             "id", "semana", "dia", "turno", "turno_codigo", "pista",
             "pista_numero", "pista_superficie", "sede", "jugador", "jugador_nombre",
             "jugador_foto", "division_nivel", "entrenador", "entrenador_nombre",
-            "entrenador_foto", "estado", "manual",
+            "entrenador_foto", "estado", "manual", "falta",
         ]
+
+    def get_falta(self, obj):
+        return falta_de(obj, self.context.setdefault("_faltas", {}))
+
+
+def falta_de(asignacion, cache):
+    """La falta que tapa esta asignación, o None. `cache` guarda las faltas de
+    cada día para no consultarlas fila a fila."""
+    from datetime import timedelta
+
+    from engine.service import _overrides, override_efectivo
+
+    from .models import ESTADOS_EXCLUYENTES
+
+    clave = (asignacion.semana_id, asignacion.dia)
+    if clave not in cache:
+        semana = asignacion.semana
+        cache[clave] = (_overrides(semana, asignacion.dia),
+                        semana.fecha_inicio + timedelta(days=asignacion.dia))
+    overrides, fecha = cache[clave]
+    d = override_efectivo(overrides, asignacion.jugador_id, asignacion.turno, fecha)
+    if d is None or d.estado not in ESTADOS_EXCLUYENTES:
+        return None
+    return {
+        "estado": d.estado,
+        "motivo": d.get_subtipo_display() if d.subtipo else d.get_estado_display(),
+        "tardia": d.tardia,
+    }
 
 
 class AusenciaJugadorSerializer(serializers.ModelSerializer):
@@ -99,9 +131,9 @@ class AusenciaJugadorSerializer(serializers.ModelSerializer):
         fields = [
             "id", "jugador", "jugador_nombre", "fecha_inicio", "fecha_fin",
             "ambito", "hora_desde", "hora_hasta", "estado", "subtipo", "nota",
-            "declarada_por", "created_at",
+            "declarada_por", "created_at", "tardia",
         ]
-        read_only_fields = ["declarada_por", "created_at"]
+        read_only_fields = ["declarada_por", "created_at", "tardia"]
 
     def validate(self, data):
         ini = data.get("fecha_inicio") or getattr(self.instance, "fecha_inicio", None)

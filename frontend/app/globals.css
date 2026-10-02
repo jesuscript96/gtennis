@@ -1091,12 +1091,13 @@ body.arrastrando * { cursor: grabbing !important; }
 .cal-declarar .fila-form { margin: 0 0 .5rem; }
 .cal-acciones { display: flex; gap: .5rem; align-items: center; }
 .cal-ambitos { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin: 0 0 .6rem; }
+.cal-tipo { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .6rem; }
 .cal-ambitos-tit { width: 100%; font-size: .78rem; color: var(--muted); }
-.cal-ambitos .chip {
+.cal-ambitos .chip, .cal-tipo .chip {
   border: 1px solid var(--border-strong, #cfcdc6); background: var(--surface, #fff);
   color: inherit; border-radius: 999px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer;
 }
-.cal-ambitos .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cal-ambitos .chip.on, .cal-tipo .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .calendario-ausencias .hint { margin: .6rem 0 0; }
 
 ul.cal-lista {
@@ -1222,4 +1223,36 @@ ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6
   font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
   padding: .1rem .45rem; border-radius: 999px;
   background: var(--accent); color: #fff;
+}
+.marca-baja {
+  display: inline-block; margin-left: .45rem; vertical-align: middle;
+  font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  padding: .1rem .45rem; border-radius: 999px;
+  background: var(--muted); color: #fff;
+}
+
+/* ---- Falta tras colocarle: tachado, sin mover a nadie (01/10/2026) ---- */
+.tachado { opacity: .6; }
+.tachado .nombre-jug, .tachado .nm { text-decoration: line-through; }
+.falta-tag {
+  margin-left: .35rem; font-size: .62rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .3px; padding: .05rem .35rem; border-radius: 999px;
+  background: var(--st-ausencia); color: #fff; white-space: nowrap;
+}
+.chip-sesion.con-falta-tachada { text-decoration: line-through; opacity: .6; }
+.sesion.con-falta-tachada .hora, .sesion.con-falta-tachada .donde,
+.sesion.con-falta-tachada .con { text-decoration: line-through; opacity: .7; }
+.nav-badge {
+  display: inline-block; margin-left: .4rem; min-width: 1.2rem; padding: 0 .35rem;
+  border-radius: 999px; background: var(--st-ausencia); color: #fff;
+  font-size: .7rem; font-weight: 700; line-height: 1.2rem; text-align: center;
+}
+.tag-tardia {
+  display: inline-block; margin-left: .4rem; font-size: .62rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .3px; padding: .05rem .35rem;
+  border-radius: 999px; background: var(--st-torneo, #e08a00); color: #fff;
+}
+.cal-info {
+  margin: .4rem 0; padding: .5rem .7rem; border-radius: 8px; font-size: .85rem;
+  background: var(--accent-soft, rgba(0,120,90,.1)); color: var(--text);
 }

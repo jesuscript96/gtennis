@@ -44,6 +44,16 @@ def deshacer(semana_id):
     Asignacion.objects.bulk_create([
         Asignacion(semana_id=semana_id, **fila) for fila in cambio.foto
     ])
+    # Quien vuelve a estar en pista tras deshacer ya no cuenta como quitado a
+    # mano en ese bloque.
+    from .models import QuitadoAMano
+
+    for q in QuitadoAMano.objects.filter(semana_id=semana_id).select_related("turno"):
+        if Asignacion.objects.filter(
+            semana_id=semana_id, dia=q.dia, jugador_id=q.jugador_id,
+            turno__bloque=q.turno.bloque,
+        ).exists():
+            q.delete()
     descripcion = cambio.descripcion
     cambio.delete()
     return descripcion

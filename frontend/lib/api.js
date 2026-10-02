@@ -55,9 +55,11 @@ async function req(path, opts = {}) {
   }
   if (!res.ok) {
     let detail;
+    let cuerpo = null;
     const txt = await res.text();
     try {
       detail = JSON.parse(txt);
+      cuerpo = detail;
       if (typeof detail === "object" && detail !== null) {
         detail = detail.detail || detail.error || detail.message || JSON.stringify(detail);
       }
@@ -68,7 +70,10 @@ async function req(path, opts = {}) {
         detail = txt;
       }
     }
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    const err = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    err.status = res.status;
+    err.cuerpo = cuerpo;
+    throw err;
   }
   if (res.status === 204) return null;
   return res.json();
@@ -105,10 +110,21 @@ export const getLatestSemana = async () => {
   return r[0] || null;
 };
 export const getCuadrante = (id, dia) => req(`/semanas/${id}/cuadrante/?dia=${dia}`);
+// Un día ya cerrado (pasado su corte de las 19:00) pide confirmación antes de
+// rehacerse: el servidor contesta 409 y aquí se pregunta.
+async function conConfirmacion(path, body) {
+  try {
+    return await req(path, { method: "POST", body: JSON.stringify(body) });
+  } catch (e) {
+    if (e.status !== 409 || !e.cuerpo?.cerrado) throw e;
+    if (!window.confirm(`${e.message}\n\n¿Rehacerlo igualmente?`)) return null;
+    return req(path, { method: "POST", body: JSON.stringify({ ...body, confirmar: true }) });
+  }
+}
 export const generarSemana = (id, opts = {}) =>
-  req(`/semanas/${id}/generar/`, { method: "POST", body: JSON.stringify(opts) });
+  conConfirmacion(`/semanas/${id}/generar/`, opts);
 export const regenerarTarde = (id, dia) =>
-  req(`/semanas/${id}/regenerar_tarde/`, { method: "POST", body: JSON.stringify({ dia }) });
+  conConfirmacion(`/semanas/${id}/regenerar_tarde/`, { dia });
 export const publicarSemana = (id) =>
   req(`/semanas/${id}/publicar/`, { method: "POST", body: "{}" });
 export const despublicarSemana = (id) =>

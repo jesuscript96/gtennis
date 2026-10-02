@@ -39,7 +39,7 @@ const PATH_MIN = {
   // impedía hacer lo único que se le pide.
   "/vacaciones": "coach",
   "/preferencias-superficie": "coach", "/invitados": "coach",
-  "/mantenimiento": "coach", "/feedback": "coach", "/avisos": "coach",
+  "/mantenimiento": "coach", "/feedback": "coach",
   "/sedes": "direccion", "/pistas": "direccion", "/divisiones": "direccion",
   "/escuelas": "direccion", "/turnos": "direccion", "/coaches": "direccion",
   "/grupos": "direccion",

@@ -24,6 +24,10 @@ import {
 } from "../../../lib/api";
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+// Falta declarada después de colocarle: sale tachado y no se mueve a nadie.
+const tituloFalta = (f) => (f
+  ? `Falta: ${f.motivo}${f.tardia ? " (avisada tras el corte)" : ""}. Muévelo a mano.`
+  : undefined);
 const ESTADO_COLOR = {
   DISPONIBLE: "var(--st-disponible)",
   AUSENCIA_JUGADOR: "var(--st-ausencia)",
@@ -391,11 +395,13 @@ function Inner() {
                   {(items || []).map((a) => {
                     const selected = sel && sel.k === "cj" && sel.asignacion === a.id;
                     return (
-                      <div key={a.id} className={`mchip${selected ? " sel" : ""}`}
+                      <div key={a.id} className={`mchip${selected ? " sel" : ""}${a.falta ? " tachado" : ""}`}
+                        title={tituloFalta(a.falta)}
                         onClick={(e) => { e.stopPropagation(); pick({ k: "cj", asignacion: a.id, label: a.jugador_nombre }); }}>
                         <Avatar nombre={a.jugador_nombre} fotoUrl={a.jugador_foto} kind="player" />
                         <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
-                        <span>{a.jugador_nombre}{a.division_nivel ? ` · D${a.division_nivel}` : ""}</span>
+                        <span className="nombre-jug">{a.jugador_nombre}{a.division_nivel ? ` · D${a.division_nivel}` : ""}</span>
+                        {a.falta && <span className="falta-tag">{a.falta.motivo}</span>}
                       </div>
                     );
                   })}
@@ -716,15 +722,16 @@ function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach }) {
     <td className={`cell ${empty ? "empty" : ""}`} style={{ borderLeftColor: color }}
       onDragOver={overOn} onDragLeave={overOff} onDrop={onDropCell(ctx)}>
       {(items || []).map((a) => (
-        <div className="player dnd" key={a.id} draggable
+        <div className={`player dnd${a.falta ? " tachado" : ""}`} key={a.id} draggable
           onDragStart={(e) => setDrag(e, { k: "cj", asignacion: a.id })}
           onDragOver={overOn} onDragLeave={overOff}
           onDrop={onDropPlayer(a.id, ctx, items.length, densidad)}
-          title="Arrastra para intercambiar / al banquillo">
+          title={a.falta ? tituloFalta(a.falta) : "Arrastra para intercambiar / al banquillo"}>
           <Avatar nombre={a.jugador_nombre} fotoUrl={a.jugador_foto} kind="player" />
           <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
-          <span>{a.jugador_nombre}</span>
+          <span className="nombre-jug">{a.jugador_nombre}</span>
           {a.division_nivel ? <span className="div">D{a.division_nivel}</span> : null}
+          {a.falta && <span className="falta-tag">{a.falta.motivo}</span>}
         </div>
       ))}
       {!empty && items[0].entrenador_nombre ? (

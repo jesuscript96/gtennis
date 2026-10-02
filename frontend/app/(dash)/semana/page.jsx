@@ -48,6 +48,7 @@ function buildSessions(asignaciones) {
     s.players.push({
       id: a.jugador, asignacion: a.id, nombre: a.jugador_nombre,
       foto: a.jugador_foto, division: a.division_nivel, estado: a.estado,
+      falta: a.falta,
     });
     if (a.entrenador && !s.coach) {
       s.coach = { id: a.entrenador, asignacion: a.id, nombre: a.entrenador_nombre, foto: a.entrenador_foto };

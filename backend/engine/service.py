@@ -26,6 +26,7 @@ from scheduling.models import (
     Disponibilidad,
     DisponibilidadEntrenador,
     Estado,
+    QuitadoAMano,
     Semana,
 )
 
@@ -123,9 +124,10 @@ def _overrides(semana: Semana, dia: int) -> dict[tuple[int, str], object]:
     return out
 
 
-def _effective_state(overrides, jugador_id, turno, fecha=None):
-    """Resolución por prioridad: turno concreto > bloque (mañana/tarde) > día.
+def override_efectivo(overrides, jugador_id, turno, fecha=None):
+    """La falta o parte que manda para este jugador en este turno, o None.
 
+    Resolución por prioridad: turno concreto > bloque (mañana/tarde) > día.
     Una ausencia con horas solo cuenta si se solapa con este turno: quien
     "llega a las 10:30" está ausente en la franja de 8:30 pero no en la suya.
     """
@@ -139,8 +141,13 @@ def _effective_state(overrides, jugador_id, turno, fecha=None):
             continue
         if hasattr(d, "afecta") and ini is not None and fin is not None and not d.afecta(ini, fin):
             continue
-        return d.estado
-    return Estado.DISPONIBLE
+        return d
+    return None
+
+
+def _effective_state(overrides, jugador_id, turno, fecha=None):
+    d = override_efectivo(overrides, jugador_id, turno, fecha)
+    return d.estado if d is not None else Estado.DISPONIBLE
 
 
 def _player_priority(division, state, banquillo=0):
@@ -1047,6 +1054,34 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 grupo = [t for t in grupo if t not in cerradas]
                 if not grupo:
                     continue
+            # Lo puesto a mano se queda (01/10/2026): rehacer el día rellena
+            # alrededor sin mover esas pistas. Solo se cae quien después ha
+            # declarado una falta para esa franja, porque no va a venir.
+            fijas = [
+                a for a in Asignacion.objects.filter(
+                    semana=semana, dia=dia, turno__in=grupo, manual=True,
+                ).select_related("turno")
+                if _effective_state(overrides, a.jugador_id, a.turno, fecha)
+                not in ESTADOS_EXCLUYENTES
+            ]
+            ocupadas = set()
+            fijos = set()
+            for a in fijas:
+                fijos.add(a.jugador_id)
+                player_sessions[a.jugador_id] += 1
+                sesiones_hoy[a.jugador_id] += 1
+                sesiones_bloque[(a.jugador_id, bloque)] += 1
+                if a.entrenador_id:
+                    coach_share[(a.jugador_id, a.entrenador_id)] += 1
+                if (a.turno_id, a.pista_id) not in ocupadas:
+                    ocupadas.add((a.turno_id, a.pista_id))
+                    if a.entrenador_id:
+                        ocupacion_coach[a.entrenador_id].append(a.turno.horas(fecha))
+            # A quien se mandó al banquillo a mano no se le vuelve a poner en
+            # este bloque ese día.
+            quitados = set(QuitadoAMano.objects.filter(
+                semana=semana, dia=dia, turno__bloque=bloque,
+            ).values_list("jugador_id", flat=True))
             n_entrenadores = {
                 t.id: sum(1 for c in elegibles_para(t) if c.id not in de_banquillo)
                 for t in grupo
@@ -1064,6 +1099,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 turnos_exclusivos, cfg, sesiones_hoy, sesiones_bloque, horario,
                 banquillo, overrides,
             )
+            fuera_del_motor = fijos | quitados
+            players = [p for p in players if p.id not in fuera_del_motor]
             # A una franja sin ningún entrenador no se manda a nadie mientras
             # otra del bloque sí tenga. Si no hay en ninguna, como siempre.
             sin_franja = []
@@ -1133,14 +1170,14 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     span_extra=cfg.estiron_division if es_tarde else 0,
                     edad_extra=cfg.estiron_edad if es_tarde else 0,
                     w_relajar=cfg.peso_relajar_vecindad,
+                    ocupadas=ocupadas,
                 )
             )
-            # Regenerar = rehacer el bloque desde cero (incluye celdas editadas
-            # a mano/por swap), para no chocar con el unique al reasignar.
+            # Regenerar = rehacer el bloque desde cero, menos lo puesto a mano.
             Asignacion.objects.filter(
                 semana=semana, dia=dia, turno__in=grupo
-            ).delete()
-            colocados = set()
+            ).exclude(id__in=[a.id for a in fijas]).delete()
+            colocados = set(fijos)
             for turno in grupo:
                 pistas = result.franjas.get(turno.id, {})
                 ini_t, fin_t = turno.horas(fecha)
@@ -1197,6 +1234,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     )
                 report["dias"].setdefault(dia, {})[turno.codigo] = result.status
             if not es_tarde:
+                a_mano = defaultdict(list)
+                for a in fijas:
+                    a_mano[(a.turno_id, a.pista_id)].append(a.jugador_id)
+                for miembros in a_mano.values():
+                    for i, a_id in enumerate(miembros):
+                        for b_id in miembros[i + 1:]:
+                            parejas_manana.add(frozenset((a_id, b_id)))
                 for turno in grupo:
                     for miembros in result.franjas.get(turno.id, {}).values():
                         for i, a_id in enumerate(miembros):

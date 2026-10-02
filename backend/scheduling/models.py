@@ -88,6 +88,52 @@ class Semana(models.Model):
         return f"Semana {self.fecha_inicio} ({self.get_estado_display()})"
 
 
+class QuitadoAMano(models.Model):
+    """Alguien quitó a este jugador de una pista desde el cuadrante.
+
+    Rehacer el día respeta los cambios a mano: lo que se puso a mano se queda,
+    y a quien se mandó al banquillo el motor no le vuelve a poner en ese bloque
+    (mañana o tarde) ese día. Si después se le coloca a mano, manda la
+    asignación manual.
+    """
+
+    semana = models.ForeignKey(
+        "Semana", on_delete=models.CASCADE, related_name="quitados"
+    )
+    dia = models.PositiveSmallIntegerField()
+    turno = models.ForeignKey(Turno, on_delete=models.CASCADE)
+    jugador = models.ForeignKey(Jugador, on_delete=models.CASCADE)
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Quitado a mano"
+        verbose_name_plural = "Quitados a mano"
+        unique_together = ("semana", "dia", "turno", "jugador")
+
+    def __str__(self):
+        return f"{self.jugador} · D{self.dia} {self.turno.codigo}"
+
+
+class GeneracionProgramada(models.Model):
+    """La generación automática de un día en su corte (19:00 del día anterior;
+    viernes 16:30 para el sábado). Una fila por día: así no se repite aunque
+    el proceso se reinicie, y queda constancia de si salió bien."""
+
+    fecha = models.DateField(unique=True)
+    iniciada_at = models.DateTimeField(auto_now_add=True)
+    terminada_at = models.DateTimeField(null=True, blank=True)
+    ok = models.BooleanField(default=False)
+    detalle = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Generación programada"
+        verbose_name_plural = "Generaciones programadas"
+        ordering = ["-fecha"]
+
+    def __str__(self):
+        return f"{self.fecha} ({'ok' if self.ok else 'pendiente/fallo'})"
+
+
 class CambioSemana(models.Model):
     """Una foto del cuadrante justo antes de un cambio a mano, para deshacer.
 
@@ -140,6 +186,8 @@ class Disponibilidad(models.Model):
         max_length=20, choices=SubtipoAusencia.choices, blank=True
     )
     nota = models.CharField(max_length=200, blank=True)
+    # Llegó después del corte de ese día (ver `scheduling.corte`).
+    tardia = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Disponibilidad"
@@ -192,6 +240,9 @@ class AusenciaJugador(models.Model):
         related_name="ausencias_declaradas",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Declarada después del corte de su primer día (19:00 del día anterior;
+    # viernes 16:30 para el sábado): no entró en la generación.
+    tardia = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Ausencia por fechas"
