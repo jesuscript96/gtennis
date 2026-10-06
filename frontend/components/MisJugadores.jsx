@@ -28,6 +28,7 @@ export default function MisJugadores() {
   const [turnos, setTurnos] = useState([]);
   const [abierto, setAbierto] = useState(null);
   const [busca, setBusca] = useState("");
+  const [fijos, setFijos] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -46,7 +47,15 @@ export default function MisJugadores() {
   const esCoach = roleRank(yo) >= 2;
   const mios = miId ? visibles.filter((j) => j.entrenador_responsable === miId
     || (j.cogestores || []).includes(miId)) : [];
-  const resto = visibles.filter((j) => !mios.includes(j));
+  // Las altas nuevas llegan sin entrenador de gestión: el head coach las ve
+  // aparte, arriba, para completarles la ficha deportiva.
+  // El que se abrió desde aquí se queda aquí aunque ya tenga entrenador: si
+  // saltara a la otra lista a mitad de rellenarlo, se perdería de vista.
+  const sinGestion = esCoach
+    ? visibles.filter((j) => fijos.includes(j.id)
+      || (!j.entrenador_responsable && !(j.cogestores || []).length))
+    : [];
+  const resto = visibles.filter((j) => !mios.includes(j) && !sinGestion.includes(j));
 
   function resumen(j) {
     const m = turnos.find((t) => t.id === j.turno_manana);
@@ -66,7 +75,10 @@ export default function MisJugadores() {
       <li key={j.id} className={activo ? "abierto" : ""}>
         <button type="button" className="fila-jugador"
           aria-expanded={activo}
-          onClick={() => setAbierto(activo ? null : j.id)}>
+          onClick={() => {
+            if (sinGestion.includes(j) && !fijos.includes(j.id)) setFijos([...fijos, j.id]);
+            setAbierto(activo ? null : j.id);
+          }}>
           <span className="nombre">
             {j.nombre}
             {gestion && <span className="marca-gestion">Gestión</span>}
@@ -82,6 +94,7 @@ export default function MisJugadores() {
 
         {activo && (
           <div className="detalle-jugador">
+            {esCoach && <FichaDeportiva jugador={j} onGuardado={actualizar} />}
             <AgendaJugador jugador={j} turnos={turnos} onGuardado={actualizar} />
 
             <div className="bloque-faltas">
@@ -112,13 +125,19 @@ export default function MisJugadores() {
 
       {error && <p className="error">{error}</p>}
 
+      {sinGestion.length > 0 && <>
+        <h2 className="titulo-lista">Sin entrenador de gestión <small>({sinGestion.length})</small></h2>
+        <p className="hint">Altas nuevas: ábrelas y completa su ficha deportiva.</p>
+        <ul className="lista-jugadores">{sinGestion.map((j) => fila(j, false))}</ul>
+      </>}
+
       {mios.length > 0 && <>
         <h2 className="titulo-lista">Los que gestionas <small>({mios.length})</small></h2>
         <ul className="lista-jugadores">{mios.map((j) => fila(j, true))}</ul>
-        {resto.length > 0 && (
-          <h2 className="titulo-lista">Resto de jugadores <small>({resto.length})</small></h2>
-        )}
       </>}
+      {(mios.length > 0 || sinGestion.length > 0) && resto.length > 0 && (
+        <h2 className="titulo-lista">Resto de jugadores <small>({resto.length})</small></h2>
+      )}
       <ul className="lista-jugadores">{resto.map((j) => fila(j, false))}</ul>
 
       {!visibles.length && <p className="hint">Ningún jugador con ese nombre.</p>}
@@ -335,5 +354,131 @@ function Sesion({ s }) {
         <span className="companeros">Comparte con {s.companeros.join(", ")}</span>
       )}
     </li>
+  );
+}
+
+
+const VECINDAD = [
+  ["CLUB", "La del club (la horquilla general)"],
+  ["SOLO", "Solo su división"],
+  ["ARRIBA", "Su división y la de encima (D−1)"],
+  ["ABAJO", "Su división y la de debajo (D+1)"],
+  ["AMBAS", "Su división y las dos vecinas (±1)"],
+];
+const PAREJA = [
+  ["", "— le da igual —"],
+  ["ARRIBA", "Hacia arriba · con la división mejor (D−1)"],
+  ["ABAJO", "Hacia abajo · con la división de debajo (D+1)"],
+];
+
+/**
+ * Lo deportivo de la ficha, para el head coach (06/10/2026).
+ *
+ * Administración da de alta al alumno con sus datos; la división, quién le
+ * gestiona y con qué niveles entrena lo pone dirección deportiva. El head
+ * coach no tiene la tabla de fichas de dirección, así que lo rellena aquí,
+ * sin salir de su lista. Cada cambio se guarda al momento.
+ */
+function FichaDeportiva({ jugador: j, onGuardado }) {
+  const [divisiones, setDivisiones] = useState([]);
+  const [entrenadores, setEntrenadores] = useState([]);
+  const [guardando, setGuardando] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    resource("divisiones").list().then(setDivisiones).catch(() => {});
+    resource("entrenadores").list()
+      .then((l) => setEntrenadores(l.filter((e) => e.activo)))
+      .catch(() => {});
+  }, []);
+
+  const guardar = async (cambio) => {
+    setGuardando(true);
+    setError("");
+    setMsg("");
+    try {
+      onGuardado(await resource("jugadores").update(j.id, cambio));
+      setMsg("Guardado.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const cogestores = j.cogestores || [];
+  const alternarCogestor = (id) => guardar({
+    cogestores: cogestores.includes(id)
+      ? cogestores.filter((x) => x !== id) : [...cogestores, id],
+  });
+  const pendiente = !j.division || !j.entrenador_responsable;
+  // Abierta de entrada si está sin completar, y así se queda mientras se
+  // rellena: si dependiera de `pendiente`, se cerraría sola a medio camino.
+  const [abiertaAlEntrar] = useState(pendiente);
+
+  return (
+    <details className="ficha-deportiva" open={abiertaAlEntrar}>
+      <summary>
+        Ficha deportiva
+        {pendiente && <span className="marca-baja">Sin completar</span>}
+      </summary>
+      {error && <p className="error">{error}</p>}
+      <div className="fila-form">
+        <label>División
+          <select value={j.division || ""} disabled={guardando}
+            onChange={(e) => guardar({ division: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">—</option>
+            {divisiones.map((d) => (
+              <option key={d.id} value={d.id}>{d.nombre || `División ${d.nivel}`}</option>
+            ))}
+          </select>
+        </label>
+        <label>Entrenador de gestión
+          <select value={j.entrenador_responsable || ""} disabled={guardando}
+            onChange={(e) => guardar({
+              entrenador_responsable: e.target.value ? Number(e.target.value) : null,
+            })}>
+            <option value="">—</option>
+            {entrenadores.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="cogestores">
+        <span className="etiqueta">Comparte la gestión con <small>(solo si lo llevan dos)</small></span>
+        <div className="chips">
+          {entrenadores.filter((e) => e.id !== j.entrenador_responsable).map((e) => (
+            <button key={e.id} type="button" disabled={guardando}
+              className={cogestores.includes(e.id) ? "chip on" : "chip"}
+              aria-pressed={cogestores.includes(e.id)}
+              onClick={() => alternarCogestor(e.id)}>{e.nombre}</button>
+          ))}
+        </div>
+      </div>
+      <div className="fila-form">
+        <label>Con qué divisiones entrena
+          <select value={j.vecindad || "CLUB"} disabled={guardando}
+            onChange={(e) => guardar({ vecindad: e.target.value })}>
+            {VECINDAD.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+          </select>
+        </label>
+        <label>Se empareja preferentemente
+          <select value={j.pareja_division || ""} disabled={guardando}
+            onChange={(e) => guardar({ pareja_division: e.target.value || null })}>
+            {PAREJA.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+          </select>
+        </label>
+      </div>
+      <p className="hint">
+        La D1 es la más alta. Las franjas de mañana y tarde están más abajo, en
+        «Declarar algo distinto → Todas las semanas».
+        {msg && <span className="ok-msg"> {msg}</span>}
+      </p>
+      <div className="accesos">
+        <Link href={`/jugador-responsables?jugador=${j.id}&nombre=${encodeURIComponent(j.nombre)}`}>
+          Porcentajes con otros entrenadores →
+        </Link>
+      </div>
+    </details>
   );
 }

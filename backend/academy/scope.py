@@ -49,8 +49,11 @@ def jugadores_visibles(user, base=None):
     coach = _coach(user)
     if coach is not None:
         ents = coach.entrenadores.all()
+        # Las altas nuevas llegan sin entrenador de gestión y es el head coach
+        # quien se lo pone (06/10/2026): hasta entonces las ven todos.
         return qs.filter(
-            Q(entrenador_responsable__in=ents)
+            Q(entrenador_responsable__isnull=True)
+            | Q(entrenador_responsable__in=ents)
             | Q(cogestores__in=ents)
             | Q(entrenadores_gestores__in=ents)
             | Q(responsables__entrenador__in=ents)

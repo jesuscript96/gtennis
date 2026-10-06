@@ -545,7 +545,8 @@ class SuperficiePorFechasTests(TestCase):
         self.dani = Entrenador.objects.create(nombre="Dani", user=self.usuario_dani)
         self.suyo = Jugador.objects.create(nombre="Carlos", entrenador_responsable=self.dani)
         self.dani.jugadores_gestionados.add(self.suyo)
-        self.ajeno = Jugador.objects.create(nombre="Otro")
+        self.ajeno = Jugador.objects.create(
+            nombre="Otro", entrenador_responsable=Entrenador.objects.create(nombre="Otro"))
         usuario = User.objects.create_user(
             username="pablo", password="x", role=User.Role.COACH)
         self.usuario_pablo = usuario
@@ -765,3 +766,39 @@ class GestionCompartidaTests(TestCase):
         filas = filas.get("results", filas)
         self.assertEqual([(f["nombre"], f["cogestores"]) for f in filas],
                          [("Marcos", [jorge.id])])
+
+
+class FichaDeportivaCoachTests(TestCase):
+    """El head coach completa lo deportivo de las altas nuevas (06/10/2026)."""
+
+    def test_ve_el_alta_sin_gestion_y_le_pone_division_y_entrenador(self):
+        from rest_framework.test import APIClient
+
+        from academy.models import Coach
+        from users.models import User
+
+        u = User.objects.create_user(username="sergio", password="x", role=User.Role.COACH)
+        blas = Entrenador.objects.create(nombre="Blas")
+        Coach.objects.create(nombre="Sergio", user=u).entrenadores.add(blas)
+        ajeno = Entrenador.objects.create(nombre="Otro")
+        Jugador.objects.create(nombre="De otro", entrenador_responsable=ajeno)
+        nuevo = Jugador.objects.create(nombre="Nuevo")
+        from academy.models import Division
+
+        div, _ = Division.objects.get_or_create(nivel=4)
+        api = APIClient()
+        api.force_authenticate(u)
+        filas = api.get("/api/jugadores/").json()
+        filas = filas.get("results", filas)
+        nombres = {f["nombre"] for f in filas}
+        self.assertIn("Nuevo", nombres)
+        self.assertNotIn("De otro", nombres)
+        r = api.patch(f"/api/jugadores/{nuevo.id}/", {
+            "division": div.id, "entrenador_responsable": blas.id,
+            "cogestores": [ajeno.id], "vecindad": "SOLO",
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        nuevo.refresh_from_db()
+        self.assertEqual((nuevo.division_id, nuevo.entrenador_responsable_id, nuevo.vecindad),
+                         (div.id, blas.id, "SOLO"))
+        self.assertEqual(list(nuevo.cogestores.all()), [ajeno])

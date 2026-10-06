@@ -1093,11 +1093,11 @@ body.arrastrando * { cursor: grabbing !important; }
 .cal-ambitos { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin: 0 0 .6rem; }
 .cal-tipo { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .6rem; }
 .cal-ambitos-tit { width: 100%; font-size: .78rem; color: var(--muted); }
-.cal-ambitos .chip, .cal-tipo .chip {
+.cal-ambitos .chip, .cal-tipo .chip, .ficha-deportiva .chip {
   border: 1px solid var(--border-strong, #cfcdc6); background: var(--surface, #fff);
   color: inherit; border-radius: 999px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer;
 }
-.cal-ambitos .chip.on, .cal-tipo .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cal-ambitos .chip.on, .cal-tipo .chip.on, .ficha-deportiva .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .calendario-ausencias .hint { margin: .6rem 0 0; }
 
 ul.cal-lista {
@@ -1256,3 +1256,14 @@ ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6
   margin: .4rem 0; padding: .5rem .7rem; border-radius: 8px; font-size: .85rem;
   background: var(--accent-soft, rgba(0,120,90,.1)); color: var(--text);
 }
+
+/* Ficha deportiva del head coach, dentro de cada jugador (06/10/2026). */
+.ficha-deportiva { margin-top: .75rem; border: 1px solid var(--border); border-radius: 10px; padding: .6rem .8rem; background: #fbfaf7; }
+.ficha-deportiva summary { cursor: pointer; font-weight: 600; font-size: .9rem; display: flex; align-items: center; gap: .5rem; }
+.ficha-deportiva .fila-form { margin: .6rem 0 .4rem; }
+.ficha-deportiva .fila-form label { flex: 1; min-width: 12rem; }
+.ficha-deportiva .cogestores { margin: .4rem 0; }
+.ficha-deportiva .cogestores .etiqueta { display: block; font-size: .8rem; color: #6b6b66; margin-bottom: .3rem; }
+.ficha-deportiva .chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.ficha-deportiva .chip { font-size: .78rem; }
+.ficha-deportiva .ok-msg { margin-left: .4rem; }
