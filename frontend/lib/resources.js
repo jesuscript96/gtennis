@@ -75,7 +75,7 @@ export const RESOURCES = {
       { key: "es_menor", label: "Menor", type: "bool" },
       { key: "escuela_nombre", label: "Escuela", render: (v) => v || "—" },
       { key: "division_nivel", label: "Div", render: (v) => (v ? `D${v}` : "—") },
-      { key: "entrenador_nombre", label: "Responsable", render: (v) => v || "—" },
+      { key: "entrenador_nombre", label: "Responsable", render: (v, row) => [v, ...(row.cogestores_nombres || [])].filter(Boolean).join(" / ") || "—" },
       { key: "fecha_alta", label: "Alta", render: (v) => (v ? fmtFecha(v) : "—") },
       { key: "horario", label: "Días distintos", render: (v) => (v && v.length ? `${v.length}` : "—") },
       { key: "activo", label: "Activo", type: "bool" },
@@ -92,6 +92,7 @@ export const RESOURCES = {
       ], help: "Un chico no comparte pista con una chica de división más baja. «—» = sin declarar, no se le aplica la regla." },
       { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel },
       { name: "entrenador_responsable", label: "Entrenador responsable (principal)", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre },
+      { name: "cogestores", label: "Comparte la gestión con", type: "mfk", endpoint: "entrenadores", optionLabel: (o) => o.nombre, help: "Solo si otro entrenador lleva también a este jugador. Le sale marcado como «Gestión» igual que al responsable." },
       { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO },
       { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO },
       { name: "vecindad", label: "Con qué divisiones entrena", type: "select", options: [

@@ -145,7 +145,11 @@ class JugadorSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
     escuela_nombre = serializers.CharField(
         source="escuela.nombre", read_only=True, default=None
     )
+    cogestores_nombres = serializers.SerializerMethodField()
     horario = HorarioJugadorSerializer(many=True, required=False)
+
+    def get_cogestores_nombres(self, obj):
+        return [e.nombre for e in obj.cogestores.all()]
 
     class Meta:
         model = Jugador
@@ -153,8 +157,9 @@ class JugadorSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
             "id", "nombre", "codigo_cliente", "categoria", "edad",
             "fecha_nacimiento", "es_menor", "email", "telefono",
             "consentimiento_rgpd", "division", "division_nivel",
-            "entrenador_responsable", "entrenador_nombre", "escuela",
-            "escuela_nombre", "foto_url", "activo", "notas",
+            "entrenador_responsable", "entrenador_nombre", "cogestores",
+            "cogestores_nombres", "escuela", "escuela_nombre", "foto_url",
+            "activo", "notas",
             "fecha_alta", "fecha_baja", "turno_manana", "turno_tarde", "horario",
             "pareja_division", "vecindad", "sexo",
         ]
@@ -180,14 +185,20 @@ class JugadorTurnosSerializer(GuardaHorarioJugador, serializers.ModelSerializer)
     entrenador_nombre = serializers.CharField(
         source="entrenador_responsable.nombre", read_only=True, default=None
     )
+    cogestores_nombres = serializers.SerializerMethodField()
+
+    def get_cogestores_nombres(self, obj):
+        return [e.nombre for e in obj.cogestores.all()]
 
     class Meta:
         model = Jugador
         fields = [
             "id", "nombre", "turno_manana", "turno_tarde", "horario",
-            "entrenador_responsable", "entrenador_nombre", "fecha_baja",
+            "entrenador_responsable", "entrenador_nombre", "cogestores",
+            "cogestores_nombres", "fecha_baja",
         ]
-        read_only_fields = ["id", "nombre", "entrenador_responsable", "fecha_baja"]
+        read_only_fields = ["id", "nombre", "entrenador_responsable", "cogestores",
+                            "fecha_baja"]
 
 
 class HorarioEntrenadorSerializer(serializers.ModelSerializer):

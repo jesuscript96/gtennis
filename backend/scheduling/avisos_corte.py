@@ -109,6 +109,8 @@ def avisar(jugador, desde, hasta, ambito, accion, usuario=None, nota=""):
         entrenadores = {a.entrenador for a in sesiones if a.entrenador_id}
         if jugador.entrenador_responsable_id and accion != "falta":
             entrenadores.add(jugador.entrenador_responsable)
+        if accion != "falta":
+            entrenadores.update(jugador.cogestores.all())
         for u in destinatarios(jugador, entrenadores, excepto=usuario):
             creados.append(Aviso.objects.create(
                 usuario=u, tipo=Aviso.Tipo.CORTE, titulo=titulo[:160],

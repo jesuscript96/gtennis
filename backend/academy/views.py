@@ -178,7 +178,7 @@ class JugadorViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         base = Jugador.objects.select_related(
             "division", "entrenador_responsable", "escuela"
-        )
+        ).prefetch_related("cogestores")
         # La lista enseña solo a los que están en activo, pero una ficha
         # concreta se abre siempre: si no, al alumno que se dio de baja no hay
         # manera de volver a darle de alta ni de corregirle nada — desaparece.

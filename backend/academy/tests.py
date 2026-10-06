@@ -736,3 +736,32 @@ class ResponsableGestionTests(TestCase):
                        format="json")
         j.refresh_from_db()
         self.assertEqual(j.entrenador_responsable_id, self.victor.id)
+
+
+class GestionCompartidaTests(TestCase):
+    """Dos entrenadores gestionan al mismo alumno (06/10/2026: Mario y Jorge
+    Ibáñez): los dos lo ven y a los dos les sale como suyo."""
+
+    def test_el_cogestor_lo_ve_y_le_sale_como_suyo(self):
+        from rest_framework.test import APIClient
+
+        from academy.scope import jugadores_visibles
+        from users.models import User
+
+        mario = Entrenador.objects.create(nombre="Mario")
+        u_jorge = User.objects.create_user(
+            username="jorge", password="x", role=User.Role.ENTRENADOR)
+        jorge = Entrenador.objects.create(nombre="Jorge", user=u_jorge)
+        marcos = Jugador.objects.create(nombre="Marcos", entrenador_responsable=mario)
+        Jugador.objects.create(nombre="Otro", entrenador_responsable=mario)
+        self.assertFalse(jugadores_visibles(u_jorge).exists())
+
+        marcos.cogestores.add(jorge)
+        self.assertEqual(list(jugadores_visibles(u_jorge)), [marcos])
+        self.assertTrue(jorge.puede_gestionar(marcos))
+        api = APIClient()
+        api.force_authenticate(u_jorge)
+        filas = api.get("/api/jugadores/").json()
+        filas = filas.get("results", filas)
+        self.assertEqual([(f["nombre"], f["cogestores"]) for f in filas],
+                         [("Marcos", [jorge.id])])

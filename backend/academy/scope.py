@@ -51,6 +51,7 @@ def jugadores_visibles(user, base=None):
         ents = coach.entrenadores.all()
         return qs.filter(
             Q(entrenador_responsable__in=ents)
+            | Q(cogestores__in=ents)
             | Q(entrenadores_gestores__in=ents)
             | Q(responsables__entrenador__in=ents)
         ).distinct()
@@ -63,6 +64,7 @@ def jugadores_visibles(user, base=None):
         # compatibilidad (hoy vacío).
         return qs.filter(
             Q(entrenador_responsable=ent)
+            | Q(cogestores=ent)
             | Q(responsables__entrenador=ent)
             | Q(entrenadores_gestores=ent)
         ).distinct()

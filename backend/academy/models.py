@@ -229,6 +229,7 @@ class Entrenador(models.Model):
             return activos
         return activos.filter(
             Q(entrenador_responsable=self)
+            | Q(cogestores=self)
             | Q(responsables__entrenador=self)
             | Q(entrenadores_gestores=self)
         ).distinct()
@@ -355,6 +356,13 @@ class Jugador(models.Model):
     entrenador_responsable = models.ForeignKey(
         Entrenador, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="cluster",
+    )
+    # Gestión compartida (06/10/2026: Mario y Jorge Ibáñez llevan a los mismos
+    # alumnos). Cuentan igual que el responsable: el alumno les sale marcado
+    # como «Gestión» y declaran sus faltas.
+    cogestores = models.ManyToManyField(
+        Entrenador, blank=True, related_name="jugadores_cogestionados",
+        verbose_name="Comparte la gestión con",
     )
     # Photo lives in EU object storage (S3-compatible); we keep a signed-URL ref.
     foto_url = models.URLField(blank=True)

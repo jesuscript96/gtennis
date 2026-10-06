@@ -38,12 +38,14 @@ export default function MisJugadores() {
   const visibles = jugadores.filter((j) =>
     j.nombre.toLowerCase().includes(busca.trim().toLowerCase())
   );
-  // Los que gestiona (es su responsable) van primero y marcados: sigue viendo
-  // a todos los de antes, pero a los suyos llega sin buscarlos.
+  // Los que gestiona (es su responsable o comparte la gestión) van primero y
+  // marcados: sigue viendo a todos los de antes, pero a los suyos llega sin
+  // buscarlos.
   const yo = getUser();
   const miId = yo?.entrenador_id;
   const esCoach = roleRank(yo) >= 2;
-  const mios = miId ? visibles.filter((j) => j.entrenador_responsable === miId) : [];
+  const mios = miId ? visibles.filter((j) => j.entrenador_responsable === miId
+    || (j.cogestores || []).includes(miId)) : [];
   const resto = visibles.filter((j) => !mios.includes(j));
 
   function resumen(j) {
@@ -73,7 +75,7 @@ export default function MisJugadores() {
           <span className="resumen">
             {resumen(j)}
             {/* El coach ve a todos: le sirve saber quién lleva a cada uno. */}
-            {esCoach && j.entrenador_nombre && ` · gestiona ${j.entrenador_nombre}`}
+            {esCoach && j.entrenador_nombre && ` · gestiona ${[j.entrenador_nombre, ...(j.cogestores_nombres || [])].join(" y ")}`}
           </span>
           <span className="chevron" aria-hidden="true">{activo ? "−" : "+"}</span>
         </button>
