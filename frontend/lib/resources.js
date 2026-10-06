@@ -100,7 +100,7 @@ export const RESOURCES = {
         { value: "ARRIBA", label: "Su división y la de encima (D−1)" },
         { value: "ABAJO", label: "Su división y la de debajo (D+1)" },
         { value: "AMBAS", label: "Su división y las dos vecinas (±1)" },
-      ], help: "Regla dura: nunca se rompe. Sirve para el alumno que solo entrena con su nivel o con el de encima. La D1 es la más alta." },
+      ], default: "CLUB", help: "Regla dura: nunca se rompe. Sirve para el alumno que solo entrena con su nivel o con el de encima. La D1 es la más alta." },
       // La D1 es la división más alta: «hacia arriba» es con la de número menor.
       { name: "pareja_division", label: "Se empareja preferentemente", type: "select", options: [
         { value: "ARRIBA", label: "Hacia arriba · con la división mejor (D−1)" },
