@@ -157,10 +157,10 @@ function fuenteDeJugador(jugador) {
 export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio }) {
   const origen = fuente || fuenteDeJugador(jugador);
   const lista = motivos || MOTIVOS_JUGADOR;
-  // La superficie la declaran los coaches (01/10/2026); el entrenador solo
-  // declara faltas y ve la superficie que le han puesto.
-  const coach = roleRank(getUser()) >= 2;
-  const conSuperficie = coach && lista.some((m) => m.superficie);
+  // La superficie la declara también el entrenador (06/10/2026), con aviso a
+  // su head coach; hasta entonces era solo cosa de los coaches.
+  const entrenador = roleRank(getUser()) === 1;
+  const conSuperficie = lista.some((m) => m.superficie);
   const motivosFalta = lista.filter((m) => !m.superficie);
   const superficies = lista.filter((m) => m.superficie);
   // La fuente se rehace en cada render de quien la pasa: se lee de una ref y
@@ -321,12 +321,10 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
         <span className="que">{queEs(a)}</span>
         {a.tardia && <span className="tag-tardia">tras el corte</span>}
       </span>
-      {(!a.esSuperficie || coach) && (
-        <button type="button" className="btn danger sm quitar" disabled={guardando}
-          onClick={() => borrar(a)}>
-          {a.esSuperficie ? "Quitar superficie" : "Quitar falta"}
-        </button>
-      )}
+      <button type="button" className="btn danger sm quitar" disabled={guardando}
+        onClick={() => borrar(a)}>
+        {a.esSuperficie ? "Quitar superficie" : "Quitar falta"}
+      </button>
     </li>
   );
   const motivoSel = lista.find((m) => m.value === motivo) || motivosFalta[0];
@@ -444,6 +442,7 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
             <p className="hint">
               Esos días el motor solo le pone en pistas de {motivoSel.superficie === "RESINA"
                 ? "resina" : "tierra"}, en todas sus sesiones.
+              {entrenador && " Se avisa a tu head coach."}
             </p>
           )}
           <div className="cal-acciones">

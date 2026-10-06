@@ -699,22 +699,43 @@ class PreferenciaSuperficieViewSet(viewsets.ModelViewSet):
             return
         from .scope import puede_ver_jugador
 
-        # La superficie la deciden los coaches (01/10/2026): el entrenador
-        # solo declara faltas.
-        if not (user.is_coach and puede_ver_jugador(user, jugador)):
-            raise PermissionDenied("La superficie la declaran los coaches.")
+        # Desde el 06/10/2026 la declara también el entrenador, para los
+        # alumnos que ve, con aviso a su head coach (`_avisar_head_coach`).
+        if not puede_ver_jugador(user, jugador):
+            raise PermissionDenied("Ese jugador no es de los tuyos.")
+
+    def _avisar_head_coach(self, pref, accion):
+        """Si la toca un entrenador, se entera su head coach."""
+        user = self.request.user
+        ent = getattr(user, "entrenador", None)
+        if user.is_superadmin or user.is_coach or ent is None:
+            return
+        sup = pref.get_superficie_display().lower()
+        cuando = ""
+        if pref.fecha_desde and pref.fecha_hasta:
+            cuando = (f" el {pref.fecha_desde:%d/%m}" if pref.fecha_desde == pref.fecha_hasta
+                      else f" del {pref.fecha_desde:%d/%m} al {pref.fecha_hasta:%d/%m}")
+        titulo = (f"Superficie: {pref.jugador.nombre} entrena en {sup}{cuando}"
+                  if accion == "pone" else
+                  f"Superficie quitada: {pref.jugador.nombre} ({sup}{cuando})")
+        mensaje = f"{'Declarado' if accion == 'pone' else 'Quitado'} por {ent.nombre}."
+        for u in coaches_del_entrenador(ent):
+            Aviso.objects.create(
+                usuario=u, tipo=Aviso.Tipo.GENERAL, titulo=titulo[:160], mensaje=mensaje,
+            )
 
     def perform_create(self, serializer):
         self._assert_puede(serializer.validated_data["jugador"])
-        serializer.save()
+        self._avisar_head_coach(serializer.save(), "pone")
 
     def perform_update(self, serializer):
         self._assert_puede(serializer.instance.jugador)
         self._assert_puede(serializer.validated_data.get("jugador", serializer.instance.jugador))
-        serializer.save()
+        self._avisar_head_coach(serializer.save(), "pone")
 
     def perform_destroy(self, instance):
         self._assert_puede(instance.jugador)
+        self._avisar_head_coach(instance, "quita")
         instance.delete()
 
 

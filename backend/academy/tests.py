@@ -531,8 +531,8 @@ class RespetaLoHechoAManoTests(TestCase):
 
 class SuperficiePorFechasTests(TestCase):
     """«Del 5 al 9, resina»: se declara desde el calendario de faltas, la pone
-    el coach (01/10/2026) para los alumnos de su grupo, y manda sobre la
-    superficie fija de la ficha."""
+    el coach o el entrenador (06/10/2026, con aviso a su head coach) para los
+    alumnos que ve, y manda sobre la superficie fija de la ficha."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -548,20 +548,33 @@ class SuperficiePorFechasTests(TestCase):
         self.ajeno = Jugador.objects.create(nombre="Otro")
         usuario = User.objects.create_user(
             username="pablo", password="x", role=User.Role.COACH)
+        self.usuario_pablo = usuario
         Coach.objects.create(nombre="Pablo", user=usuario).entrenadores.add(self.dani)
         self.api = APIClient()
         self.api.force_authenticate(usuario)
 
-    def test_el_entrenador_no_pone_superficie(self):
+    def test_el_entrenador_la_pone_para_los_suyos_y_avisa_al_head_coach(self):
         from rest_framework.test import APIClient
+
+        from academy.models import Aviso
 
         api = APIClient()
         api.force_authenticate(self.usuario_dani)
-        r = api.post("/api/preferencias-superficie/", {
-            "jugador": self.suyo.id, "superficie": "RESINA",
-            "fecha_desde": "2026-10-05", "fecha_hasta": "2026-10-09", "estricta": True,
-        }, format="json")
+        datos = {"superficie": "RESINA", "fecha_desde": "2026-10-05",
+                 "fecha_hasta": "2026-10-09", "estricta": True}
+        r = api.post("/api/preferencias-superficie/",
+                     {"jugador": self.suyo.id, **datos}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        pref_id = r.json()["id"]
+        aviso = Aviso.objects.get(usuario=self.usuario_pablo)
+        self.assertIn("Carlos entrena en resina del 05/10 al 09/10", aviso.titulo)
+        self.assertIn("Dani", aviso.mensaje)
+        r = api.post("/api/preferencias-superficie/",
+                     {"jugador": self.ajeno.id, **datos}, format="json")
         self.assertEqual(r.status_code, 403)
+        self.assertEqual(api.delete(f"/api/preferencias-superficie/{pref_id}/").status_code, 204)
+        self.assertTrue(Aviso.objects.filter(
+            usuario=self.usuario_pablo, titulo__startswith="Superficie quitada").exists())
 
     def _crear(self, jugador, sup, desde, hasta):
         return self.api.post("/api/preferencias-superficie/", {
