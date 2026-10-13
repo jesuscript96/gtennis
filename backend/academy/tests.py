@@ -879,6 +879,66 @@ class GruposPorColoresTests(TestCase):
         self.assertEqual(set(self.salva.coaches.all()), {naranja, self.todos})
 
 
+class HeadCoachGestionaSuColorTests(TestCase):
+    """El head coach de un color (Dani, Pablo, Santi) gestiona en Grupos a
+    todos los alumnos de su color, y nada fuera de él; mover columnas entre
+    bloques sigue siendo de dirección. Sin «también entrena» (13/10/2026)."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        self.mario = Entrenador.objects.create(nombre="Mario")
+        self.salva = Entrenador.objects.create(nombre="Salva")
+        self.nacho = Entrenador.objects.create(nombre="Nacho")
+        u_pablo = User.objects.create_user(
+            username="pablo", password="x", role=User.Role.COACH)
+        self.pablo = Coach.objects.create(nombre="Pablo", color="turquesa", user=u_pablo)
+        self.pablo.entrenadores.set([self.mario, self.salva])
+        Coach.objects.create(nombre="Santi", color="naranja").entrenadores.set([self.nacho])
+        self.marcos = Jugador.objects.create(nombre="Marcos", entrenador_responsable=self.mario)
+        self.arrow = Jugador.objects.create(nombre="Arrow", entrenador_responsable=self.nacho)
+        self.alta = Jugador.objects.create(nombre="Nazim")
+        # Arrow lo gestiona Nacho, pero entrena con Salva: Pablo lo ve, no es suyo.
+        ResponsableJugador.objects.create(jugador=self.arrow, entrenador=self.salva,
+                                          prioridad=1, activo=True)
+        self.api = APIClient()
+        self.api.force_authenticate(u_pablo)
+
+    def _mover(self, jugador, entrenador):
+        return self.api.post("/api/grupos/mover/", {
+            "jugador": jugador.id, "entrenador": entrenador.id}, format="json")
+
+    def test_mueve_y_coloca_a_los_de_su_color(self):
+        self.assertEqual(self._mover(self.marcos, self.salva).status_code, 200)
+        self.assertEqual(self._mover(self.alta, self.mario).status_code, 200)
+        self.marcos.refresh_from_db(); self.alta.refresh_from_db()
+        self.assertEqual(self.marcos.entrenador_responsable, self.salva)
+        self.assertEqual(self.alta.entrenador_responsable, self.mario)
+        r = self.api.post("/api/grupos/quitar/", {
+            "jugador": self.marcos.id, "entrenador": self.salva.id}, format="json")
+        self.assertEqual(r.status_code, 200)
+
+    def test_no_toca_lo_de_otro_color_ni_las_columnas(self):
+        self.assertEqual(self._mover(self.arrow, self.salva).status_code, 403)
+        self.assertEqual(self._mover(self.marcos, self.nacho).status_code, 403)
+        r = self.api.post("/api/grupos/mover_entrenador/", {
+            "entrenador": self.salva.id, "coach": ""}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_la_pestana_sin_tambien_ni_ajenos_en_sin_grupo(self):
+        datos = self.api.get("/api/grupos/").json()
+        self.assertTrue(datos["puede_editar"])
+        self.assertFalse(datos["puede_mover_entrenadores"])
+        sin_grupo = {j["nombre"] for j in datos["sin_grupo"]}
+        self.assertIn("Nazim", sin_grupo)
+        self.assertNotIn("Arrow", sin_grupo)
+        for b in datos["bloques"]:
+            for g in b["grupos"]:
+                self.assertNotIn("tambien", g)
+
+
 class GruposGestionNombresTests(SimpleTestCase):
     """El comando casa los nombres de la tabla del club con las fichas."""
 

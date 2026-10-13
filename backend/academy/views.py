@@ -1174,10 +1174,8 @@ class GrupoViewSet(viewsets.ViewSet):
     gente por la que responde. Eso es lo que dirección reparte y lo que se
     edita aquí.
 
-    Aparte están sus porcentajes (`ResponsableJugador`): con quién entrena, el
-    principal y el resto de su bloque de secundarios. Esos salen aparte, en
-    "también entrena", porque si se mezclan con los propios todos los grupos de
-    un mismo bloque parecen el mismo grupo repetido.
+    Sus porcentajes (`ResponsableJugador`: con quién más entrena) no salen
+    aquí: el club no quiere el «también entrena a N» (13/10/2026).
 
     Los bloques (Dani Gimeno, Pablo Gil, Santi Panzarasa…) son los `Coach`.
     Los que tienen color son los grupos de gestión de la tabla del club
@@ -1185,6 +1183,11 @@ class GrupoViewSet(viewsets.ViewSet):
     en el suyo aunque figure además en los bloques de Sergio e Iván, que
     abarcan a todos. Quien comparte la gestión (`cogestores`) tiene a esos
     alumnos en su columna igual que el responsable.
+
+    El head coach de un color (Dani, Pablo, Santi) gestiona a todos los
+    alumnos de su color: los cambia de columna, los deja sin grupo y coloca a
+    las altas nuevas. Cambiar a un entrenador de bloque sigue siendo cosa de
+    dirección.
     """
 
     # El organigrama es cosa de dirección y de los coaches (que ven el suyo).
@@ -1198,15 +1201,13 @@ class GrupoViewSet(viewsets.ViewSet):
                 "Los grupos los ve la dirección deportiva y los coaches."
             )
 
-    def _ficha(self, j, grupo_de=None, con=None):
+    def _ficha(self, j, con=None):
         return {
             "id": j.id,
             "nombre": j.nombre,
             "division": j.division.nivel if j.division_id else None,
             "escuela": j.escuela.nombre if j.escuela_id else None,
             "foto": j.foto_url or "",
-            # En "también entrena": de quién es en realidad este alumno.
-            "grupo_de": grupo_de,
             # Gestión compartida: con quién lleva esta columna al alumno.
             "con": con or [],
         }
@@ -1216,6 +1217,30 @@ class GrupoViewSet(viewsets.ViewSet):
             raise PermissionDenied(
                 "Solo la dirección deportiva reorganiza los grupos."
             )
+
+    def _color_propio(self):
+        """Los entrenadores del grupo de color del usuario, si es su head
+        coach; si no, None."""
+        coach = _coach_activo(self.request.user)
+        if coach is None or not coach.color:
+            return None
+        return set(coach.entrenadores.values_list("pk", flat=True))
+
+    def _assert_gestiona(self, jugador, entrenador):
+        """Dirección mueve a cualquiera; el head coach, dentro de su color: el
+        alumno es de una columna de su color (o no tiene grupo) y la columna
+        a la que va o de la que sale, también."""
+        if self.request.user.is_superadmin:
+            return
+        suyos = self._color_propio()
+        responsable = jugador.entrenador_responsable
+        if suyos is not None and entrenador.pk in suyos and (
+                responsable is None or not responsable.activo
+                or responsable.pk in suyos):
+            return
+        raise PermissionDenied(
+            "Solo puedes mover a los alumnos de tu grupo de color."
+        )
 
     def list(self, request):
         from collections import defaultdict
@@ -1233,7 +1258,7 @@ class GrupoViewSet(viewsets.ViewSet):
             for j in jugadores_visibles(
                 request.user,
                 base=Jugador.objects.filter(activo=True).select_related(
-                    "division", "escuela"
+                    "division", "escuela", "entrenador_responsable"
                 ).prefetch_related("cogestores"),
             )
         }
@@ -1248,17 +1273,6 @@ class GrupoViewSet(viewsets.ViewSet):
             for g in gestores[j.id]:
                 propios[g].append(self._ficha(j, con=[
                     nombres[o] for o in gestores[j.id] if o != g]))
-
-        tambien = defaultdict(list)
-        for rj in ResponsableJugador.objects.filter(
-            activo=True, entrenador_id__in=ids, jugador_id__in=jugadores
-        ).order_by("jugador__nombre"):
-            j = jugadores[rj.jugador_id]
-            if rj.entrenador_id in gestores.get(j.id, ()):
-                continue  # ya está en su grupo propio
-            tambien[rj.entrenador_id].append(self._ficha(
-                j, grupo_de=nombres.get(j.entrenador_responsable_id),
-            ))
 
         def bloque_de(e):
             """Su grupo de gestión (el bloque con color) y, si no tiene, el
@@ -1281,7 +1295,6 @@ class GrupoViewSet(viewsets.ViewSet):
                     "divisiones": " · ".join(f"D{n}" for n in niveles) or "—",
                 },
                 "jugadores": propios[e.id],
-                "tambien": tambien[e.id],
             })
 
         # Se devuelven TODOS los bloques, también los que se han quedado sin
@@ -1299,15 +1312,24 @@ class GrupoViewSet(viewsets.ViewSet):
         ]
         bloques.append({"coach": None, "grupos": por_bloque.get(None, [])})
 
+        # Sin grupo es quien no tiene responsable (o lo tiene de baja). El
+        # coach ve además a alumnos que gestiona otro color porque los
+        # entrenan los suyos: esos tienen grupo, no van aquí.
         sin_grupo = [
             self._ficha(j) for j in sorted(jugadores.values(), key=lambda x: x.nombre)
-            if j.entrenador_responsable_id not in ids
+            if j.entrenador_responsable_id not in ids and (
+                j.entrenador_responsable is None
+                or not j.entrenador_responsable.activo)
         ]
+        direccion = bool(request.user.is_superadmin)
         return Response({
             "bloques": bloques,
             "sin_grupo": sin_grupo,
             "entrenadores": [{"id": e.id, "nombre": e.nombre} for e in entrenadores],
-            "puede_editar": bool(request.user.is_superadmin),
+            # Alumnos: dirección y el head coach de un color. Columnas
+            # (entrenadores de un bloque a otro): solo dirección.
+            "puede_editar": direccion or self._color_propio() is not None,
+            "puede_mover_entrenadores": direccion,
         })
 
     def _jugador(self, request):
@@ -1334,8 +1356,8 @@ class GrupoViewSet(viewsets.ViewSet):
         Pasa a ser su responsable y su principal, y el resto del bloque, sus
         secundarios al 10%: la misma regla del organigrama. Los retoques, luego,
         en su ficha."""
-        self._assert_direccion()
         jugador, entrenador = self._jugador(request), self._entrenador(request)
+        self._assert_gestiona(jugador, entrenador)
         with transaction.atomic():
             pesos.guardar(jugador, pesos.propuesta(entrenador))
             jugador.entrenador_responsable = entrenador
@@ -1394,8 +1416,8 @@ class GrupoViewSet(viewsets.ViewSet):
         Si era su grupo (su responsable), el alumno sale del grupo entero: sin
         responsable ni porcentajes, a «Sin grupo». Si solo le entrenaba, se le
         quita a él y su parte pasa al principal."""
-        self._assert_direccion()
         jugador, entrenador = self._jugador(request), self._entrenador(request)
+        self._assert_gestiona(jugador, entrenador)
         with transaction.atomic():
             if jugador.entrenador_responsable_id == entrenador.id:
                 pesos.guardar(jugador, [])

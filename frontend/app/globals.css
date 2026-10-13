@@ -987,15 +987,6 @@ ul.miembros .quitar {
 }
 ul.miembros .quitar:hover { background: var(--surface-2); color: var(--st-ausencia); }
 
-.grupo details.tambien, .columna details.tambien {
-  margin-top: .45rem; border-top: 1px solid var(--border); padding-top: .35rem;
-}
-.columna details.tambien summary {
-  cursor: pointer; font-size: .72rem; color: var(--muted); list-style: none;
-}
-.columna details.tambien summary::before { content: "▸ "; }
-.columna details.tambien[open] summary::before { content: "▾ "; }
-.columna details.tambien ul.miembros { margin-top: .25rem; }
 .columna .msg { font-size: .78rem; color: var(--muted); margin: 0; padding: .35rem 0; }
 
 /* Mientras se arrastra: ni selección de texto ni cursor de escritura, y el

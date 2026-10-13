@@ -25,13 +25,11 @@ import {
  * que ahí se toca a quien se mueve y luego "Traer aquí" en el destino. Eso
  * funciona también con ratón, para quien lo prefiera.
  *
- * Un alumno sale además en el "también entrena" de los otros entrenadores de
- * su bloque, que le entrenan como secundarios. Va plegado para que no parezca
- * el mismo grupo repetido.
- *
  * Los bloques con color son los grupos de gestión de la tabla del club
  * (13/10/2026): cada entrenador gestiona su columna y ve al resto de jugadores
- * de su color. Salen primero y pintados de ese color.
+ * de su color. Salen primero y pintados de ese color. Su head coach (Dani,
+ * Pablo, Santi) mueve a los alumnos de su color; las columnas entre bloques
+ * solo las mueve dirección.
  */
 export default function Page() {
   const [datos, setDatos] = useState(null);
@@ -62,7 +60,10 @@ export default function Page() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // Mover alumnos (dirección y el head coach de un color) y mover columnas
+  // de un bloque a otro (solo dirección).
   const editable = !!datos?.puede_editar;
+  const columnasEditables = !!datos?.puede_mover_entrenadores;
 
   const limpiar = useCallback(() => {
     setCogido(null);
@@ -197,6 +198,7 @@ export default function Page() {
 
   function empezarArrastre(e, payload) {
     if (!editable || ocupado) return;
+    if (payload.tipo === "entrenador" && !columnasEditables) return;
     // El dedo tiene que poder desplazar la lista: en táctil se mueve tocando.
     if (e.pointerType === "touch" || e.button !== 0) return;
     if (e.target.closest("button.quitar, button.traer")) return;
@@ -239,7 +241,6 @@ export default function Page() {
           onClick={() => setCogido(payload)}>
           <span className="div-badge">{j.division ? `D${j.division}` : "—"}</span>
           <span className="txt">{j.nombre}</span>
-          {j.grupo_de && <span className="de-quien">de {j.grupo_de}</span>}
           {j.con?.length > 0 && j.con.join(" y ") !== conComun && (
             <span className="de-quien">con {j.con.join(" y ")}</span>
           )}
@@ -261,7 +262,6 @@ export default function Page() {
   const columna = (g, coachId) => {
     const e = g.entrenador;
     const propios = g.jugadores.filter(coincide);
-    const tambien = g.tambien.filter(coincide);
     const clave = `col-${e.id}`;
     const payload = { tipo: "entrenador", id: e.id, nombre: e.nombre, desde: coachId };
     // Si toda la columna la comparte con el mismo (Mario y Jorge I.), se dice
@@ -279,8 +279,8 @@ export default function Page() {
           moviendoJugador ? "esperando" : "",
         ].filter(Boolean).join(" ")}>
         <header className="col-head"
-          onClick={() => editable && setCogido(payload)}
-          title={editable ? "Arrastra la columna a otro bloque" : undefined}>
+          onClick={() => columnasEditables && setCogido(payload)}
+          title={columnasEditables ? "Arrastra la columna a otro bloque" : undefined}>
           <span className="agarre" aria-hidden="true">⠿</span>
           <div>
             <h3>{e.nombre}</h3>
@@ -303,14 +303,6 @@ export default function Page() {
           <ul className="miembros">{propios.map((j) => alumno(j, e, conComun))}</ul>
         )}
 
-        {g.tambien.length > 0 && (
-          <details className="tambien">
-            <summary>También entrena a {g.tambien.length}</summary>
-            {tambien.length === 0
-              ? <p className="msg">Ninguno con ese nombre.</p>
-              : <ul className="miembros">{tambien.map((j) => alumno(j, e))}</ul>}
-          </details>
-        )}
       </article>
     );
   };
@@ -323,13 +315,15 @@ export default function Page() {
         <h1>Grupos</h1>
         {!editable && <span className="pill no">Solo lectura</span>}
       </div>
-      <p className="help">
-        Arrastra un <b>alumno</b> a la columna de otro entrenador, o una
-        <b> columna entera</b> (por su cabecera) a otro bloque. El alumno pasa a
-        ese grupo: responsable y principal el de la columna, y un 10% al resto
-        del bloque (se retoca en Jugadores → Entrenadores). En el móvil, toca a
-        quien mueves y luego <b>Traer aquí</b>.
-      </p>
+      {editable && (
+        <p className="help">
+          Arrastra un <b>alumno</b> a la columna de otro entrenador
+          {columnasEditables && <>, o una <b>columna entera</b> (por su cabecera) a otro bloque</>}.
+          El alumno pasa a ese grupo: responsable y principal el de la columna,
+          y un 10% al resto del bloque (se retoca en Jugadores → Entrenadores).
+          En el móvil, toca a quien mueves y luego <b>Traer aquí</b>.
+        </p>
+      )}
       <p className="help">
         Los bloques de <b>color</b> son los grupos de gestión: cada entrenador
         gestiona los alumnos de su columna y ve —y puede editar— al resto de
@@ -355,7 +349,7 @@ export default function Page() {
         </div>
       )}
 
-      {moviendoEntrenador && editable && (
+      {moviendoEntrenador && columnasEditables && (
         <div data-zona="quitar"
           className={`zona-quitar${encima === "quitar" ? " encima" : ""}`}>
           <span>Soltar aquí para quitar a <b>{cogido.nombre}</b> de la lista</span>
@@ -418,7 +412,7 @@ export default function Page() {
                   del grupo.
                 </span>
               )}
-              {moviendoEntrenador && conBotones && editable && (
+              {moviendoEntrenador && conBotones && columnasEditables && (
                 <button className="btn sm traer" disabled={ocupado}
                   onClick={() => soltarEn({
                     coach: b.coach ? b.coach.id : null,
@@ -430,7 +424,7 @@ export default function Page() {
             </header>
             {b.grupos.length === 0 ? (
               <p className="msg">
-                Bloque vacío{editable ? " · arrastra aquí una columna" : ""}.
+                Bloque vacío{columnasEditables ? " · arrastra aquí una columna" : ""}.
               </p>
             ) : (
               <div className="columnas">
