@@ -1062,3 +1062,20 @@ class PistaSinEntrenadorTests(SimpleTestCase):
             entrenadores_reparto={1: 2}, con_entrenador={1: {1}},
         ))
         self.assertEqual(sorted(len(m) for m in r.franjas[1].values()), [1, 2])
+
+
+class CubrirConLosQueSobranTests(SimpleTestCase):
+    """Si el motor deja una pista vigilada pero sobra un entrenador, se le
+    pone: vigilada está bien, con entrenador está mejor."""
+
+    def test_el_que_sobra_va_a_la_vigilada(self):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        uno, dos = _Ent(1), _Ent(2)
+        asig, _ = _emparejar_entrenadores(
+            {10: [100], 11: [101, 102]}, {}, [uno, dos], Counter(),
+            info_pistas={10: (1, 1, 0), 11: (1, 2, 0)}, cubrir={11},
+        )
+        self.assertEqual(set(asig), {10, 11})

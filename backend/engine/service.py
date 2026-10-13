@@ -798,8 +798,11 @@ def _emparejar_entrenadores(
         return not any(por_sede[sede].get(v) in asig for v in (numero - 1, numero + 1))
 
     def completar(asig):
-        """Lo previsto que no se pudo cubrir se intenta con los que sobran."""
-        if modo_vecinas and del_reparto - set(asig.values()):
+        """Lo previsto que no se pudo cubrir se intenta con los que sobran. Y
+        si el motor ha dejado pistas sin entrenador pero sobra alguno, va a
+        ellas: vigilada está bien, con entrenador está mejor."""
+        if ((modo_vecinas or cubrir is not None)
+                and del_reparto - set(asig.values())):
             resto = [p for p in todas if p not in asig]
             asig.update(emparejar(resto, ocupados=set(asig.values())))
         return asig
