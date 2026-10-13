@@ -224,10 +224,11 @@ export const grupoQuitar = (jugador, entrenador) =>
 // Mover = este entrenador pasa a responder por el alumno.
 export const grupoMover = (jugador, entrenador) =>
   req("/grupos/mover/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
-// Mover un entrenador de bloque: se lleva a sus alumnos con él.
-export const grupoMoverEntrenador = (entrenador, coach) =>
+// Mover un entrenador de bloque: se lleva a sus alumnos con él. `desde` es el
+// bloque en el que se le veía (los de Sergio e Iván no los pierde).
+export const grupoMoverEntrenador = (entrenador, coach, desde) =>
   req("/grupos/mover_entrenador/", {
-    method: "POST", body: JSON.stringify({ entrenador, coach }),
+    method: "POST", body: JSON.stringify({ entrenador, coach, desde }),
   });
 
 // --- Ausencias de jugador por rango de fechas ------------------------------

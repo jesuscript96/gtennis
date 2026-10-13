@@ -428,11 +428,18 @@ export const RESOURCES = {
       { key: "nombre", label: "Nombre" },
       { key: "usuario_username", label: "Usuario", render: (v) => v || "— (sin login)" },
       { key: "entrenadores_display", label: "Entrenadores a cargo" },
+      { key: "color", label: "Grupo de gestión", render: (v) => (v ? v[0].toUpperCase() + v.slice(1) : "—") },
       { key: "activo", label: "Activo", type: "bool" },
     ],
     fields: [
       { name: "nombre", label: "Nombre", type: "text", required: true },
       { name: "entrenadores", label: "Entrenadores a cargo", type: "mfk", endpoint: "entrenadores", optionLabel: (o) => o.nombre, help: "El coach verá a todos los jugadores de estos entrenadores." },
+      { name: "color", label: "Color del grupo de gestión", type: "select", options: [
+        { value: "", label: "— no es un grupo de gestión —" },
+        { value: "amarillo", label: "Amarillo" }, { value: "turquesa", label: "Turquesa" },
+        { value: "naranja", label: "Naranja" }, { value: "verde", label: "Verde" },
+        { value: "azul", label: "Azul" }, { value: "morado", label: "Morado" },
+      ], default: "", help: "Con color, es un grupo de gestión: cada entrenador gestiona su columna y ve y edita también a los jugadores de los demás del bloque (los suyos le salen primero). Los bloques que abarcan a todos van sin color." },
       { name: "activo", label: "Activo", type: "bool", default: true },
     ],
   },

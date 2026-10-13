@@ -218,21 +218,37 @@ class Entrenador(models.Model):
     def __str__(self):
         return self.nombre
 
-    def jugadores_permitidos(self):
-        """Queryset de jugadores activos que este entrenador puede gestionar.
-        Fuente única: ResponsableJugador (cualquier prioridad). Se mantiene la
-        unión con `jugadores_gestionados` por compatibilidad."""
+    def companeros_de_grupo(self):
+        """Los entrenadores de sus grupos de gestión, él incluido (vacío si
+        no está en ninguno)."""
+        return Entrenador.objects.filter(
+            coaches__in=Coach.objects.filter(activo=True, entrenadores=self)
+            .exclude(color="")
+        ).distinct()
+
+    def q_jugadores(self):
+        """Filtro de los jugadores a su alcance: los que gestiona (responsable
+        o comparte la gestión), los que entrena (porcentajes de
+        ResponsableJugador) y los que gestionan los demás de su grupo de
+        gestión. `jugadores_gestionados` sigue por compatibilidad."""
         from django.db.models import Q
 
-        activos = Jugador.objects.filter(activo=True)
-        if self.gestiona_todos_jugadores:
-            return activos
-        return activos.filter(
+        grupo = self.companeros_de_grupo()
+        return (
             Q(entrenador_responsable=self)
             | Q(cogestores=self)
             | Q(responsables__entrenador=self)
             | Q(entrenadores_gestores=self)
-        ).distinct()
+            | Q(entrenador_responsable__in=grupo)
+            | Q(cogestores__in=grupo)
+        )
+
+    def jugadores_permitidos(self):
+        """Queryset de jugadores activos que este entrenador puede gestionar."""
+        activos = Jugador.objects.filter(activo=True)
+        if self.gestiona_todos_jugadores:
+            return activos
+        return activos.filter(self.q_jugadores()).distinct()
 
     def puede_gestionar(self, jugador):
         """¿Puede este entrenador declarar ausencias de `jugador`?"""
@@ -296,6 +312,26 @@ class Coach(models.Model):
     activo = models.BooleanField(default=True)
     entrenadores = models.ManyToManyField(
         "Entrenador", blank=True, related_name="coaches",
+    )
+    # Grupo de gestión (13/10/2026): los bloques de Dani, Pablo y Santi son
+    # los colores de la tabla del club. Un bloque con color es un grupo: cada
+    # entrenador ve y edita también a los jugadores que gestionan los demás del
+    # bloque, y los suyos le salen primero. Los bloques de Sergio e Iván, que
+    # abarcan a todos, no llevan color: si no, cualquier entrenador vería a la
+    # academia entera.
+    class Color(models.TextChoices):
+        AMARILLO = "amarillo", "Amarillo"
+        TURQUESA = "turquesa", "Turquesa"
+        NARANJA = "naranja", "Naranja"
+        VERDE = "verde", "Verde"
+        AZUL = "azul", "Azul"
+        MORADO = "morado", "Morado"
+
+    color = models.CharField(
+        max_length=12, choices=Color.choices, blank=True,
+        verbose_name="Color del grupo de gestión",
+        help_text="Con color, sus entrenadores ven y editan a los jugadores "
+                  "que gestionan los demás del bloque. Vacío: no es un grupo.",
     )
 
     class Meta:

@@ -1180,6 +1180,11 @@ class GrupoViewSet(viewsets.ViewSet):
     un mismo bloque parecen el mismo grupo repetido.
 
     Los bloques (Dani Gimeno, Pablo Gil, Santi Panzarasa…) son los `Coach`.
+    Los que tienen color son los grupos de gestión de la tabla del club
+    (13/10/2026): salen primero, pintados de su color, y cada entrenador está
+    en el suyo aunque figure además en los bloques de Sergio e Iván, que
+    abarcan a todos. Quien comparte la gestión (`cogestores`) tiene a esos
+    alumnos en su columna igual que el responsable.
     """
 
     # El organigrama es cosa de dirección y de los coaches (que ven el suyo).
@@ -1193,7 +1198,7 @@ class GrupoViewSet(viewsets.ViewSet):
                 "Los grupos los ve la dirección deportiva y los coaches."
             )
 
-    def _ficha(self, j, grupo_de=None):
+    def _ficha(self, j, grupo_de=None, con=None):
         return {
             "id": j.id,
             "nombre": j.nombre,
@@ -1202,6 +1207,8 @@ class GrupoViewSet(viewsets.ViewSet):
             "foto": j.foto_url or "",
             # En "también entrena": de quién es en realidad este alumno.
             "grupo_de": grupo_de,
+            # Gestión compartida: con quién lleva esta columna al alumno.
+            "con": con or [],
         }
 
     def _assert_direccion(self):
@@ -1227,29 +1234,42 @@ class GrupoViewSet(viewsets.ViewSet):
                 request.user,
                 base=Jugador.objects.filter(activo=True).select_related(
                     "division", "escuela"
-                ),
+                ).prefetch_related("cogestores"),
             )
         }
 
         propios = defaultdict(list)
+        gestores = {}
         for j in sorted(jugadores.values(), key=lambda x: x.nombre):
-            if j.entrenador_responsable_id in ids:
-                propios[j.entrenador_responsable_id].append(self._ficha(j))
+            if j.entrenador_responsable_id not in ids:
+                continue
+            gestores[j.id] = [j.entrenador_responsable_id] + [
+                c.id for c in j.cogestores.all() if c.id in ids]
+            for g in gestores[j.id]:
+                propios[g].append(self._ficha(j, con=[
+                    nombres[o] for o in gestores[j.id] if o != g]))
 
         tambien = defaultdict(list)
         for rj in ResponsableJugador.objects.filter(
             activo=True, entrenador_id__in=ids, jugador_id__in=jugadores
         ).order_by("jugador__nombre"):
             j = jugadores[rj.jugador_id]
-            if j.entrenador_responsable_id == rj.entrenador_id:
+            if rj.entrenador_id in gestores.get(j.id, ()):
                 continue  # ya está en su grupo propio
             tambien[rj.entrenador_id].append(self._ficha(
                 j, grupo_de=nombres.get(j.entrenador_responsable_id),
             ))
 
+        def bloque_de(e):
+            """Su grupo de gestión (el bloque con color) y, si no tiene, el
+            primero de los suyos."""
+            suyos = sorted((c for c in e.coaches.all() if c.activo),
+                           key=lambda c: (not c.color, c.nombre))
+            return suyos[0] if suyos else None
+
         por_bloque = defaultdict(list)
         for e in entrenadores:
-            coach = e.coaches.filter(activo=True).first()
+            coach = bloque_de(e)
             # Los niveles de sus alumnos, para situarse: la división ya no dice
             # a quién puede entrenar.
             niveles = sorted({f["division"] for f in propios[e.id] if f["division"]})
@@ -1266,10 +1286,13 @@ class GrupoViewSet(viewsets.ViewSet):
 
         # Se devuelven TODOS los bloques, también los que se han quedado sin
         # entrenadores: si no, no habría dónde soltar al que se arrastra.
-        coaches = coaches_visibles(request.user).order_by("nombre")
+        orden = {v: i for i, v in enumerate(Coach.Color.values)}
+        coaches = sorted(coaches_visibles(request.user),
+                         key=lambda c: (orden.get(c.color, len(orden)), c.nombre))
         bloques = [
             {
-                "coach": {"id": c.id, "nombre": c.nombre},
+                "coach": {"id": c.id, "nombre": c.nombre, "color": c.color,
+                          "color_nombre": c.get_color_display() if c.color else ""},
                 "grupos": por_bloque.get(c.id, []),
             }
             for c in coaches
@@ -1317,6 +1340,8 @@ class GrupoViewSet(viewsets.ViewSet):
             pesos.guardar(jugador, pesos.propuesta(entrenador))
             jugador.entrenador_responsable = entrenador
             jugador.save(update_fields=["entrenador_responsable"])
+            # Cambia de columna: quien compartía la gestión ya no la comparte.
+            jugador.cogestores.clear()
         return Response({"ok": True})
 
     @action(detail=False, methods=["post"])
@@ -1339,6 +1364,10 @@ class GrupoViewSet(viewsets.ViewSet):
         retocan en la ficha de cada uno.
 
         Sin `coach`, se queda fuera de todos los bloques (independiente).
+
+        Sale del bloque en el que se veía (`desde`) y de cualquier grupo de
+        gestión, pero no de los bloques de Sergio e Iván, que abarcan a todos.
+        Sin `desde`, sale de todos.
         """
         self._assert_direccion()
         ent = self._entrenador(request)
@@ -1348,7 +1377,11 @@ class GrupoViewSet(viewsets.ViewSet):
             coach = Coach.objects.filter(pk=destino).first()
             if coach is None:
                 raise NotFound("Ese coach no existe.")
-        for c in ent.coaches.all():
+        desde = request.data.get("desde")
+        salen = ent.coaches.all()
+        if desde not in (None, "", "null"):
+            salen = salen.filter(Q(pk=desde) | ~Q(color=""))
+        for c in salen:
             c.entrenadores.remove(ent)
         if coach is not None:
             coach.entrenadores.add(ent)
@@ -1368,6 +1401,10 @@ class GrupoViewSet(viewsets.ViewSet):
                 pesos.guardar(jugador, [])
                 jugador.entrenador_responsable = None
                 jugador.save(update_fields=["entrenador_responsable"])
+                jugador.cogestores.clear()
+            elif jugador.cogestores.filter(pk=entrenador.pk).exists():
+                # Compartía la gestión: deja de compartirla, nada más.
+                jugador.cogestores.remove(entrenador)
             else:
                 pesos.quitar(jugador, entrenador.id)
         return Response({"ok": True})

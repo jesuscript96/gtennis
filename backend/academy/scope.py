@@ -4,7 +4,8 @@ Reglas:
   * Super Admin (dirección) → ve todo.
   * Coach                   → ve a sus entrenadores y a todos los jugadores de
                               esos entrenadores.
-  * Entrenador              → ve solo sus jugadores (`jugadores_permitidos`).
+  * Entrenador              → ve sus jugadores y los que gestionan los demás
+                              de su grupo de gestión (`Entrenador.q_jugadores`).
 """
 from django.db.models import Q
 
@@ -62,15 +63,9 @@ def jugadores_visibles(user, base=None):
     if ent is not None:
         if ent.gestiona_todos_jugadores:
             return qs
-        # Los que gestiona (es su responsable) y los que entrena (tiene
-        # porcentaje con ellos). `entrenadores_gestores` se mantiene por
-        # compatibilidad (hoy vacío).
-        return qs.filter(
-            Q(entrenador_responsable=ent)
-            | Q(cogestores=ent)
-            | Q(responsables__entrenador=ent)
-            | Q(entrenadores_gestores=ent)
-        ).distinct()
+        # Los que gestiona, los que entrena (tiene porcentaje con ellos) y los
+        # que gestionan los demás de su grupo de gestión (su color).
+        return qs.filter(ent.q_jugadores()).distinct()
     return qs.none()
 
 

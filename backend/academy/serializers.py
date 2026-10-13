@@ -77,12 +77,18 @@ class EntrenadorSerializer(serializers.ModelSerializer):
 class CoachSerializer(serializers.ModelSerializer):
     entrenadores_display = serializers.SerializerMethodField()
     usuario_username = serializers.CharField(source="user.username", read_only=True, default=None)
+    # El formulario manda null para «sin color»; en la base es "".
+    color = serializers.ChoiceField(choices=Coach.Color.choices, allow_blank=True,
+                                    allow_null=True, required=False)
+
+    def validate_color(self, valor):
+        return valor or ""
 
     class Meta:
         model = Coach
         fields = [
             "id", "nombre", "activo", "user", "usuario_username",
-            "entrenadores", "entrenadores_display",
+            "entrenadores", "entrenadores_display", "color",
         ]
 
     def get_entrenadores_display(self, obj):

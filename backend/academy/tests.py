@@ -9,7 +9,7 @@ from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 
 from academy.models import (
-    Entrenador, HorarioJugador, Jugador, Pista, ResponsableJugador, Sede, Turno,
+    Coach, Entrenador, HorarioJugador, Jugador, Pista, ResponsableJugador, Sede, Turno,
     VacacionesEntrenador,
 )
 from academy.pesos import errores, reparto_por_defecto
@@ -766,6 +766,138 @@ class GestionCompartidaTests(TestCase):
         filas = filas.get("results", filas)
         self.assertEqual([(f["nombre"], f["cogestores"]) for f in filas],
                          [("Marcos", [jorge.id])])
+
+
+class GrupoDeGestionTests(TestCase):
+    """Cada color de la tabla del club es un grupo de gestión (13/10/2026):
+    el entrenador ve y edita a los jugadores que gestionan los demás de su
+    bloque, pero no los de otro color ni por estar en el bloque de todos."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        u_blas = User.objects.create_user(
+            username="blas", password="x", role=User.Role.ENTRENADOR)
+        self.blas = Entrenador.objects.create(nombre="Blas", user=u_blas)
+        javi = Entrenador.objects.create(nombre="Javi")
+        mario = Entrenador.objects.create(nombre="Mario")
+        nacho = Entrenador.objects.create(nombre="Nacho")
+        amarillo = Coach.objects.create(nombre="Dani", color="amarillo")
+        amarillo.entrenadores.set([self.blas, javi])
+        Coach.objects.create(nombre="Pablo", color="turquesa").entrenadores.set([mario])
+        # El bloque de Sergio abarca a todos y no tiene color.
+        Coach.objects.create(nombre="Sergio").entrenadores.set(
+            [self.blas, javi, mario, nacho])
+
+        self.suyo = Jugador.objects.create(nombre="Toprak", entrenador_responsable=self.blas)
+        self.de_javi = Jugador.objects.create(nombre="Yanaki", entrenador_responsable=javi)
+        self.cogestionado = Jugador.objects.create(nombre="Lucca", entrenador_responsable=nacho)
+        self.cogestionado.cogestores.add(javi)
+        self.de_mario = Jugador.objects.create(nombre="Marcos", entrenador_responsable=mario)
+        self.de_nacho = Jugador.objects.create(nombre="Arrow", entrenador_responsable=nacho)
+        self.api = APIClient()
+        self.api.force_authenticate(u_blas)
+
+    def test_ve_a_los_de_su_color_y_no_a_los_demas(self):
+        from academy.scope import jugadores_visibles
+
+        ids = set(jugadores_visibles(self.blas.user).values_list("id", flat=True))
+        self.assertEqual(ids, {self.suyo.id, self.de_javi.id, self.cogestionado.id})
+        self.assertTrue(self.blas.puede_gestionar(self.de_javi))
+        self.assertFalse(self.blas.puede_gestionar(self.de_mario))
+
+    def test_edita_al_de_un_companero_pero_no_al_de_otro_color(self):
+        r = self.api.patch(f"/api/jugadores/{self.de_javi.id}/",
+                           {"turno_manana": None}, format="json")
+        self.assertEqual(r.status_code, 200)
+        r = self.api.patch(f"/api/jugadores/{self.de_mario.id}/",
+                           {"turno_manana": None}, format="json")
+        self.assertEqual(r.status_code, 404)
+
+    def test_sin_color_solo_los_suyos(self):
+        from academy.scope import jugadores_visibles
+
+        Coach.objects.update(color="")
+        self.assertEqual(list(jugadores_visibles(self.blas.user)), [self.suyo])
+
+
+class GruposPorColoresTests(TestCase):
+    """La pestaña Grupos enseña los grupos de gestión primero y con su color,
+    cada entrenador en el suyo aunque esté también en el bloque de todos, y a
+    quien comparte la gestión con los alumnos en su columna."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        self.mario = Entrenador.objects.create(nombre="Mario")
+        self.jorge = Entrenador.objects.create(nombre="Jorge I")
+        self.salva = Entrenador.objects.create(nombre="Salva")
+        self.turquesa = Coach.objects.create(nombre="Pablo", color="turquesa")
+        self.turquesa.entrenadores.set([self.mario, self.jorge, self.salva])
+        # «Ivan» va antes que «Pablo»: sin color, ahí acababan todos.
+        self.todos = Coach.objects.create(nombre="Ivan")
+        self.todos.entrenadores.set([self.mario, self.jorge, self.salva])
+        self.marcos = Jugador.objects.create(nombre="Marcos", entrenador_responsable=self.mario)
+        self.marcos.cogestores.add(self.jorge)
+        direccion = User.objects.create_user(
+            username="dir", password="x", role=User.Role.SUPERADMIN)
+        self.api = APIClient()
+        self.api.force_authenticate(direccion)
+
+    def _grupos(self):
+        return self.api.get("/api/grupos/").json()["bloques"]
+
+    def test_el_grupo_de_color_va_primero_con_sus_entrenadores(self):
+        bloques = [b for b in self._grupos() if b["coach"]]
+        self.assertEqual((bloques[0]["coach"]["nombre"], bloques[0]["coach"]["color"]),
+                         ("Pablo", "turquesa"))
+        columnas = {g["entrenador"]["nombre"]: g["jugadores"] for g in bloques[0]["grupos"]}
+        self.assertEqual(set(columnas), {"Mario", "Jorge I", "Salva"})
+        ivan = next(b for b in bloques if b["coach"]["nombre"] == "Ivan")
+        self.assertEqual(ivan["grupos"], [])
+        self.assertEqual([(j["nombre"], j["con"]) for j in columnas["Jorge I"]],
+                         [("Marcos", ["Mario"])])
+        self.assertEqual([(j["nombre"], j["con"]) for j in columnas["Mario"]],
+                         [("Marcos", ["Jorge I"])])
+
+    def test_mover_a_otra_columna_quita_la_gestion_compartida(self):
+        self.api.post("/api/grupos/mover/",
+                      {"jugador": self.marcos.id, "entrenador": self.salva.id}, format="json")
+        self.marcos.refresh_from_db()
+        self.assertEqual(self.marcos.entrenador_responsable, self.salva)
+        self.assertFalse(self.marcos.cogestores.exists())
+
+    def test_cambiar_de_color_no_le_saca_del_bloque_de_todos(self):
+        naranja = Coach.objects.create(nombre="Santi", color="naranja")
+        self.api.post("/api/grupos/mover_entrenador/", {
+            "entrenador": self.salva.id, "coach": naranja.id, "desde": self.turquesa.id,
+        }, format="json")
+        self.assertEqual(set(self.salva.coaches.all()), {naranja, self.todos})
+
+
+class GruposGestionNombresTests(SimpleTestCase):
+    """El comando casa los nombres de la tabla del club con las fichas."""
+
+    def test_casa_erratas_y_abreviaturas_y_prefiere_la_activa(self):
+        from academy.management.commands.grupos_gestion import buscar
+
+        fichas = [
+            Jugador(pk=1, nombre="Maria Adrienko", activo=True),
+            Jugador(pk=2, nombre="Javier Ballester Galarza", activo=True),
+            Jugador(pk=3, nombre="Carla Guerrero Blanco", activo=False),
+            Jugador(pk=4, nombre="Carla Guerrero", activo=True),
+            Jugador(pk=5, nombre="Maria Ruiz Naranjo", activo=True),
+        ]
+        casa = lambda n: buscar(n, fichas)[0]  # noqa: E731
+        self.assertEqual(casa("Maria Andrienko").pk, 1)
+        self.assertEqual(casa("Javi Ballester").pk, 2)
+        self.assertEqual(casa("Carla Guerrero").pk, 4)
+        self.assertEqual(casa("Maria Ruiz").pk, 5)
+        self.assertIsNone(casa("Yagiz Yildiz 17"))
 
 
 class FichaDeportivaCoachTests(TestCase):

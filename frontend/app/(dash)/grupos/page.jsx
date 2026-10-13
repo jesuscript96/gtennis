@@ -28,6 +28,10 @@ import {
  * Un alumno sale además en el "también entrena" de los otros entrenadores de
  * su bloque, que le entrenan como secundarios. Va plegado para que no parezca
  * el mismo grupo repetido.
+ *
+ * Los bloques con color son los grupos de gestión de la tabla del club
+ * (13/10/2026): cada entrenador gestiona su columna y ve al resto de jugadores
+ * de su color. Salen primero y pintados de ese color.
  */
 export default function Page() {
   const [datos, setDatos] = useState(null);
@@ -112,7 +116,7 @@ export default function Page() {
     }
     if (zona.coach === q.desde) return;
     return accion(
-      () => grupoMoverEntrenador(q.id, zona.coach),
+      () => grupoMoverEntrenador(q.id, zona.coach, q.desde),
       zona.coach
         ? `${q.nombre} y sus alumnos pasan al bloque de ${zona.nombre}.`
         : `${q.nombre} se queda fuera de los bloques.`
@@ -221,7 +225,7 @@ export default function Page() {
   const conBotones = !!cogido && !arrastrando;
 
   // --- piezas --------------------------------------------------------------
-  const alumno = (j, entrenador) => {
+  const alumno = (j, entrenador, conComun = "") => {
     const payload = {
       tipo: "jugador", id: j.id, nombre: j.nombre,
       desde: entrenador ? entrenador.id : null,
@@ -236,6 +240,9 @@ export default function Page() {
           <span className="div-badge">{j.division ? `D${j.division}` : "—"}</span>
           <span className="txt">{j.nombre}</span>
           {j.grupo_de && <span className="de-quien">de {j.grupo_de}</span>}
+          {j.con?.length > 0 && j.con.join(" y ") !== conComun && (
+            <span className="de-quien">con {j.con.join(" y ")}</span>
+          )}
         </button>
         {editable && entrenador && (
           <button type="button" className="quitar" disabled={ocupado}
@@ -257,6 +264,10 @@ export default function Page() {
     const tambien = g.tambien.filter(coincide);
     const clave = `col-${e.id}`;
     const payload = { tipo: "entrenador", id: e.id, nombre: e.nombre, desde: coachId };
+    // Si toda la columna la comparte con el mismo (Mario y Jorge I.), se dice
+    // una vez en la cabecera y no en cada alumno.
+    const cons = new Set(g.jugadores.map((j) => (j.con || []).join(" y ")));
+    const conComun = cons.size === 1 ? [...cons][0] : "";
     return (
       <article key={e.id}
         onPointerDown={(ev) => empezarArrastre(ev, payload)}
@@ -275,6 +286,7 @@ export default function Page() {
             <h3>{e.nombre}</h3>
             <p className="sub">{e.divisiones} · {g.jugadores.length} alumno
               {g.jugadores.length === 1 ? "" : "s"}</p>
+            {conComun && <p className="sub comparte">Gestión compartida con {conComun}</p>}
           </div>
         </header>
 
@@ -288,7 +300,7 @@ export default function Page() {
         {propios.length === 0 ? (
           <p className="msg">{busca ? "Ninguno con ese nombre." : "Sin alumnos."}</p>
         ) : (
-          <ul className="miembros">{propios.map((j) => alumno(j, e))}</ul>
+          <ul className="miembros">{propios.map((j) => alumno(j, e, conComun))}</ul>
         )}
 
         {g.tambien.length > 0 && (
@@ -317,6 +329,11 @@ export default function Page() {
         ese grupo: responsable y principal el de la columna, y un 10% al resto
         del bloque (se retoca en Jugadores → Entrenadores). En el móvil, toca a
         quien mueves y luego <b>Traer aquí</b>.
+      </p>
+      <p className="help">
+        Los bloques de <b>color</b> son los grupos de gestión: cada entrenador
+        gestiona los alumnos de su columna y ve —y puede editar— al resto de
+        alumnos de su color, aunque los suyos le salen primero.
       </p>
 
       <div className="toolbar">
@@ -375,7 +392,8 @@ export default function Page() {
 
       {datos.bloques.map((b) => {
         const clave = b.coach ? `bloque-${b.coach.id}` : "bloque-sin";
-        const alumnos = b.grupos.reduce((n, g) => n + g.jugadores.length, 0);
+        const alumnos = new Set(b.grupos.flatMap((g) => g.jugadores.map((j) => j.id))).size;
+        const color = b.coach?.color;
         return (
           <section key={clave}
             data-zona="entrenador" data-clave={clave}
@@ -383,15 +401,23 @@ export default function Page() {
             data-nombre={b.coach ? b.coach.nombre : "sin bloque"}
             className={[
               "bloque",
+              color ? `grupo-color color-${color}` : "",
               encima === clave ? "encima" : "",
               moviendoEntrenador ? "esperando" : "",
             ].filter(Boolean).join(" ")}>
             <header className="bloque-head">
               <h2>{b.coach ? b.coach.nombre : "Sin bloque"}</h2>
+              {color && <span className="pill-color">Grupo {b.coach.color_nombre.toLowerCase()}</span>}
               <span className="cuenta">
                 {b.grupos.length} entrenador{b.grupos.length === 1 ? "" : "es"}
                 {" · "}{alumnos} alumno{alumnos === 1 ? "" : "s"}
               </span>
+              {color && (
+                <span className="nota-grupo">
+                  Cada entrenador gestiona su columna y ve al resto de alumnos
+                  del grupo.
+                </span>
+              )}
               {moviendoEntrenador && conBotones && editable && (
                 <button className="btn sm traer" disabled={ocupado}
                   onClick={() => soltarEn({

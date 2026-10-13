@@ -897,6 +897,24 @@ ul.semana-jugador .vacio { color: var(--muted); font-size: .8rem; }
   background: var(--bg-sidebar); border: 1px solid var(--border);
   border-radius: 12px; padding: .8rem .85rem; margin-bottom: 1rem;
 }
+/* Grupos de gestión: los colores de la tabla del club. Franja a la izquierda,
+   fondo teñido y la cabecera de cada columna del mismo color. Va antes de
+   .esperando/.encima para que el arrastre siga mandando. */
+.grupos .bloque.grupo-color {
+  background: var(--grupo-tinte); border-left: 5px solid var(--grupo);
+}
+.color-amarillo { --grupo: #e3bf00; --grupo-tinte: #fdf8d8; }
+.color-turquesa { --grupo: #3aaab6; --grupo-tinte: #e3f4f6; }
+.color-naranja  { --grupo: #ef9220; --grupo-tinte: #fdeedb; }
+.color-verde    { --grupo: #3fa34d; --grupo-tinte: #e5f4e7; }
+.color-azul     { --grupo: #4a7fd9; --grupo-tinte: #e6eefb; }
+.color-morado   { --grupo: #8a5cd6; --grupo-tinte: #f0e9fb; }
+.grupo-color .columna { border-top: 4px solid var(--grupo); }
+.pill-color {
+  font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px;
+  background: var(--grupo); color: #1f1e1d;
+}
+.nota-grupo { flex-basis: 100%; font-size: .78rem; color: var(--muted); }
 .grupos .bloque.esperando { border-style: dashed; border-color: var(--border-strong); }
 .grupos .bloque.encima { border: 2px dashed var(--accent); background: #f8efe9; }
 .bloque-head {
@@ -933,6 +951,7 @@ ul.semana-jugador .vacio { color: var(--muted); font-size: .8rem; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .col-head .sub { margin: .1rem 0 .45rem; font-size: .72rem; color: var(--muted); }
+.col-head .sub.comparte { margin-top: -.35rem; font-style: italic; }
 .btn.sm.traer { width: 100%; margin-bottom: .5rem; }
 .bloque-head .btn.sm.traer { width: auto; margin-bottom: 0; }
 
