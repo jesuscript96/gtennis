@@ -1039,6 +1039,19 @@ class PistaSinEntrenadorTests(SimpleTestCase):
         pista = next(p for p, m in r.franjas[1].items() if 0 in m)
         self.assertIn(pista, r.cubiertas[1])
 
+    def test_quien_viene_por_uno_no_vigila_al_lado(self):
+        # Dos pistas, dos «entrenadores»: el de la 1 viene solo por el 0. La 2,
+        # con dos y sin vigilancia posible, tiene que llevar el otro.
+        r = solve_pairing(PairingInput(
+            players=[Player(id=0, division=1)] + [Player(id=i, division=6) for i in (1, 2)],
+            courts=[Court(id=i, venue_id=1, capacity=3, number=i) for i in (1, 2)],
+            franjas=[1], capacidad_max=3, time_limit_s=5,
+            entrenadores_reparto={1: 1}, con_entrenador={1: {0}}, no_vigilan={1: {0}},
+        ))
+        # Con un solo entrenador no se abren las dos pistas: la del 0 no
+        # puede vigilar a la otra.
+        self.assertEqual(len(r.franjas[1]), 1)
+
     def test_el_atado_puede_ir_solo_aunque_no_haya_individuales(self):
         # Un D1 sin nadie de su nivel y su entrenador atado: va solo con él.
         r = solve_pairing(PairingInput(

@@ -181,6 +181,9 @@ class PairingInput:
     # Franja -> jugadores cuya pista lleva entrenador sí o sí: los que tienen
     # contrato con alguien que está libre a esa hora.
     con_entrenador: dict[int, set[int]] = field(default_factory=dict)
+    # Franja -> jugadores cuya pista no vigila a la de al lado: su entrenador
+    # viene solo por ellos (Dani con Taberner).
+    no_vigilan: dict[int, set[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -429,6 +432,9 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                     w = model.NewBoolVar(f"vig_{f}_{v.id}_{c.id}")
                     model.Add(w <= cub[f, v.id])
                     model.Add(w <= used[f, c.id] - cub[f, c.id])
+                    for pid in data.no_vigilan.get(f, ()):
+                        if (pid, f, v.id) in x:
+                            model.Add(w <= 1 - x[pid, f, v.id])
                     vigila[v.id].append(w)
                     vigilada[c.id].append(w)
             for c in courts:

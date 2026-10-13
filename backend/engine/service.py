@@ -1246,6 +1246,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     entrenadores_reparto=(
                         {f: len(c) for f, c in reparto.items()} if regla else None),
                     con_entrenador=con_entrenador,
+                    no_vigilan={t.id: set(solo_con_de) & set(opciones)
+                                for t in fase if t.bloque == Turno.Bloque.TARDE},
                 ))
 
             # Por la tarde, T1 primero con todos y, quien no cabe, a T2 (si
