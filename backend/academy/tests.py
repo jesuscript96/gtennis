@@ -746,6 +746,17 @@ class TardeConT2YEntrenadorDeTardeTests(TestCase):
         self.assertEqual(asig.filter(turno=self.t1).count(), 3)
         self.assertEqual(asig.filter(turno=self.t2).count(), 1)
 
+    def test_en_t2_puede_ir_solo_antes_que_quedarse_fuera(self):
+        # Una pista: T1 con tres del mismo nivel y el cuarto, de otro, a T2
+        # aunque no tenga con quién.
+        Pista.objects.create(sede=self.sede, numero=1, superficie="TIERRA")
+        Entrenador.objects.create(nombre="Uno")
+        for i in range(3):
+            self._jugador(f"J{i}", 5)
+        solo = self._jugador("Solo", 9)
+        asig = self._tarde()
+        self.assertEqual(asig.filter(turno=self.t2, jugador=solo).count(), 1)
+
     def _con_dani(self, viene_taberner):
         # Los D1 juegan en tierra.
         for n in (1, 2):

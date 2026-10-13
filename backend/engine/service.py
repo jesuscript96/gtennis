@@ -1209,7 +1209,10 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     # a alguien solo, así que ahí no se abren individuales
                     # mientras haya con quién juntarse (con capacidad 3
                     # cualquier número de dos para arriba se reparte).
-                    min_occupancy=(2 if (es_tarde and len(jugadores) > 1)
+                    # En T2, que es lo que queda, sí: antes solo con su
+                    # entrenador que sin entrenar.
+                    min_occupancy=(2 if (es_tarde and len(jugadores) > 1
+                                         and fase[0] == orden[0])
                                    else (1 if cfg.permitir_individuales else 2)),
                     w_density=(cfg.peso_densidad_tarde if es_tarde
                                else cfg.peso_densidad),
