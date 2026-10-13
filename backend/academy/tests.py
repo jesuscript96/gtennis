@@ -700,6 +700,76 @@ class TopeDiasParejaTests(TestCase):
         self.assertGreater(len(self._dias_juntos(0)), 3)
 
 
+class TardeConT2YEntrenadorDeTardeTests(TestCase):
+    """13/10/2026: por la tarde, quien no cabe en T1 pasa a T2 (aunque T2 sea
+    la franja de una escuela); y el entrenador que por la tarde solo viene por
+    alguien (Dani con Taberner) entra solo si ese alguien viene, y a su pista."""
+
+    def setUp(self):
+        from academy.models import Escuela
+        from scheduling.models import ConfiguracionMotor
+
+        cfg = ConfiguracionMotor.objects.first() or ConfiguracionMotor.objects.create()
+        cfg.time_limit_s = 2
+        cfg.usar_satelites = False
+        cfg.save()
+        Jugador.objects.update(activo=False)
+        Entrenador.objects.update(activo=False)
+        Pista.objects.update(activa=False)
+        self.t1 = Turno.objects.get(codigo="T1")
+        self.t2 = Turno.objects.get(codigo="T2")
+        Turno.objects.filter(pk__in=[self.t1.pk, self.t2.pk]).update(activo=True)
+        Escuela.objects.create(nombre="Escuela de prueba T2", turno_unico=self.t2)
+        self.sede = Sede.objects.create(nombre="Prueba tarde")
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+
+    def _jugador(self, nombre, nivel, tarde=True):
+        from academy.models import Division
+
+        division, _ = Division.objects.get_or_create(nivel=nivel)
+        j = Jugador.objects.create(nombre=nombre, activo=True, division=division)
+        HorarioJugador.objects.create(
+            jugador=j, dia=0, entrena_manana=False, entrena_tarde=tarde,
+            turno_tarde=self.t1 if tarde else None)
+        return j
+
+    def _tarde(self):
+        generate(self.semana, dias=[0], bloques=["TARDE"])
+        return Asignacion.objects.filter(semana=self.semana, dia=0)
+
+    def test_quien_no_cabe_en_t1_va_a_t2(self):
+        Pista.objects.create(sede=self.sede, numero=1)
+        Entrenador.objects.create(nombre="Uno")
+        for i in range(4):
+            self._jugador(f"J{i}", 5)
+        asig = self._tarde()
+        self.assertEqual(asig.filter(turno=self.t1).count(), 3)
+        self.assertEqual(asig.filter(turno=self.t2).count(), 1)
+
+    def _con_dani(self, viene_taberner):
+        # Los D1 juegan en tierra.
+        for n in (1, 2):
+            Pista.objects.create(sede=self.sede, numero=n, superficie="TIERRA")
+        dani = Entrenador.objects.create(nombre="Dani")
+        otro = Entrenador.objects.create(nombre="Otro")
+        taberner = self._jugador("Taberner", 1, tarde=viene_taberner)
+        dani.tarde_solo_con.add(taberner)
+        for i in range(3):
+            self._jugador(f"D6-{i}", 6)
+        return dani, otro, taberner, self._tarde()
+
+    def test_dani_va_con_taberner_y_a_ninguna_otra(self):
+        dani, otro, taberner, asig = self._con_dani(True)
+        de_dani = asig.filter(entrenador=dani)
+        self.assertEqual(set(de_dani.values_list("jugador", flat=True)), {taberner.id})
+        self.assertEqual(asig.filter(turno=self.t1, entrenador=otro).count(), 3)
+
+    def test_sin_taberner_dani_no_entra_por_la_tarde(self):
+        dani, otro, _t, asig = self._con_dani(False)
+        self.assertFalse(asig.filter(entrenador=dani).exists())
+        self.assertEqual(asig.filter(entrenador=otro).count(), 3)
+
+
 class ResponsableGestionTests(TestCase):
     """El responsable de un alumno («Gestión») lo ve —y lo tiene el primero de
     su lista—, y quien lo tiene a su cargo (`jugadores_gestionados`) también,

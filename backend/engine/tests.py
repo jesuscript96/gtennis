@@ -990,3 +990,62 @@ class NadieSoloPorLaTardeTests(SimpleTestCase):
         tamanos = sorted(len(m) for m in res.courts.values() if m)
         self.assertEqual(tamanos, [2, 2, 2, 3])
         self.assertEqual(res.unassigned, [])
+
+
+class PistaSinEntrenadorTests(SimpleTestCase):
+    """Regla del club (13/10/2026): ninguna pista de tres sin entrenador; una
+    de dos sin él solo al lado de otra con entrenador y dos como mucho, que la
+    vigila. Cada entrenador vigila a una sola."""
+
+    def _resolver(self, n_jugadores, entrenadores, n_pistas=4, con_entrenador=None):
+        pistas = [Court(id=i, venue_id=1, capacity=3, number=i)
+                  for i in range(1, n_pistas + 1)]
+        return solve_pairing(PairingInput(
+            players=[Player(id=i, division=5) for i in range(n_jugadores)],
+            courts=pistas, franjas=[1], capacidad_max=3, time_limit_s=5,
+            entrenadores_reparto={1: entrenadores},
+            con_entrenador={1: con_entrenador or set()},
+        ))
+
+    def _comprobar(self, r):
+        pistas, cubiertas = r.franjas[1], r.cubiertas[1]
+        for pista, miembros in pistas.items():
+            if pista not in cubiertas:
+                self.assertLessEqual(len(miembros), 2)
+                vecinas = {pista - 1, pista + 1} & cubiertas
+                self.assertTrue(vecinas, f"pista {pista} sin nadie al lado")
+                self.assertTrue(any(len(pistas[v]) <= 2 for v in vecinas))
+        return sum(len(m) for m in pistas.values())
+
+    def test_con_un_entrenador_caben_cuatro_y_no_cinco(self):
+        # Su pista con dos y la de al lado con dos; el quinto no cabe.
+        self.assertEqual(self._comprobar(self._resolver(5, 1)), 4)
+
+    def test_con_entrenador_puede_haber_tres(self):
+        r = self._resolver(3, 1)
+        self.assertEqual(self._comprobar(r), 3)
+        self.assertEqual(len(r.cubiertas[1]), 1)
+
+    def test_un_entrenador_no_vigila_a_dos(self):
+        # Pistas 1-2-3 y un entrenador en la 2: vigila a una sola vecina.
+        self.assertEqual(self._comprobar(self._resolver(6, 1, n_pistas=3)), 4)
+
+    def test_sin_entrenadores_de_sobra_todo_cubierto(self):
+        r = self._resolver(6, 2)
+        self.assertEqual(self._comprobar(r), 6)
+
+    def test_la_pista_del_contrato_lleva_entrenador(self):
+        r = self._resolver(4, 1, con_entrenador={0})
+        pista = next(p for p, m in r.franjas[1].items() if 0 in m)
+        self.assertIn(pista, r.cubiertas[1])
+
+    def test_el_atado_puede_ir_solo_aunque_no_haya_individuales(self):
+        # Un D1 sin nadie de su nivel y su entrenador atado: va solo con él.
+        r = solve_pairing(PairingInput(
+            players=[Player(id=1, division=1), Player(id=2, division=6),
+                     Player(id=3, division=6)],
+            courts=[Court(id=i, venue_id=1, capacity=3, number=i) for i in (1, 2)],
+            franjas=[1], capacidad_max=3, min_occupancy=2, time_limit_s=5,
+            entrenadores_reparto={1: 2}, con_entrenador={1: {1}},
+        ))
+        self.assertEqual(sorted(len(m) for m in r.franjas[1].values()), [1, 2])

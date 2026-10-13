@@ -171,6 +171,7 @@ export const RESOURCES = {
       { name: "nombre", label: "Nombre", type: "text", required: true },
       { name: "turno_manana", label: "Da clase por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
       { name: "turno_tarde", label: "Da clase por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: "Vacío = cualquiera: entra siempre que haya jugadores suyos disponibles." },
+      { name: "tarde_solo_con", label: "Por la tarde solo entrena si viene", type: "mfk", endpoint: "jugadores", optionLabel: (o) => o.nombre, help: "Vacío = la tarde como cualquiera. Si marcas a alguien, por la tarde solo entra cuando viene alguno de ellos, y va a su pista." },
       { name: "division_desde", label: "Entrena desde la división", type: "number", help: "La más alta de su grupo; la 1 es la mejor. Vacío = cualquiera." },
       { name: "division_hasta", label: "…hasta la división", type: "number", help: "La más baja de su grupo. Si no queda nadie de ese grupo el motor le pone otro, pero cuesta." },
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },

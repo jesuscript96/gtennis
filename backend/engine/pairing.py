@@ -14,6 +14,9 @@ Hard constraints:
     clases particulares, 2 si no).
   * Franjas: cada jugador solo entra en las suyas, y en tantas del bloque como
     marque `max_franjas` (una por defecto).
+  * Pistas sin entrenador (13/10/2026, si se dan `entrenadores_reparto`): como
+    mucho dos jugadores, y al lado una pista con entrenador y dos jugadores
+    como mucho que la vigila. Cada pista con entrenador vigila a una sola.
 
 Soft (minimised):
   * Anti-repetition: penalise pairs that already played together this week.
@@ -169,6 +172,15 @@ class PairingInput:
     # (franja, pista) que ya tienen gente puesta a mano: el motor no mete a
     # nadie más ahí ni cuenta con ellas.
     ocupadas: set[tuple[int, int]] = field(default_factory=set)
+    # --- Pistas sin entrenador (13/10/2026) ---------------------------------
+    # Franja -> entrenadores que se pueden repartir. Con esto, se decide aquí
+    # qué pistas llevan entrenador (como mucho tantas como entrenadores) y las
+    # demás cumplen la regla del club: dos jugadores como mucho y, al lado,
+    # una con entrenador y dos como mucho que la vigila. None = no se mira.
+    entrenadores_reparto: dict[int, int] | None = None
+    # Franja -> jugadores cuya pista lleva entrenador sí o sí: los que tienen
+    # contrato con alguien que está libre a esa hora.
+    con_entrenador: dict[int, set[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -180,6 +192,8 @@ class PairingResult:
     objective: float
     # franja -> court_id -> player ids (con varias franjas a la vez)
     franjas: dict[int, dict[int, list[int]]] = field(default_factory=dict)
+    # franja -> pistas que llevan entrenador (solo con `entrenadores_reparto`)
+    cubiertas: dict[int, set[int]] = field(default_factory=dict)
 
 
 def _normalise(a: int, b: int) -> tuple[int, int]:
@@ -368,10 +382,15 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 else min(c.capacity, data.capacidad_max))
 
     for f in franjas:
+        # Quien tiene su entrenador atado (Taberner con Dani) puede ir solo con
+        # él aunque el bloque no abra individuales: viene para eso.
+        atados_f = [p.id for p in players if p.id in data.con_entrenador.get(f, ())]
         for c in courts:
             occ = sum(en_pista[f, c.id])
             model.Add(occ <= tope(c) * used[f, c.id])
-            model.Add(occ >= min_occ * used[f, c.id])
+            solo_ok = [x[pid, f, c.id] for pid in atados_f if (pid, f, c.id) in x]
+            model.Add(occ >= min_occ * used[f, c.id]
+                      - (min_occ - 1) * sum(solo_ok))
             e = model.NewIntVar(0, max(0, tope(c) - c.normal_density),
                                 f"exc_{f}_{c.id}")
             model.Add(e >= occ - c.normal_density)
@@ -382,6 +401,50 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             model.Add(solo >= 2 * used[f, c.id] - occ)
             model.Add(solo <= used[f, c.id])
             solos[f, c.id] = solo
+
+    # Pistas sin entrenador: dos jugadores como mucho y una vecina con
+    # entrenador (y dos como mucho) que la vigile. Vecinas son las de la misma
+    # sede con número contiguo; cada pista con entrenador vigila a una sola.
+    cub = {}
+    if data.entrenadores_reparto is not None:
+        por_sede = defaultdict(dict)
+        for c in courts:
+            if c.number is not None:
+                por_sede[c.venue_id][c.number] = c
+        for f in franjas:
+            for c in courts:
+                cub[f, c.id] = model.NewBoolVar(f"cub_{f}_{c.id}")
+                model.Add(cub[f, c.id] <= used[f, c.id])
+            model.Add(sum(cub[f, c.id] for c in courts)
+                      <= max(0, data.entrenadores_reparto.get(f, 0)))
+            vigila, vigilada = defaultdict(list), defaultdict(list)
+            for c in courts:
+                if c.number is None:
+                    continue
+                for n in (c.number - 1, c.number + 1):
+                    v = por_sede[c.venue_id].get(n)
+                    if v is None:
+                        continue
+                    # `v` (con entrenador) vigila a `c` (abierta y sin él).
+                    w = model.NewBoolVar(f"vig_{f}_{v.id}_{c.id}")
+                    model.Add(w <= cub[f, v.id])
+                    model.Add(w <= used[f, c.id] - cub[f, c.id])
+                    vigila[v.id].append(w)
+                    vigilada[c.id].append(w)
+            for c in courts:
+                occ = sum(en_pista[f, c.id])
+                extra = max(0, tope(c) - 2)
+                if extra:
+                    model.Add(occ <= 2 + extra * cub[f, c.id])
+                model.Add(used[f, c.id] - cub[f, c.id] <= sum(vigilada[c.id]))
+                if vigila[c.id]:
+                    model.Add(sum(vigila[c.id]) <= 1)
+                    if extra:
+                        model.Add(occ <= 2 + extra * (1 - sum(vigila[c.id])))
+            for pid in data.con_entrenador.get(f, ()):
+                for c in courts:
+                    if (pid, f, c.id) in x:
+                        model.Add(cub[f, c.id] >= x[pid, f, c.id])
 
     # Tantas pistas como entrenadores: por la tarde es un tope, por la mañana
     # una preferencia con su coste.
@@ -600,6 +663,7 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     status = solver.Solve(model)
 
     por_franja: dict = {f: {} for f in franjas}
+    cubiertas: dict = {f: set() for f in franjas}
     assigned: set[int] = set()
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         for f in franjas:
@@ -609,6 +673,8 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 if members:
                     por_franja[f][c.id] = members
                     assigned.update(members)
+                    if (f, c.id) in cub and solver.Value(cub[f, c.id]):
+                        cubiertas[f].add(c.id)
 
     unassigned = [p.id for p in players if p.id not in assigned]
     return PairingResult(
@@ -617,4 +683,5 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         status=solver.StatusName(status),
         objective=solver.ObjectiveValue() if status != cp_model.UNKNOWN else 0.0,
         franjas=por_franja if data.franjas else {},
+        cubiertas=cubiertas if cub else {},
     )

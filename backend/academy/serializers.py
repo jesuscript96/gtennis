@@ -66,7 +66,7 @@ class EntrenadorSerializer(serializers.ModelSerializer):
             "id", "nombre", "activo", "disponibilidad_notas", "disponible_semana",
             "foto_url", "gestiona_todos_jugadores", "turno_manana", "turno_tarde",
             "turnos_display", "reserva", "solo_manual", "division_desde",
-            "division_hasta",
+            "division_hasta", "tarde_solo_con",
         ]
 
     def get_turnos_display(self, obj):
