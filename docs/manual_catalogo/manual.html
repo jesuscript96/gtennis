@@ -61,7 +61,7 @@ quién y, más adelante, rellenará sola las faltas por torneo en el cuadrante. 
 <li><a href="#jugadores">Gestionar a tus jugadores</a></li>
 <li><a href="#porjugador">La temporada de cada jugador</a></li>
 <li><a href="#movil">En el móvil</a></li>
-<li><a href="#direccion">Solo dirección: fichas, grupos y vacaciones</a></li>
+<li><a href="#direccion">Solo dirección: fichas, bloques y vacaciones</a></li>
 <li><a href="#plan">Calendario de la revisión y lista final</a></li>
 <li><a href="#faq">Dudas frecuentes</a></li>
 </ol>
@@ -76,12 +76,21 @@ tienen esta sección. Cada head coach responde de su gran grupo; dirección arbi
 <tr><td>Poner quién acompaña</td><td>Sí</td><td>Sí</td></tr>
 <tr><td>Apuntar, mover o quitar jugadores</td><td>Solo los de su grupo</td><td>Todos</td></tr>
 <tr><td>Dar de alta a un jugador que no tiene ficha</td><td>No</td><td>Sí (Datos → Jugadores)</td></tr>
-<tr><td>Decidir a qué grupo pertenece un jugador</td><td>No</td><td>Sí (Datos → Grupos)</td></tr>
+<tr><td>Cambiar de grupo a un jugador</td><td>Los de su color (Datos → Grupos)</td><td>Todos, y mover columnas entre bloques</td></tr>
 <tr><td>Registrar vacaciones de entrenadores</td><td>Las de su equipo</td><td>Todas</td></tr>
 <tr><td>Validar torneos propuestos</td><td>No</td><td>Sí</td></tr>
 </table>
-<p>Se entra con el usuario de siempre en <b>gtennis.vercel.app</b> (también desde el móvil). En el menú de la
-izquierda hay una sección <b>Torneos</b> con tres entradas: Calendario de torneos, Torneos por jugador y Nuevo torneo.</p>
+<p>Los head coaches, cada uno con su grupo de color:</p>
+<table>
+<tr><th>Head coach</th><th>Grupo</th><th>Entrenadores del grupo</th></tr>
+<tr><td>Daniel Gimeno</td><td>Amarillo</td><td>Víctor Redondo, Javi Giménez, Blas Gallego, Emilio Sorio</td></tr>
+<tr><td>Pablo Gil</td><td>Turquesa</td><td>Pablo Gil, Mario Muniesa, Jorge Ibáñez, Salva Barcala</td></tr>
+<tr><td>Santi Panzarasa</td><td>Naranja</td><td>Patricio Rodríguez, Nacho Calvo</td></tr>
+<tr><td>Iván Gallego</td><td>Todos</td><td>Ve y gestiona a todos los jugadores</td></tr>
+</table>
+<p>Sergio Gallego entra como <b>dirección</b>. Se entra con el usuario de siempre en <b>gtennis.vercel.app</b>
+(también desde el móvil). En el menú de la izquierda hay una sección <b>Torneos</b> con tres entradas: Calendario de
+torneos, Torneos por jugador y Nuevo torneo.</p>
 
 <h2 id="calendario" class="pb">2. El calendario por semanas</h2>
 <p>Es la pantalla de trabajo. Cada torneo está en la <b>semana en que empieza</b>, y cada semana tiene su color en
@@ -152,8 +161,8 @@ queda guardado como «también escrito como», y si esta ficha no tenía cierre 
 </ul>
 
 <h2 id="jugadores" class="pb">8. Gestionar a tus jugadores</h2>
-<p>Cada head coach apunta, mueve y quita a los jugadores de su grupo. Si intentas tocar a uno de otro grupo, la app
-lo dice. Los nombres que no tienen ficha (están en gris con «sin ficha») los puede tocar cualquiera.</p>
+<p>Cada head coach apunta, mueve y quita a los jugadores de su grupo de color. Si intentas tocar a uno de otro grupo,
+la app lo dice. Los nombres que no tienen ficha (están en gris con «sin ficha») los puede tocar cualquiera.</p>
 <h3>Apuntar a un jugador</h3>
 <p>En la ficha del torneo, barra inferior: elegir al jugador en el desplegable (solo salen los que no están ya) y
 <kbd>Apuntar</kbd>. Si alguien no tiene ficha, escribir su nombre en la casilla de al lado. Nadie puede apuntarse dos veces al mismo torneo.</p>
@@ -169,6 +178,13 @@ Los destinos posibles se marcan con línea de puntos.</p>
 <li>Un jugador en <span class="pill nar">naranja</span> es <b>deducido</b> (el Excel ponía solo un nombre de pila ambiguo) o <b>pendiente</b> (iba con «?»). Si es correcto, <kbd>Confirmar</kbd>; si no, <kbd>Quitar</kbd> y apuntar al que sea.</li>
 </ul>
 
+<h3>Cambiar a un jugador de grupo</h3>
+<p>Qué jugadores son «tuyos» lo decide la pantalla Datos → <b>Grupos</b>. Allí cada head coach ve su bloque de color
+con las columnas de sus entrenadores y puede arrastrar a un alumno de una columna a otra (en el móvil: tocarlo y
+luego «Traer aquí»). Un alumno nuevo sin grupo también se coloca desde aquí. Mover columnas enteras entre bloques
+es cosa de dirección.</p>
+<figure><img src="img/c09-grupos-coach.png" alt="Grupos vistos por el head coach"><figcaption>Grupos visto por Dani: su bloque amarillo arriba, con sus cuatro entrenadores.</figcaption></figure>
+
 <h2 id="porjugador">9. La temporada de cada jugador</h2>
 <p>En Torneos → <b>Torneos por jugador</b>: una fila por jugador con cuántos torneos tiene, cuántos ya ha jugado, el
 siguiente y su próximo cierre de inscripción. Pulsando la fila se despliega toda la lista. Sirve para ver de un vistazo
@@ -180,8 +196,8 @@ si a alguien le falta o le sobra competición, y para comprobar que lo que se ha
 luego tocar la tarjeta del torneo de destino; el arrastre está pensado para ordenador.</p>
 <figure class="movil"><img src="img/c08-movil.png" alt="Calendario en el móvil"><figcaption>Semana con un jugador seleccionado para mover.</figcaption></figure>
 
-<h2 id="direccion">11. Solo dirección: fichas, grupos y vacaciones</h2>
-<p>Tres cosas que los head coaches no pueden hacer y que condicionan el catálogo.</p>
+<h2 id="direccion">11. Solo dirección: fichas, bloques y vacaciones</h2>
+<p>Lo que los head coaches no pueden hacer y condiciona el catálogo.</p>
 <h3>Dar de alta a los jugadores sin ficha</h3>
 <p>En Datos → <b>Jugadores</b> → <kbd>+ Nuevo</kbd>. Nombre, escuela, fecha de nacimiento, división y <b>entrenador responsable</b>.
 Un jugador sin responsable no aparece en el grupo de ningún head coach y nadie podrá apuntarlo desde el desplegable.</p>
@@ -190,11 +206,11 @@ Daniela Martínez, Diego Inostroza, Elene Churruca, Emma Ghibardato, Félix Gil,
 «Daniel» y «Elena» sin apellido, «David (¿Mas o Castillo?)» y cuatro columnas sin nombre de la hoja de Mario.
 Los que entrenan en el club deberían tener ficha; los demás pueden quedarse como nombre libre.</p>
 <figure><img src="img/a02-nuevo-jugador.png" alt="Alta de un jugador"><figcaption>Alta de ficha con el entrenador responsable.</figcaption></figure>
-<h3>Decidir el grupo de cada jugador</h3>
-<p>En Datos → <b>Grupos</b> está el organigrama: cada bloque es un head coach, dentro las columnas de sus entrenadores y
-bajo cada columna sus alumnos. Se arrastra un alumno a la columna de otro entrenador y pasa a ese grupo. Esto es lo que
+<h3>Bloques y entrenadores</h3>
+<p>En Datos → <b>Grupos</b> dirección ve todos los bloques. Además de mover alumnos entre columnas, como los head
+coaches, puede arrastrar una <b>columna entera</b> (un entrenador con sus alumnos) a otro bloque. Esto es lo que
 decide <b>qué head coach puede apuntar o mover a cada jugador</b> en los torneos.</p>
-<figure><img src="img/a03-grupos.png" alt="Grupos"><figcaption>El organigrama de grupos.</figcaption></figure>
+<figure><img src="img/a03-grupos.png" alt="Grupos"><figcaption>Grupos visto por dirección: se pueden mover columnas entre bloques.</figcaption></figure>
 <h3>Vacaciones de entrenadores</h3>
 <p>En Disponibilidad → <b>Vacaciones</b>. Cada periodo con su entrenador, fechas y motivo. El desplegable de «Acompaña»
 se fía de esto: un entrenador sin vacaciones registradas aparece siempre como disponible. Conviene meter también
@@ -228,7 +244,7 @@ los viajes a torneos ya cerrados.</p>
 <h2 id="faq">13. Dudas frecuentes</h2>
 <table>
 <tr><th>Qué pasa</th><th>Por qué y qué hacer</th></tr>
-<tr><td>«No es de tu grupo» al mover o quitar a un jugador</td><td>Lo gestiona otro head coach. Habla con él o pide a dirección que lo cambie en Grupos.</td></tr>
+<tr><td>«No es de tu grupo» al mover o quitar a un jugador</td><td>Lo gestiona otro head coach. Si debería ser tuyo, habla con él o con dirección para cambiarlo en Grupos.</td></tr>
 <tr><td>Un entrenador no sale en «Acompaña»</td><td>Tiene vacaciones registradas en esas fechas. Si es un error, corregirlo en Vacaciones.</td></tr>
 <tr><td>Un jugador no está en el desplegable para apuntarlo</td><td>Ya está apuntado a ese torneo, o no tiene ficha (dirección la crea), o está de baja.</td></tr>
 <tr><td>El torneo dura varias semanas y solo lo veo en una</td><td>Está en la semana en que empieza. Con el filtro de mes aparece en todos los meses que toca.</td></tr>

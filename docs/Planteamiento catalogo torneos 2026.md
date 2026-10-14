@@ -51,14 +51,16 @@ Se da por cerrado el catálogo 2026. A partir de ahí la rutina es:
 - Cierre de inscripción a menos de una semana → aviso.
 - Falta «En torneo» en el cuadrante → se elige el torneo del calendario y la falta se rellena sola.
 
-## Lo que ya está en la app para hacerlo (14 de octubre)
+## Lo que ya está en la app para hacerlo
 
 - Calendario por semanas, cada semana con su color, el torneo en la semana en que empieza.
 - «Acompaña» con desplegable filtrado por vacaciones y aviso de solape.
 - Jugadores completos en cada fila, arrastrables entre torneos (y tocar-para-mover en el móvil).
 - «+ añadir un torneo esta semana» con las fechas ya puestas.
 - «¿Está repetido?» en la ficha para fusionar duplicados.
-- Acceso solo para head coaches y dirección. Un head coach solo mueve jugadores de su grupo.
+- Acceso solo para head coaches y dirección. Un head coach solo mueve jugadores de su grupo de color, y puede cambiarlos de columna en Grupos.
+
+Todo esto está en producción desde el 14 de octubre, con los 765 torneos del Excel ya cargados.
 
 ## Lo que conviene añadir antes de la pasada 1, por orden
 
@@ -70,7 +72,7 @@ Se da por cerrado el catálogo 2026. A partir de ahí la rutina es:
 
 ## Decisiones que hay que tomar
 
-- **Quiénes son los head coaches con acceso.** Hoy tienen rol Coach en la app: Sergio Gallego, Daniel Gimeno, Iván Gallego, Pablo Gil y Santi Panzarasa. Álvaro Mantoan figura como coach pero su usuario es de entrenador. Confirmar la lista.
+- **Quiénes son los head coaches con acceso.** En producción (14 de octubre): Daniel Gimeno (grupo amarillo), Pablo Gil (turquesa) y Santi Panzarasa (naranja), cada uno con su grupo de color, e Iván Gallego sobre todos. Sergio Gallego entra como dirección. El bloque de Álvaro Mantoan no tiene usuario. Confirmar que es la lista buena.
 - **Circuito profesional.** Los torneos de Taberner, Elina y Brancaccio vienen del plan de Dani Gimeno y Víctor Redondo. ¿Los mantiene Dani en la app o se dejan fuera del catálogo? Si se dejan fuera, se ocultan con el filtro «mi grupo».
 - **Jugadores con dos head coaches** (cogestores). Los dos pueden moverlos. Vale con que hablen, pero conviene decirlo.
 - **Jugadores sin ficha** que sí entrenan en el club: darlos de alta como jugador para que el calendario y el cuadrante hablen de la misma persona.
