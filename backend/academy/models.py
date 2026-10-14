@@ -1016,10 +1016,11 @@ class Invitado(models.Model):
     # deportiva y todo lo que mira el motor, y solo entre estas fechas.
     fecha_desde = models.DateField(null=True, blank=True, verbose_name="Viene desde")
     fecha_hasta = models.DateField(null=True, blank=True, verbose_name="hasta")
-    # Los días que viene: {"0": {"manana": "M1", "tarde": ""}, …} con el día
-    # de la semana (lunes = 0). Por bloque: el código de la franja, "" = la
-    # que mejor encaje, y sin clave (o null) = ese bloque no viene.
-    dias = models.JSONField(default=dict, blank=True)
+    # Los días que viene, elegidos en un calendario: {"2026-10-14": {"manana":
+    # "M2", "tarde": ""}, …}. Por bloque: el código de la franja, "" = la que
+    # mejor encaje, y sin clave = ese bloque no viene. `fecha_desde` y
+    # `fecha_hasta` son la primera y la última.
+    fechas = models.JSONField(default=dict, blank=True)
     sexo = models.CharField(max_length=5, choices=Jugador.Sexo.choices, blank=True)
     vecindad = models.CharField(
         max_length=6, choices=Jugador.Vecindad.choices, default=Jugador.Vecindad.CLUB)

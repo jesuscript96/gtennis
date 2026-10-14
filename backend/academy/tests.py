@@ -2,14 +2,15 @@
 
 Run: python manage.py test academy
 """
-from datetime import date, time
+from datetime import date, time, timedelta
 from io import StringIO
 
 from django.core.management import call_command
+from django.db.models import Q
 from django.test import SimpleTestCase, TestCase
 
 from academy.models import (
-    Coach, Entrenador, HorarioJugador, Jugador, Pista, ResponsableJugador, Sede, Turno,
+    Coach, Entrenador, HorarioJugador, Invitado, Jugador, Pista, ResponsableJugador, Sede, Turno,
     VacacionesEntrenador,
 )
 from academy.pesos import errores, reparto_por_defecto
@@ -1240,8 +1241,8 @@ class InvitadoComoJugadorTests(TestCase):
     def _proponer(self, **extra):
         datos = {
             "nombre": "Llorca", "division": self.d3.id, "edad": 15, "sexo": "CHICO",
-            "fecha_desde": "2026-10-19", "fecha_hasta": "2026-10-23",
-            "dias": {"0": {"manana": "M1", "tarde": ""}, "2": {"manana": ""}},
+            "fechas": {"2026-10-19": {"manana": "M1", "tarde": ""},
+                       "2026-10-21": {"manana": "", "tarde": "T1"}},
             "vecindad": "ARRIBA", "superficie_pref": "TIERRA",
             "jugar_con": self.amigo.id, "pareja_estricta": False,
             "no_coincidir_con": [self.enemigo.id],
@@ -1251,7 +1252,7 @@ class InvitadoComoJugadorTests(TestCase):
         return self.ent.post("/api/invitados/", datos, format="json")
 
     def test_sin_fechas_no_se_puede_proponer(self):
-        r = self._proponer(fecha_desde=None, fecha_hasta=None)
+        r = self._proponer(fechas={})
         self.assertEqual(r.status_code, 400)
 
     def test_al_aprobar_sale_un_jugador_con_todo(self):
@@ -1267,14 +1268,15 @@ class InvitadoComoJugadorTests(TestCase):
         j = Jugador.objects.get(pk=r.json()["jugador_creado"])
         self.assertEqual((j.division, j.edad, j.sexo, j.vecindad, j.entrenador_responsable),
                          (self.d3, 15, "CHICO", "ARRIBA", self.ivan))
-        self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-10-23"))
+        self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-10-21"))
         self.assertFalse(j.en_alta(date(2026, 10, 26)))
-        horario = {h.dia: h for h in HorarioJugador.objects.filter(jugador=j)}
-        self.assertEqual(len(horario), 6)
-        self.assertEqual((horario[0].turno_manana.codigo, horario[0].entrena_tarde,
-                          horario[0].turno_tarde), ("M1", True, None))
-        self.assertEqual((horario[2].entrena_manana, horario[2].entrena_tarde), (True, False))
-        self.assertFalse(horario[1].entrena_manana or horario[1].entrena_tarde)
+        # La semana habitual, vacía: los días los da el calendario. El
+        # miércoles por la tarde está cerrado y se descarta.
+        self.assertFalse(HorarioJugador.objects.filter(jugador=j).filter(
+            Q(entrena_manana=True) | Q(entrena_tarde=True)).exists())
+        self.assertEqual(Invitado.objects.get(jugador_creado=j).fechas,
+                         {"2026-10-19": {"manana": "M1", "tarde": ""},
+                          "2026-10-21": {"manana": ""}})
         self.assertTrue(PreferenciaSuperficie.objects.filter(jugador=j, superficie="TIERRA").exists())
         self.assertEqual(PreferenciaPareja.objects.get(jugador=j).tipo, "SOFT")
         self.assertTrue(Rencilla.objects.filter(jugador_a__in=[j, self.enemigo],
@@ -1295,12 +1297,46 @@ class InvitadoComoJugadorTests(TestCase):
 
         primera = self._proponer().json()
         j1 = self.dir.post(f"/api/invitados/{primera['id']}/aprobar/").json()["jugador_creado"]
-        r = self._proponer(fecha_desde="2026-11-16", fecha_hasta="2026-11-20",
+        r = self._proponer(fechas={"2026-11-16": {"manana": ""}},
                            repite_de=primera["id"], jugar_con=None)
         self.assertEqual(r.status_code, 201, r.content)
         j2 = self.dir.post(f"/api/invitados/{r.json()['id']}/aprobar/").json()["jugador_creado"]
         self.assertEqual(j1, j2)
         j = Jugador.objects.get(pk=j2)
-        self.assertEqual(str(j.fecha_alta), "2026-11-16")
+        # De alta del primer día de octubre al de noviembre.
+        self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-11-16"))
         self.assertEqual(j.horario.count(), 6)
         self.assertFalse(PreferenciaPareja.objects.filter(jugador=j).exists())
+
+
+class InvitadoEnElMotorTests(TestCase):
+    """El invitado entra en el cuadrante el día que se marcó en el calendario,
+    y en ningún otro."""
+
+    def test_viene_solo_el_dia_marcado(self):
+        from academy.models import Division, Invitado
+
+        Jugador.objects.update(activo=False)
+        Entrenador.objects.update(activo=False)
+        Pista.objects.update(activa=False)
+        sede = Sede.objects.create(nombre="Prueba invitado")
+        Pista.objects.create(sede=sede, numero=1, superficie="TIERRA")
+        ent = Entrenador.objects.create(nombre="Uno")
+        d5, _ = Division.objects.get_or_create(nivel=5)
+        m1 = Turno.objects.get(codigo="M1")
+        local = Jugador.objects.create(nombre="Local", activo=True, division=d5)
+        for d in range(5):
+            HorarioJugador.objects.create(jugador=local, dia=d, entrena_manana=True,
+                                          entrena_tarde=False, turno_manana=m1)
+        kira = Jugador.objects.create(nombre="Kira (invitado)", activo=True, division=d5,
+                                      fecha_alta=LUNES, fecha_baja=LUNES + timedelta(days=2))
+        for d in range(6):
+            HorarioJugador.objects.create(jugador=kira, dia=d, entrena_manana=False,
+                                          entrena_tarde=False)
+        Invitado.objects.create(
+            nombre="Kira", entrenador_solicitante=ent, estado="APROBADO",
+            jugador_creado=kira, fechas={(LUNES + timedelta(days=2)).isoformat(): {"manana": "M1"}})
+        semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        generate(semana, dias=[0, 1, 2], bloques=["MANANA"])
+        dias = set(Asignacion.objects.filter(semana=semana, jugador=kira).values_list("dia", flat=True))
+        self.assertEqual(dias, {2})

@@ -795,14 +795,22 @@ def _jugador_de_invitado(inv, escuela_default):
         vecindad=inv.vecindad or Jugador.Vecindad.CLUB,
         pareja_division=inv.pareja_division or None,
         sin_prioridad=inv.sin_prioridad,
-        fecha_alta=inv.fecha_desde,
-        fecha_baja=inv.fecha_hasta,
         notas=(f"Invitado de {solicitante.nombre}"
                + (f": {inv.nota}" if inv.nota else ""))[:200],
         **({"sesiones_dia_max": inv.sesiones_dia_max}
            if inv.sesiones_dia_max else {}),
     )
     jugador = _jugador_previo(inv)
+    # De alta desde el primer día que vino hasta el último que viene, contando
+    # las veces anteriores; qué días en concreto lo mira el motor en
+    # `Invitado.fechas` (ver engine.service._dias_de_invitados).
+    dias = set(inv.fechas or {})
+    if jugador is not None:
+        for previa in jugador.invitaciones.filter(estado=Invitado.Estado.APROBADO):
+            dias |= set(previa.fechas or {})
+    from datetime import date as _date
+    campos["fecha_alta"] = _date.fromisoformat(min(dias)) if dias else None
+    campos["fecha_baja"] = _date.fromisoformat(max(dias)) if dias else None
     if jugador is None:
         jugador = Jugador.objects.create(nombre=f"{inv.nombre} (invitado)", **campos)
     else:
@@ -818,19 +826,11 @@ def _jugador_de_invitado(inv, escuela_default):
         Contrato.objects.filter(jugador=jugador).delete()
         VetoEntrenador.objects.filter(jugador=jugador).delete()
     pesos.guardar(jugador, pesos.propuesta(solicitante))
-    # La semana que viene: una fila por día de lunes a sábado. Los días que
-    # no se marcan, no viene (sin fila el motor le daría por venir).
-    turnos = {t.codigo: t for t in Turno.objects.filter(codigo__in=["M1", "M2", "T1", "T2"])}
+    # Semana habitual vacía: no viene ningún día salvo los de sus fechas, que
+    # el motor mira aparte. Sin filas, el motor le daría por venir todos.
     for dia in range(6):
-        fila = (inv.dias or {}).get(str(dia)) or {}
-        manana, tarde = fila.get("manana"), fila.get("tarde")
         HorarioJugador.objects.create(
-            jugador=jugador, dia=dia,
-            entrena_manana=manana is not None,
-            entrena_tarde=tarde is not None,
-            turno_manana=turnos.get(manana) if manana else None,
-            turno_tarde=turnos.get(tarde) if tarde else None,
-        )
+            jugador=jugador, dia=dia, entrena_manana=False, entrena_tarde=False)
     if inv.superficie_pref:
         PreferenciaSuperficie.objects.create(
             jugador=jugador, superficie=inv.superficie_pref,
@@ -921,9 +921,9 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         inv = self.get_object()
         if inv.estado != Invitado.Estado.PENDIENTE:
             return Response({"error": "El invitado ya está resuelto."}, status=409)
-        if not (inv.fecha_desde and inv.fecha_hasta and inv.dias):
+        if not inv.fechas:
             raise ValidationError(
-                "Antes de aprobarlo, indica las fechas y los días que viene.")
+                "Antes de aprobarlo, marca en el calendario los días que viene.")
         # Asociación por entrenador solicitante (#5 feedback Sergio): el grupo
         # del invitado se entiende por el entrenador que lo propone, no por un
         # 'grupo_anfitrión'. Derivamos escuela y responsable de ahí.

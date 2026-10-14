@@ -18,9 +18,12 @@ import {
  */
 
 const ESTADO_CLASS = { PENDIENTE: "pend", APROBADO: "ok", RECHAZADO: "no" };
-const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-// El club no abre el miércoles ni el sábado por la tarde.
+const SEMANA = ["L", "M", "X", "J", "V", "S", "D"];
+// El club no abre el miércoles ni el sábado por la tarde (lunes = 0).
 const TARDE_CERRADA = new Set([2, 5]);
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const deIso = (s) => new Date(`${s}T12:00`);
+const diaSemana = (d) => (d.getDay() + 6) % 7; // lunes = 0
 const VECINDAD = [
   ["CLUB", "La del club (la horquilla general)"],
   ["SOLO", "Solo su división"],
@@ -35,7 +38,7 @@ const PAREJA = [
 ];
 const VACIO = {
   nombre: "", entrenador_solicitante: "", nota: "", edad: "", sexo: "",
-  fecha_desde: "", fecha_hasta: "", dias: {},
+  fechas: {},
   division: "", vecindad: "CLUB", pareja_division: "", escuela: "",
   sin_prioridad: false, sesiones_dia_max: "",
   superficie_pref: "", superficie_estricta: true,
@@ -46,12 +49,12 @@ const VACIO = {
 const fecha = (f) => (f ? new Date(`${f}T12:00`).toLocaleDateString("es-ES",
   { day: "numeric", month: "short" }) : "—");
 
-function resumenDias(dias) {
-  const partes = Object.entries(dias || {}).sort().map(([d, b]) => {
+function resumenDias(fechas) {
+  const partes = Object.entries(fechas || {}).sort().map(([f, b]) => {
     const bloques = [];
     if (b.manana != null) bloques.push(b.manana || "mañana");
     if (b.tarde != null) bloques.push(b.tarde || "tarde");
-    return `${DIAS[d].slice(0, 3)} ${bloques.join("+")}`;
+    return `${fecha(f)} ${bloques.join("+")}`;
   });
   return partes.join(" · ") || "—";
 }
@@ -148,7 +151,7 @@ export default function InvitadosPage() {
                 onGuardar={async (datos) => { await editarInvitado(i.id, datos); setEditando(null); await load(); }}
                 onRepetir={() => {
                   setBase({
-                    ...aFormulario(i), fecha_desde: "", fecha_hasta: "",
+                    ...aFormulario(i), fechas: {},
                     entrenador_solicitante: i.entrenador_solicitante ?? "", repite_de: i.id,
                   });
                   setEditando("nuevo");
@@ -171,13 +174,13 @@ function aFormulario(i) {
     edad: i.edad ?? "", division: i.division ?? "", escuela: i.escuela ?? "",
     sesiones_dia_max: i.sesiones_dia_max ?? "", jugar_con: i.jugar_con ?? "",
     entrena_con: i.entrena_con ?? "", pareja_division: i.pareja_division ?? "",
-    fecha_desde: i.fecha_desde ?? "", fecha_hasta: i.fecha_hasta ?? "",
+    fechas: i.fechas || {},
   };
 }
 
 function FilaInvitado({ i, cat, esAdmin, divNombre, abierto, onEditar, onGuardar, onRepetir, onAprobar, onRechazar }) {
   const pendiente = i.estado === "PENDIENTE";
-  const incompleto = !i.fecha_desde || !i.fecha_hasta || !Object.keys(i.dias || {}).length;
+  const incompleto = !Object.keys(i.fechas || {}).length;
   return (
     <>
       <tr>
@@ -189,8 +192,10 @@ function FilaInvitado({ i, cat, esAdmin, divNombre, abierto, onEditar, onGuardar
           </div>
         </td>
         <td>{i.entrenador_nombre || "—"}</td>
-        <td>{i.fecha_desde ? `${fecha(i.fecha_desde)} – ${fecha(i.fecha_hasta)}` : <span className="marca-baja">Sin fechas</span>}</td>
-        <td className="dias-inv">{resumenDias(i.dias)}</td>
+        <td>{!i.fecha_desde ? <span className="marca-baja">Sin días</span>
+          : i.fecha_desde === i.fecha_hasta ? fecha(i.fecha_desde)
+          : `${fecha(i.fecha_desde)} – ${fecha(i.fecha_hasta)}`}</td>
+        <td className="dias-inv">{resumenDias(i.fechas)}</td>
         <td><span className={`pill ${ESTADO_CLASS[i.estado]}`}>{i.estado_display}</span></td>
         <td>
           <div className="row-actions">
@@ -233,18 +238,9 @@ function FormInvitado({ cat, esAdmin, inicial, existente, onCancelar, onGuardar 
     .filter((t) => (bloque === "manana" ? ["M1", "M2"] : ["T1", "T2"]).includes(t.codigo))
     .sort((a, b) => a.codigo.localeCompare(b.codigo));
 
-  const setDia = (dia, bloque, valor) => setF((x) => {
-    const dias = { ...x.dias };
-    const fila = { ...(dias[dia] || {}) };
-    if (valor === "no") delete fila[bloque]; else fila[bloque] = valor;
-    if (Object.keys(fila).length) dias[dia] = fila; else delete dias[dia];
-    return { ...x, dias };
-  });
-  const semanaEntera = () => setF((x) => {
-    const dias = {};
-    for (let d = 0; d < 5; d++) dias[d] = TARDE_CERRADA.has(d) ? { manana: "" } : { manana: "", tarde: "" };
-    return { ...x, dias };
-  });
+  // Recibe una función sobre las fechas de ese momento: dos toques seguidos
+  // no se pisan.
+  const setFechas = (cambio) => setF((x) => ({ ...x, fechas: cambio(x.fechas) }));
 
   const num = (v) => (v === "" || v == null ? null : Number(v));
   async function enviar(e) {
@@ -256,7 +252,7 @@ function FormInvitado({ cat, esAdmin, inicial, existente, onCancelar, onGuardar 
         ...(esAdmin && !existente && f.entrenador_solicitante
           ? { entrenador_solicitante: Number(f.entrenador_solicitante) } : {}),
         nota: f.nota, edad: num(f.edad), sexo: f.sexo,
-        fecha_desde: f.fecha_desde || null, fecha_hasta: f.fecha_hasta || null, dias: f.dias,
+        fechas: f.fechas,
         division: num(f.division), vecindad: f.vecindad, pareja_division: f.pareja_division,
         escuela: num(f.escuela), sin_prioridad: f.sin_prioridad,
         sesiones_dia_max: num(f.sesiones_dia_max),
@@ -310,44 +306,7 @@ function FormInvitado({ cat, esAdmin, inicial, existente, onCancelar, onGuardar 
 
       <fieldset>
         <legend>Cuándo viene</legend>
-        <div className="fila-form">
-          <label>Desde<input type="date" required value={f.fecha_desde} onChange={set("fecha_desde")} /></label>
-          <label>Hasta<input type="date" required min={f.fecha_desde || undefined}
-            value={f.fecha_hasta} onChange={set("fecha_hasta")} /></label>
-          <button type="button" className="btn ghost sm" onClick={semanaEntera}>
-            De lunes a viernes, mañana y tarde
-          </button>
-        </div>
-        <table className="data dias-invitado">
-          <thead><tr><th>Día</th><th>Mañana</th><th>Tarde</th></tr></thead>
-          <tbody>
-            {DIAS.map((nombre, d) => (
-              <tr key={d}>
-                <td>{nombre}</td>
-                {["manana", "tarde"].map((bloque) => {
-                  const cerrado = bloque === "tarde" && TARDE_CERRADA.has(d);
-                  const valor = f.dias[d]?.[bloque];
-                  return (
-                    <td key={bloque}>
-                      {cerrado ? <span className="msg">Cerrado</span> : (
-                        <select value={valor == null ? "no" : valor}
-                          onChange={(e) => setDia(d, bloque, e.target.value)}>
-                          <option value="no">No viene</option>
-                          <option value="">Viene · la franja que encaje</option>
-                          {franjas(bloque).map((t) => (
-                            <option key={t.codigo} value={t.codigo}>
-                              {t.codigo} · {String(t.hora_inicio || "").slice(0, 5)}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Calendario fechas={f.fechas} onChange={setFechas} franjas={franjas} />
       </fieldset>
 
       <fieldset>
@@ -467,6 +426,125 @@ function Multiple({ titulo, opciones, valor, onChange }) {
             <option key={o.id} value={o.id}>{o.nombre}</option>
           ))}
         </select>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Los días que viene, en un calendario: se tocan los días y, debajo, cada uno
+ * con su mañana y su tarde (de entrada, las dos y la franja que encaje). El
+ * domingo no se entrena y el miércoles y el sábado por la tarde, tampoco.
+ */
+function Calendario({ fechas, onChange, franjas }) {
+  const primera = Object.keys(fechas).sort()[0];
+  const [mes, setMes] = useState(() => {
+    const d = primera ? deIso(primera) : new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const hoy = iso(new Date());
+
+  const celdas = [];
+  for (let i = 0; i < diaSemana(mes); i++) celdas.push(null);
+  const fin = new Date(mes.getFullYear(), mes.getMonth() + 1, 0).getDate();
+  for (let d = 1; d <= fin; d++) celdas.push(new Date(mes.getFullYear(), mes.getMonth(), d));
+
+  const alternar = (d) => onChange((actuales) => {
+    const clave = iso(d);
+    const nuevas = { ...actuales };
+    if (nuevas[clave]) delete nuevas[clave];
+    else nuevas[clave] = TARDE_CERRADA.has(diaSemana(d)) ? { manana: "" } : { manana: "", tarde: "" };
+    return nuevas;
+  });
+  const setBloque = (clave, bloque, valor) => onChange((actuales) => {
+    const fila = { ...actuales[clave] };
+    if (valor === "no") delete fila[bloque]; else fila[bloque] = valor;
+    const nuevas = { ...actuales };
+    if (Object.keys(fila).length) nuevas[clave] = fila; else delete nuevas[clave];
+    return nuevas;
+  });
+  // Lo mismo para todos los días marcados (donde se pueda).
+  const paraTodos = (bloque, valor) => onChange((actuales) => {
+    const nuevas = {};
+    for (const [clave, fila] of Object.entries(actuales)) {
+      const f2 = { ...fila };
+      const cerrado = bloque === "tarde" && TARDE_CERRADA.has(diaSemana(deIso(clave)));
+      if (valor === "no" || cerrado) delete f2[bloque]; else f2[bloque] = valor;
+      if (Object.keys(f2).length) nuevas[clave] = f2;
+    }
+    return nuevas;
+  });
+  const selector = (bloque, valor, onSel, conVacio = false) => (
+    <select value={valor} onChange={(e) => onSel(e.target.value)}>
+      {conVacio && <option value="-">—</option>}
+      <option value="no">No viene</option>
+      <option value="">Sí · la que encaje</option>
+      {franjas(bloque).map((t) => (
+        <option key={t.codigo} value={t.codigo}>
+          {t.codigo} · {String(t.hora_inicio || "").slice(0, 5)}
+        </option>
+      ))}
+    </select>
+  );
+  const elegidas = Object.keys(fechas).sort();
+
+  return (
+    <div className="calendario-inv">
+      <div className="cal-mes">
+        <div className="cal-nav">
+          <button type="button" className="btn ghost sm"
+            onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() - 1, 1))}>‹</button>
+          <b>{mes.toLocaleDateString("es-ES", { month: "long", year: "numeric" })}</b>
+          <button type="button" className="btn ghost sm"
+            onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() + 1, 1))}>›</button>
+        </div>
+        <div className="cal-rejilla">
+          {SEMANA.map((x) => <span key={x} className="cal-cab">{x}</span>)}
+          {celdas.map((d, i) => {
+            if (!d) return <span key={`v${i}`} />;
+            const clave = iso(d);
+            const domingo = diaSemana(d) === 6;
+            return (
+              <button type="button" key={clave} disabled={domingo}
+                className={["cal-dia", fechas[clave] ? "on" : "", clave === hoy ? "hoy" : "",
+                  clave < hoy ? "pasado" : ""].filter(Boolean).join(" ")}
+                onClick={() => alternar(d)}>{d.getDate()}</button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="cal-elegidas">
+        {elegidas.length === 0 ? (
+          <p className="hint">Toca en el calendario los días que viene.</p>
+        ) : (
+          <table className="data dias-invitado">
+            <thead><tr><th>Día</th><th>Mañana</th><th>Tarde</th><th /></tr></thead>
+            <tbody>
+              {elegidas.length > 1 && (
+                <tr className="para-todos">
+                  <td>Todos</td>
+                  <td>{selector("manana", "-", (v) => v !== "-" && paraTodos("manana", v), true)}</td>
+                  <td>{selector("tarde", "-", (v) => v !== "-" && paraTodos("tarde", v), true)}</td>
+                  <td />
+                </tr>
+              )}
+              {elegidas.map((clave) => {
+                const d = deIso(clave);
+                const fila = fechas[clave];
+                return (
+                  <tr key={clave}>
+                    <td>{d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" })}</td>
+                    <td>{selector("manana", fila.manana ?? "no", (v) => setBloque(clave, "manana", v))}</td>
+                    <td>{TARDE_CERRADA.has(diaSemana(d)) ? <span className="msg">Cerrado</span>
+                      : selector("tarde", fila.tarde ?? "no", (v) => setBloque(clave, "tarde", v))}</td>
+                    <td><button type="button" className="btn ghost sm" title="Quitar este día"
+                      onClick={() => alternar(d)}>✕</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

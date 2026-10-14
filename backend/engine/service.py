@@ -873,6 +873,37 @@ def _emparejar_entrenadores(
     return asignado, repetidos
 
 
+def _dias_de_invitados():
+    """{jugador: {"2026-10-14": {"manana": "M2", …}}} de las invitaciones
+    aprobadas: los días concretos que viene cada invitado (14/10/2026). Si ha
+    venido varias veces, todas cuentan."""
+    from academy.models import Invitado
+
+    dias = defaultdict(dict)
+    for jid, fechas in Invitado.objects.filter(
+        estado=Invitado.Estado.APROBADO, jugador_creado__isnull=False,
+    ).values_list("jugador_creado_id", "fechas"):
+        dias[jid].update(fechas or {})
+    return dias
+
+
+def _horario_del_dia(horario, invitados, fecha, dia, turno_por_codigo):
+    """El horario de la semana con los invitados de ese día: el invitado viene
+    en los bloques que se marcaron para esa fecha y ningún otro día."""
+    if not invitados:
+        return horario
+    hoy = dict(horario)
+    for jid, fechas in invitados.items():
+        fila = fechas.get(fecha.isoformat()) or {}
+        man, tar = fila.get("manana"), fila.get("tarde")
+        hoy[(jid, dia)] = (
+            turno_por_codigo.get(man) if man else None,
+            turno_por_codigo.get(tar) if tar else None,
+            man is not None, tar is not None,
+        )
+    return hoy
+
+
 def _con_la_de_menos(entrenador_de, pistas, vigilancia, courts_by_id, atados,
                      vetos, solo_atado):
     """El entrenador que cuida dos pistas —la suya y la que vigila al lado—
@@ -1050,6 +1081,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                                 h.entrena_manana, h.entrena_tarde)
         for h in HorarioJugador.objects.all()
     }
+    invitados = _dias_de_invitados()
+    turno_por_codigo = dict(Turno.objects.values_list("codigo", "id"))
     # Jornada semanal de cada entrenador: (entrenador, día) -> (mañana, tarde).
     from academy.models import HorarioEntrenador
 
@@ -1072,6 +1105,9 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
         ocupacion_coach: dict[int, list] = defaultdict(list)
         overrides = _overrides(semana, dia)
         recent = _recent_partners(semana, dia)
+        horario_hoy = _horario_del_dia(
+            horario, invitados, semana.fecha_inicio + timedelta(days=dia), dia,
+            turno_por_codigo)
         # Tope duro de días juntos a la semana (3 en el club): la pareja que ya
         # lo ha alcanzado no comparte pista hoy, tampoco si está declarada. Se
         # trata como una rencilla solo para este día.
@@ -1180,7 +1216,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             es_tarde = bloque == Turno.Bloque.TARDE
             players, franjas_de, max_franjas = _candidatos_bloque(
                 semana, dia, grupo, sponsors, escuela_cfg, surface_prefs,
-                turnos_exclusivos, cfg, sesiones_hoy, sesiones_bloque, horario,
+                turnos_exclusivos, cfg, sesiones_hoy, sesiones_bloque, horario_hoy,
                 banquillo, overrides,
             )
             fuera_del_motor = fijos | quitados

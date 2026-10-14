@@ -339,49 +339,56 @@ class InvitadoSerializer(serializers.ModelSerializer):
             "aprobado_por", "jugador_creado", "nota",
             "division", "edad", "superficie_pref",
             "jugar_con", "jugar_con_nombre", "pareja_estricta", "created_at",
-            "fecha_desde", "fecha_hasta", "dias", "sexo", "vecindad",
+            "fecha_desde", "fecha_hasta", "fechas", "sexo", "vecindad",
             "pareja_division", "sin_prioridad", "sesiones_dia_max",
             "superficie_estricta", "escuela", "no_coincidir_con",
             "entrena_con", "entrena_con_estricto", "no_entrena_con",
             "repite_de",
         ]
-        read_only_fields = ["estado", "aprobado_por", "jugador_creado", "created_at"]
+        read_only_fields = ["estado", "aprobado_por", "jugador_creado", "created_at",
+                            "fecha_desde", "fecha_hasta"]
         extra_kwargs = {"entrenador_solicitante": {"required": False}}
 
     BLOQUES = {"manana": ("M1", "M2"), "tarde": ("T1", "T2")}
 
-    def validate_dias(self, dias):
-        """{"0": {"manana": "M1"|""|None, "tarde": …}}: día de la semana (lunes
-        = 0, sábado = 5) y, por bloque, la franja ("" = la que encaje)."""
-        if not isinstance(dias, dict):
-            raise serializers.ValidationError("Formato de días no válido.")
+    def validate_fechas(self, fechas):
+        """{"2026-10-14": {"manana": "M2"|"", "tarde": …}}: los días que viene,
+        y por bloque la franja ("" = la que encaje). El domingo no hay
+        entrenamiento, y el miércoles y el sábado por la tarde tampoco."""
+        from datetime import date
+
+        if not isinstance(fechas, dict):
+            raise serializers.ValidationError("Formato de fechas no válido.")
         limpio = {}
-        for dia, bloques in dias.items():
-            if str(dia) not in {"0", "1", "2", "3", "4", "5"} or not isinstance(bloques, dict):
-                raise serializers.ValidationError("Formato de días no válido.")
+        for clave, bloques in fechas.items():
+            try:
+                dia = date.fromisoformat(str(clave))
+            except ValueError:
+                raise serializers.ValidationError(f"Fecha no válida: {clave}.")
+            if not isinstance(bloques, dict) or dia.weekday() == 6:
+                continue
             fila = {}
             for bloque, franjas in self.BLOQUES.items():
                 valor = bloques.get(bloque)
                 if valor is None:
                     continue
+                if bloque == "tarde" and dia.weekday() in (2, 5):
+                    continue
                 if valor not in ("",) + franjas:
                     raise serializers.ValidationError(f"Franja no válida: {valor}.")
                 fila[bloque] = valor
             if fila:
-                limpio[str(dia)] = fila
-        return limpio
+                limpio[dia.isoformat()] = fila
+        return dict(sorted(limpio.items()))
 
     def validate(self, attrs):
-        desde = attrs.get("fecha_desde", getattr(self.instance, "fecha_desde", None))
-        hasta = attrs.get("fecha_hasta", getattr(self.instance, "fecha_hasta", None))
-        dias = attrs.get("dias", getattr(self.instance, "dias", None) or {})
-        if self.instance is None:
-            if not desde or not hasta:
-                raise serializers.ValidationError("Indica las fechas en las que viene.")
-            if not dias:
-                raise serializers.ValidationError("Marca al menos un día que viene.")
-        if desde and hasta and hasta < desde:
-            raise serializers.ValidationError("La fecha de fin es anterior a la de inicio.")
+        fechas = attrs.get("fechas", getattr(self.instance, "fechas", None) or {})
+        if self.instance is None and not fechas:
+            raise serializers.ValidationError(
+                "Marca en el calendario los días que viene.")
+        if "fechas" in attrs:
+            attrs["fecha_desde"] = min(fechas) if fechas else None
+            attrs["fecha_hasta"] = max(fechas) if fechas else None
         return attrs
 
 

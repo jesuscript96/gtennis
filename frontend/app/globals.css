@@ -1303,3 +1303,24 @@ ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6
 .invitados .sub-inv { font-size: .75rem; color: var(--muted); }
 .invitados td.dias-inv { font-size: .78rem; color: var(--muted); max-width: 18rem; }
 .invitados tr.fila-form-inv > td { background: var(--surface-2); }
+.calendario-inv { display: flex; gap: 1.2rem; flex-wrap: wrap; align-items: flex-start; margin: .4rem 0; }
+.cal-mes { flex: 0 0 auto; width: 16.5rem; }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: .35rem; }
+.cal-nav b { font-size: .88rem; white-space: nowrap; }
+.cal-nav b::first-letter { text-transform: uppercase; }
+.cal-rejilla { display: grid; grid-template-columns: repeat(7, 1fr); gap: .2rem; }
+.cal-cab { font-size: .68rem; color: var(--muted); text-align: center; font-weight: 600; }
+.cal-dia {
+  aspect-ratio: 1; border: 1px solid var(--border); background: var(--surface);
+  border-radius: 7px; font: inherit; font-size: .8rem; cursor: pointer; color: var(--text);
+}
+.cal-dia:hover:not(:disabled) { border-color: var(--accent); }
+.cal-dia.pasado { color: var(--muted); }
+.cal-dia.hoy { border-color: var(--border-strong); font-weight: 700; }
+.cal-dia.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cal-dia:disabled { opacity: .35; cursor: default; }
+.cal-elegidas { flex: 1 1 24rem; min-width: 0; }
+.cal-elegidas select { min-width: 9rem; }
+.cal-elegidas td:first-child { white-space: nowrap; }
+.form-invitado label.inv-check span { white-space: nowrap; }
+.cal-elegidas tr.para-todos td { background: var(--surface-2); font-size: .78rem; }
