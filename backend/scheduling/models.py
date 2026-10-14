@@ -346,6 +346,11 @@ class Asignacion(models.Model):
     )
     # True if a Super Admin overrode the engine for this cell.
     manual = models.BooleanField(default=False)
+    # Puesto por el motor en un hueco que quedaba, saltándose reglas base
+    # (división, chico/chica, edad) para que nadie se quede sin entrenar
+    # (14/10/2026). `motivo_forzado` dice cuáles.
+    forzada = models.BooleanField(default=False)
+    motivo_forzado = models.CharField(max_length=200, blank=True)
 
     class Meta:
         verbose_name = "Asignación"
@@ -355,6 +360,28 @@ class Asignacion(models.Model):
 
     def __str__(self):
         return f"D{self.dia} {self.turno.codigo} {self.pista}: {self.jugador}"
+
+    def save(self, *args, **kwargs):
+        # Si alguien la mueve a mano, ya no es cosa del motor.
+        if self.manual:
+            self.forzada, self.motivo_forzado = False, ""
+        super().save(*args, **kwargs)
+
+
+class AvisoBanquillo(models.Model):
+    """Por qué se ha quedado alguien sin pista en un bloque, cuando había
+    hueco y no se le pudo meter por una regla suya (rencilla, superficie,
+    veto de entrenador). Se rehace con cada generación del bloque."""
+
+    semana = models.ForeignKey(Semana, on_delete=models.CASCADE, related_name="+")
+    dia = models.PositiveSmallIntegerField(choices=DIAS)
+    bloque = models.CharField(max_length=10)
+    jugador = models.ForeignKey(Jugador, on_delete=models.CASCADE, related_name="+")
+    motivo = models.CharField(max_length=200)
+
+    class Meta:
+        verbose_name = "Aviso de banquillo"
+        verbose_name_plural = "Avisos de banquillo"
 
 
 class ConfiguracionMotor(models.Model):

@@ -48,7 +48,7 @@ function buildSessions(asignaciones) {
     s.players.push({
       id: a.jugador, asignacion: a.id, nombre: a.jugador_nombre,
       foto: a.jugador_foto, division: a.division_nivel, estado: a.estado,
-      falta: a.falta,
+      falta: a.falta, forzada: a.forzada, motivo_forzado: a.motivo_forzado,
     });
     if (a.entrenador && !s.coach) {
       s.coach = { id: a.entrenador, asignacion: a.id, nombre: a.entrenador_nombre, foto: a.entrenador_foto };
@@ -62,7 +62,7 @@ function benchPlayers(panel) {
   const out = [];
   for (const g of [...(panel.por_entrenador || []), ...(panel.sin_entrenador || [])]) {
     for (const j of g.jugadores || []) {
-      if (!j.tiene_asignacion) out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, estado: j.estado });
+      if (!j.tiene_asignacion) out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, estado: j.estado, aviso: j.aviso });
     }
   }
   out.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
@@ -249,12 +249,13 @@ export default function SemanaPage() {
                 bench.map((p) => (
                   <div key={p.id} className={`bench-chip dnd${noDisponible(p.estado) ? " nd" : ""}`} draggable
                     onDragStart={(e) => setDrag(e, { k: "bj", jugador: p.id })}
-                    title={noDisponible(p.estado) ? `${p.nombre} · ${ESTADO_LABEL[p.estado] || p.estado} (arrastra para forzar pista)` : p.nombre}>
+                    title={(noDisponible(p.estado) ? `${p.nombre} · ${ESTADO_LABEL[p.estado] || p.estado} (arrastra para forzar pista)` : p.nombre) + (p.aviso ? ` · ${p.aviso}` : "")}>
                     {noDisponible(p.estado) && (
                       <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
                     )}
                     <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
                     <span>{p.nombre}{p.division ? ` · D${p.division}` : ""}</span>
+                    {p.aviso && <span className="aviso-forzada" title={p.aviso}>⚠</span>}
                   </div>
                 ))}
             </div>
@@ -293,11 +294,12 @@ function Session({ s, dropSession, dropPlayer, dropCoach }) {
       </div>
       <div className="wk-players">
         {s.players.map((p) => (
-          <div className="wk-av dnd" key={p.id} title={`${p.nombre} · arrastra`}
+          <div className={`wk-av dnd${p.forzada ? " forzada" : ""}`} key={p.id}
+            title={p.forzada ? `${p.nombre} · ${p.motivo_forzado}` : `${p.nombre} · arrastra`}
             draggable onDragStart={(e) => setDrag(e, { k: "cj", asignacion: p.asignacion })}
             onDragOver={overOn} onDragLeave={overOff} onDrop={dropPlayer(p.asignacion, s)}>
             <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
-            <span className="nm">{first(p.nombre)}</span>
+            <span className="nm">{p.forzada && "⚠ "}{first(p.nombre)}</span>
           </div>
         ))}
         {s.coach && (

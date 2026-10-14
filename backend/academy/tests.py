@@ -1360,3 +1360,70 @@ class InvitadoEnElMotorTests(TestCase):
         generate(semana, dias=[0, 1, 2], bloques=["MANANA"])
         dias = set(Asignacion.objects.filter(semana=semana, jugador=kira).values_list("dia", flat=True))
         self.assertEqual(dias, {2})
+
+
+class RellenoForzadoTests(TestCase):
+    """14/10/2026 (Iván, Nik con Chimo): si queda un hueco en una pista ya
+    abierta y alguien en el banquillo, se le mete aunque rompa reglas base, y
+    la asignación queda marcada como forzada. Una rencilla no se rompe: deja
+    un aviso en el banquillo."""
+
+    def setUp(self):
+        from academy.models import Division
+        from scheduling.models import ConfiguracionMotor
+
+        cfg = ConfiguracionMotor.objects.first() or ConfiguracionMotor.objects.create()
+        cfg.time_limit_s = 2
+        cfg.usar_satelites = False
+        cfg.save()
+        Jugador.objects.update(activo=False)
+        Entrenador.objects.update(activo=False)
+        Pista.objects.update(activa=False)
+        self.m1 = Turno.objects.get(codigo="M1")
+        sede = Sede.objects.create(nombre="Prueba relleno")
+        self.pista = Pista.objects.create(sede=sede, numero=1, superficie="TIERRA")
+        self.pablo = Entrenador.objects.create(nombre="Pablo")
+        self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+
+        def jugador(nombre, nivel, sexo, edad):
+            d, _ = Division.objects.get_or_create(nivel=nivel)
+            j = Jugador.objects.create(nombre=nombre, activo=True, division=d,
+                                       sexo=sexo, edad=edad)
+            HorarioJugador.objects.create(jugador=j, dia=0, entrena_manana=True,
+                                          entrena_tarde=False, turno_manana=self.m1)
+            return j
+
+        self.chimo = jugador("Chimo", 3, "CHICO", 16)
+        self.nik = jugador("Nik", 9, "CHICA", 13)
+        # Chimo, puesto a mano solo con Pablo: la única pista abierta.
+        Asignacion.objects.create(semana=self.semana, dia=0, turno=self.m1,
+                                  pista=self.pista, jugador=self.chimo,
+                                  entrenador=self.pablo, manual=True)
+
+    def test_nik_entra_con_chimo_marcada_como_forzada(self):
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        a = Asignacion.objects.get(semana=self.semana, dia=0, jugador=self.nik)
+        self.assertEqual((a.pista, a.entrenador, a.forzada), (self.pista, self.pablo, True))
+        self.assertIn("división D3–D9", a.motivo_forzado)
+        self.assertIn("chico/chica", a.motivo_forzado)
+        self.assertEqual(len(rep["forzadas"]), 1)
+        # Lo de Chimo, puesto a mano, sigue igual.
+        self.assertTrue(Asignacion.objects.get(jugador=self.chimo).manual)
+
+    def test_una_rencilla_no_se_rompe_y_queda_aviso(self):
+        from academy.models import Rencilla
+        from scheduling.models import AvisoBanquillo
+
+        Rencilla.objects.create(jugador_a=self.chimo, jugador_b=self.nik)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertFalse(Asignacion.objects.filter(jugador=self.nik).exists())
+        aviso = AvisoBanquillo.objects.get(jugador=self.nik)
+        self.assertIn("rencilla", aviso.motivo)
+
+    def test_moverla_a_mano_quita_la_marca(self):
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        a = Asignacion.objects.get(jugador=self.nik)
+        a.manual = True
+        a.save()
+        a.refresh_from_db()
+        self.assertEqual((a.forzada, a.motivo_forzado), (False, ""))

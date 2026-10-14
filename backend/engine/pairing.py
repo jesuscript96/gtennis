@@ -332,6 +332,32 @@ def _motivo(
     return RELAJABLE if blando else None
 
 
+def reglas_rotas(p: Player, q: Player, span: int = 1) -> list[str]:
+    """Las reglas base que se rompen juntando a `p` y `q`, en palabras: para
+    avisar de una pista forzada (14/10/2026). Las rencillas no van aquí: esas
+    no se rompen nunca."""
+    rotas = []
+    if p.division is not None and q.division is not None:
+        salto = q.division - p.division
+        p_arriba, p_abajo = _horquilla(p, span)
+        q_arriba, q_abajo = _horquilla(q, span)
+        if ((salto > 0 and (salto > p_abajo or salto > q_arriba))
+                or (salto < 0 and (-salto > p_arriba or -salto > q_abajo))):
+            alto, bajo = sorted((p.division, q.division))
+            rotas.append(f"división D{alto}–D{bajo}")
+        if p.sexo and q.sexo and p.sexo != q.sexo:
+            chico, chica = (p, q) if p.sexo == "CHICO" else (q, p)
+            if chica.division > chico.division:
+                rotas.append("chico/chica")
+    edad_p, edad_q = _edad_creible(p.edad), _edad_creible(q.edad)
+    if edad_p is not None and edad_q is not None:
+        topes = [t for t in (_tope_edad(edad_p), _tope_edad(edad_q)) if t is not None]
+        if topes and abs(edad_p - edad_q) > min(topes):
+            menor, mayor = sorted((edad_p, edad_q))
+            rotas.append(f"edad ({menor} y {mayor} años)")
+    return rotas
+
+
 def solve_pairing(data: PairingInput) -> PairingResult:
     """Empareja una franja, o todas las de `data.franjas` a la vez.
 

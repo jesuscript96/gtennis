@@ -91,7 +91,8 @@ class AsignacionSerializer(serializers.ModelSerializer):
             "id", "semana", "dia", "turno", "turno_codigo", "pista",
             "pista_numero", "pista_superficie", "sede", "jugador", "jugador_nombre",
             "jugador_foto", "division_nivel", "entrenador", "entrenador_nombre",
-            "entrenador_foto", "estado", "manual", "falta",
+            "entrenador_foto", "estado", "manual", "falta", "forzada",
+            "motivo_forzado",
         ]
 
     def get_falta(self, obj):

@@ -22,6 +22,7 @@ from scheduling.models import (
     ESTADOS_DEPRIORIZADOS,
     ESTADOS_EXCLUYENTES,
     Asignacion,
+    AvisoBanquillo,
     ConfiguracionMotor,
     Disponibilidad,
     DisponibilidadEntrenador,
@@ -873,6 +874,138 @@ def _emparejar_entrenadores(
     return asignado, repetidos
 
 
+def _player_basico(j):
+    """Lo justo de un jugador para ver qué reglas rompe al compartir pista."""
+    return Player(
+        id=j.id, division=j.division.nivel if j.division_id else None,
+        sexo=j.sexo or None, edad=j.edad,
+    )
+
+
+def _reglas_de_pista(yo, otros, span):
+    """Las reglas base que rompe `yo` metiéndose con `otros`, una vez cada
+    una: «división D1–D6», «chico/chica», «edad (14 a 26 años)»."""
+    from .pairing import reglas_rotas
+
+    tipos = set()
+    for o in otros:
+        for r in reglas_rotas(yo, o, span):
+            tipos.add(r.split(" ")[0])
+    rotas = []
+    if "división" in tipos:
+        niveles = [p.division for p in [yo, *otros] if p.division is not None]
+        rotas.append(f"división D{min(niveles)}–D{max(niveles)}")
+    if "chico/chica" in tipos:
+        rotas.append("chico/chica")
+    if "edad" in tipos:
+        edades = [p.edad for p in [yo, *otros] if p.edad]
+        rotas.append(f"edad ({min(edades)} a {max(edades)} años)")
+    return rotas
+
+
+def _rellenar_huecos(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
+                     vetos_coach, solo_con, es_tarde, overrides, courts_by_id,
+                     report):
+    """Mete a quien se ha quedado en el banquillo en los huecos de las pistas
+    ya abiertas del bloque, aunque rompa las reglas base —división, chico/chica,
+    edad—, para que entrene todo el mundo (14/10/2026, Iván con Nik y Chimo).
+
+    No abre pistas ni se salta la franja del jugador, el tope de la pista (2
+    sin entrenador, y 2 en la que vigila a la de al lado), una rencilla, un
+    veto de entrenador, la superficie estricta ni la pista de quien solo entra
+    con su lista. Si había hueco y solo lo impide una de esas, queda un aviso
+    en el banquillo. Devuelve {jugador: asignación creada}."""
+    from academy.models import Jugador as _J
+
+    tope_bloque = cfg.capacidad_tarde if es_tarde else cfg.capacidad_manana
+    pistas = defaultdict(list)
+    for a in Asignacion.objects.filter(
+        semana=semana, dia=dia, turno__in=grupo,
+    ).select_related("jugador__division"):
+        pistas[(a.turno_id, a.pista_id)].append(a)
+    jugadores = {}
+
+    def player(jid, j=None):
+        if jid not in jugadores:
+            jugadores[jid] = por_id.get(jid) or _player_basico(
+                j or _J.objects.select_related("division").get(pk=jid))
+        return jugadores[jid]
+
+    def con_entrenador(filas):
+        return next((a.entrenador_id for a in filas if a.entrenador_id), None)
+
+    def vigila_a_otra(turno_id, pista_id):
+        c = courts_by_id[pista_id]
+        if c.number is None:
+            return False
+        for (t, p), filas in pistas.items():
+            o = courts_by_id.get(p)
+            if (t == turno_id and o is not None and o.venue_id == c.venue_id
+                    and o.number in (c.number - 1, c.number + 1)
+                    and con_entrenador(filas) is None):
+                return True
+        return False
+
+    turnos = {t.id: t for t in grupo}
+    fecha = semana.fecha_inicio + timedelta(days=dia)
+    metidos = {}
+    orden = sorted(fuera, key=lambda jid: -(por_id[jid].priority if jid in por_id else 0))
+    for jid in orden:
+        yo = player(jid)
+        opciones, impide = [], set()
+        for tid in franjas_de.get(jid, {}):
+            for (t, pid), filas in pistas.items():
+                if t != tid or not filas:
+                    continue
+                c = courts_by_id.get(pid)
+                if c is None:
+                    continue
+                coach = con_entrenador(filas)
+                tope = min(c.capacity, tope_bloque)
+                if coach is None or vigila_a_otra(t, pid):
+                    tope = min(tope, 2)
+                if len(filas) >= tope:
+                    continue
+                otros = [a.jugador_id for a in filas]
+                if any(_normalise(jid, o) in vetoes for o in otros):
+                    impide.add("tiene una rencilla con alguien de la pista libre")
+                    continue
+                if yo.surface_pref and c.surface and c.surface != yo.surface_pref:
+                    impide.add(f"solo entrena en {yo.surface_pref.lower()}")
+                    continue
+                if coach and coach in vetos_coach.get(jid, ()):
+                    impide.add("no puede entrenar con el entrenador de la pista libre")
+                    continue
+                if coach in solo_con and jid not in solo_con[coach]:
+                    continue
+                rotas = _reglas_de_pista(
+                    yo, [player(a.jugador_id, a.jugador) for a in filas], cfg.vecindad_max)
+                distancia = max((abs((yo.division or 0) - (player(o).division or 0))
+                                 for o in otros), default=0)
+                opciones.append((len(rotas), distancia, c.number or 0, t, pid, coach, rotas))
+        if not opciones:
+            if impide:
+                AvisoBanquillo.objects.create(
+                    semana=semana, dia=dia, bloque=grupo[0].bloque, jugador_id=jid,
+                    motivo="Había sitio, pero " + "; ".join(sorted(impide)) + ".")
+            continue
+        _n, _d, _num, t, pid, coach, rotas = min(opciones)
+        a = Asignacion.objects.create(
+            semana=semana, dia=dia, turno=turnos[t], pista_id=pid, jugador_id=jid,
+            entrenador_id=coach,
+            estado=_effective_state(overrides, jid, turnos[t]),
+            forzada=bool(rotas),
+            motivo_forzado=("Forzada para que entrene: " + ", ".join(rotas))[:200] if rotas else "",
+        )
+        pistas[(t, pid)].append(a)
+        metidos[jid] = a
+        if rotas:
+            report.setdefault("forzadas", []).append(
+                {"dia": dia, "turno": turnos[t].codigo, "pista": pid, "jugador": jid,
+                 "reglas": rotas})
+    return metidos
+
+
 def _dias_de_invitados():
     """{jugador: {"2026-10-14": {"manana": "M2", …}}}: los días que viene cada
     invitado, de sus visitas aprobadas (14/10/2026)."""
@@ -1169,6 +1302,12 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             return {c.id for c in elegibles_para(turno, presentes)
                     if c.id not in de_banquillo}
 
+        # Los avisos del banquillo de lo que se rehace (una vez por bloque: la
+        # mañana tiene más de un grupo de franjas).
+        AvisoBanquillo.objects.filter(
+            semana=semana, dia=dia,
+            bloque__in={g[0].bloque for g in grupos},
+        ).delete()
         for grupo in grupos:
             # El club cierra algunas medias jornadas: ahí no se reparte nada y,
             # además, se limpia lo que hubiera de antes. Saltar sin borrar deja
@@ -1224,7 +1363,11 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 turnos_exclusivos, cfg, sesiones_hoy, sesiones_bloque, horario_hoy,
                 banquillo, overrides,
             )
+            franjas_orig = {jid: dict(o) for jid, o in franjas_de.items()}
             fuera_del_motor = fijos | quitados
+            # Todos los de este bloque, también los puestos a mano: hacen falta
+            # para ver qué reglas rompe quien se mete en su pista.
+            por_id_bloque = {p.id: p for p in players}
             players = [p for p in players if p.id not in fuera_del_motor]
             fijos_en = defaultdict(set)
             for a in fijas:
@@ -1449,6 +1592,23 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                             for b_id in miembros[i + 1:]:
                                 parejas_manana.add(frozenset((a_id, b_id)))
             fuera = [p.id for p in players if p.id not in colocados] + sin_franja
+            # Nadie se queda sin entrenar si queda un hueco en una pista ya
+            # abierta (14/10/2026): se le mete aunque rompa reglas base, y la
+            # asignación queda marcada como forzada.
+            if fuera:
+                metidos = _rellenar_huecos(
+                    semana, dia, grupo, fuera, por_id_bloque, franjas_orig, cfg,
+                    vetoes_dia, vetos_coach, solo_con, es_tarde, overrides,
+                    courts_by_id, report,
+                )
+                for jid, a in metidos.items():
+                    player_sessions[jid] += 1
+                    sesiones_hoy[jid] += 1
+                    sesiones_bloque[(jid, bloque)] += 1
+                    colocados.add(jid)
+                    if a.entrenador_id:
+                        coach_share[(jid, a.entrenador_id)] += 1
+                fuera = [jid for jid in fuera if jid not in metidos]
             for jid in fuera:
                 banquillo[jid] += 1
             if fuera:

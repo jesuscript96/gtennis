@@ -376,6 +376,14 @@ class SemanaViewSet(viewsets.ModelViewSet):
 
         por_entrenador = []
         sin_entrenador = []
+        # Por qué se ha quedado alguien sin pista habiendo hueco (rencilla,
+        # superficie, veto): lo deja el motor al generar.
+        from .models import AvisoBanquillo
+
+        avisos_banquillo = {}
+        for jid, motivo in AvisoBanquillo.objects.filter(
+            semana=semana, dia=dia).values_list("jugador_id", "motivo"):
+            avisos_banquillo[jid] = (avisos_banquillo.get(jid, "") + " " + motivo).strip()
 
         # Agrupar jugadores por entrenador_responsable
         by_coach = {}
@@ -392,6 +400,7 @@ class SemanaViewSet(viewsets.ModelViewSet):
                 "division_nivel": j.division.nivel if j.division else None,
                 "estado": state,
                 "tiene_asignacion": j.id in assigned_ids,
+                "aviso": avisos_banquillo.get(j.id, ""),
             }
             cid = j.entrenador_responsable_id
             if cid and cid in coach_map:

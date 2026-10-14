@@ -62,7 +62,7 @@ function benchPlayers(panel) {
   for (const g of [...(panel.por_entrenador || []), ...(panel.sin_entrenador || [])]) {
     for (const j of g.jugadores || []) {
       if (!j.tiene_asignacion) {
-        out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, coach: g.entrenador?.nombre, estado: j.estado });
+        out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, coach: g.entrenador?.nombre, estado: j.estado, aviso: j.aviso });
       }
     }
   }
@@ -401,6 +401,7 @@ function Inner() {
                         <Avatar nombre={a.jugador_nombre} fotoUrl={a.jugador_foto} kind="player" />
                         <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
                         <span className="nombre-jug">{a.jugador_nombre}{a.division_nivel ? ` · D${a.division_nivel}` : ""}</span>
+                        {a.forzada && <span className="aviso-forzada" title={a.motivo_forzado}>⚠ forzada</span>}
                         {a.falta && <span className="falta-tag">{a.falta.motivo}</span>}
                       </div>
                     );
@@ -434,6 +435,7 @@ function Inner() {
                     )}
                     <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
                     <span>{p.nombre}{p.division ? ` · D${p.division}` : ""}</span>
+                    {p.aviso && <span className="aviso-forzada" title={p.aviso}>⚠</span>}
                   </div>
                 );
               })}
@@ -660,12 +662,13 @@ function Inner() {
                 bench.map((p) => (
                   <div key={p.id} className={`bench-chip dnd${noDisponible(p.estado) ? " nd" : ""}`} draggable
                     onDragStart={(e) => setDrag(e, { k: "bj", jugador: p.id })}
-                    title={`${p.nombre}${p.coach ? " · " + p.coach : ""}${noDisponible(p.estado) ? " · " + (ESTADO_LABEL[p.estado] || p.estado) + " (arrastra para forzar pista)" : ""}`}>
+                    title={`${p.nombre}${p.coach ? " · " + p.coach : ""}${noDisponible(p.estado) ? " · " + (ESTADO_LABEL[p.estado] || p.estado) + " (arrastra para forzar pista)" : ""}${p.aviso ? " · " + p.aviso : ""}`}>
                     {noDisponible(p.estado) && (
                       <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
                     )}
                     <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
                     <span>{p.nombre}{p.division ? ` · D${p.division}` : ""}</span>
+                    {p.aviso && <span className="aviso-forzada" title={p.aviso}>⚠</span>}
                   </div>
                 ))}
             </div>
@@ -719,17 +722,18 @@ function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach }) {
   const empty = !items || items.length === 0;
   const color = empty ? "var(--border-strong)" : (ESTADO_COLOR[items[0].estado] || "var(--border-strong)");
   return (
-    <td className={`cell ${empty ? "empty" : ""}`} style={{ borderLeftColor: color }}
+    <td className={`cell ${empty ? "empty" : ""}${!empty && items.some((a) => a.forzada) ? " forzada" : ""}`} style={{ borderLeftColor: color }}
       onDragOver={overOn} onDragLeave={overOff} onDrop={onDropCell(ctx)}>
       {(items || []).map((a) => (
         <div className={`player dnd${a.falta ? " tachado" : ""}`} key={a.id} draggable
           onDragStart={(e) => setDrag(e, { k: "cj", asignacion: a.id })}
           onDragOver={overOn} onDragLeave={overOff}
           onDrop={onDropPlayer(a.id, ctx, items.length, densidad)}
-          title={a.falta ? tituloFalta(a.falta) : "Arrastra para intercambiar / al banquillo"}>
+          title={a.falta ? tituloFalta(a.falta) : a.forzada ? `${a.motivo_forzado}. Arrastra para moverlo.` : "Arrastra para intercambiar / al banquillo"}>
           <Avatar nombre={a.jugador_nombre} fotoUrl={a.jugador_foto} kind="player" />
           <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
           <span className="nombre-jug">{a.jugador_nombre}</span>
+          {a.forzada && <span className="aviso-forzada" title={a.motivo_forzado}>⚠ forzada</span>}
           {a.division_nivel ? <span className="div">D{a.division_nivel}</span> : null}
           {a.falta && <span className="falta-tag">{a.falta.motivo}</span>}
         </div>

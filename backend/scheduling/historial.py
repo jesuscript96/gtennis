@@ -7,7 +7,7 @@ la semana. Deshacer es volver a la última foto y tirarla.
 from .models import Asignacion, CambioSemana
 
 CAMPOS = ("dia", "turno_id", "pista_id", "jugador_id", "entrenador_id",
-          "estado", "manual")
+          "estado", "manual", "forzada", "motivo_forzado")
 
 
 def foto(semana_id):

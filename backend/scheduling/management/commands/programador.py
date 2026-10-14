@@ -47,6 +47,11 @@ def generar_dia(fecha):
                    "ahora los cambios de ese día no lo tocan: llegan como aviso.")
         if fuera:
             mensaje += f" {fuera} jugador(es) se han quedado sin pista."
+        forzadas = len(informe.get("forzadas", []))
+        if forzadas:
+            mensaje += (f" {forzadas} jugador(es) se han metido en una pista "
+                        "saltándose reglas base para que entrenen: salen marcados "
+                        "como «forzada» en el cuadrante.")
     except Exception:  # noqa: BLE001 — cualquier fallo se avisa
         fila.detalle = traceback.format_exc()[-4000:]
         titulo = f"Ha fallado la generación del {nombre}"
