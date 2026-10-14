@@ -1212,3 +1212,95 @@ class GruposParaTodosTests(TestCase):
         r = self.api.post("/api/grupos/ordenar/", {
             "coach": self.amarillo.id, "orden": [self.javi.id]}, format="json")
         self.assertEqual(r.status_code, 403)
+
+
+class InvitadoComoJugadorTests(TestCase):
+    """14/10/2026: el invitado se da de alta como un jugador nuevo, con su
+    ficha deportiva, todo lo que mira el motor y las fechas en que viene."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from academy.models import Division
+        from users.models import User
+
+        u_ent = User.objects.create_user(
+            username="ivan", password="x", role=User.Role.ENTRENADOR)
+        u_dir = User.objects.create_user(
+            username="dir", password="x", role=User.Role.SUPERADMIN)
+        self.ivan = Entrenador.objects.create(nombre="Ivan", user=u_ent)
+        self.otro = Entrenador.objects.create(nombre="Otro")
+        self.d3, _ = Division.objects.get_or_create(nivel=3)
+        self.amigo = Jugador.objects.create(nombre="Amigo")
+        self.enemigo = Jugador.objects.create(nombre="Enemigo")
+        self.ent, self.dir = APIClient(), APIClient()
+        self.ent.force_authenticate(u_ent)
+        self.dir.force_authenticate(u_dir)
+
+    def _proponer(self, **extra):
+        datos = {
+            "nombre": "Llorca", "division": self.d3.id, "edad": 15, "sexo": "CHICO",
+            "fecha_desde": "2026-10-19", "fecha_hasta": "2026-10-23",
+            "dias": {"0": {"manana": "M1", "tarde": ""}, "2": {"manana": ""}},
+            "vecindad": "ARRIBA", "superficie_pref": "TIERRA",
+            "jugar_con": self.amigo.id, "pareja_estricta": False,
+            "no_coincidir_con": [self.enemigo.id],
+            "entrena_con": self.ivan.id, "no_entrena_con": [self.otro.id],
+        }
+        datos.update(extra)
+        return self.ent.post("/api/invitados/", datos, format="json")
+
+    def test_sin_fechas_no_se_puede_proponer(self):
+        r = self._proponer(fecha_desde=None, fecha_hasta=None)
+        self.assertEqual(r.status_code, 400)
+
+    def test_al_aprobar_sale_un_jugador_con_todo(self):
+        from academy.models import (
+            Contrato, HorarioJugador, PreferenciaPareja, PreferenciaSuperficie,
+            Rencilla, VetoEntrenador,
+        )
+
+        r = self._proponer()
+        self.assertEqual(r.status_code, 201, r.content)
+        r = self.dir.post(f"/api/invitados/{r.json()['id']}/aprobar/")
+        self.assertEqual(r.status_code, 200, r.content)
+        j = Jugador.objects.get(pk=r.json()["jugador_creado"])
+        self.assertEqual((j.division, j.edad, j.sexo, j.vecindad, j.entrenador_responsable),
+                         (self.d3, 15, "CHICO", "ARRIBA", self.ivan))
+        self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-10-23"))
+        self.assertFalse(j.en_alta(date(2026, 10, 26)))
+        horario = {h.dia: h for h in HorarioJugador.objects.filter(jugador=j)}
+        self.assertEqual(len(horario), 6)
+        self.assertEqual((horario[0].turno_manana.codigo, horario[0].entrena_tarde,
+                          horario[0].turno_tarde), ("M1", True, None))
+        self.assertEqual((horario[2].entrena_manana, horario[2].entrena_tarde), (True, False))
+        self.assertFalse(horario[1].entrena_manana or horario[1].entrena_tarde)
+        self.assertTrue(PreferenciaSuperficie.objects.filter(jugador=j, superficie="TIERRA").exists())
+        self.assertEqual(PreferenciaPareja.objects.get(jugador=j).tipo, "SOFT")
+        self.assertTrue(Rencilla.objects.filter(jugador_a__in=[j, self.enemigo],
+                                                jugador_b__in=[j, self.enemigo]).exists())
+        self.assertEqual(Contrato.objects.get(jugador=j).entrenador, self.ivan)
+        self.assertEqual(VetoEntrenador.objects.get(jugador=j).entrenador, self.otro)
+
+    def test_solo_se_corrige_mientras_esta_pendiente(self):
+        inv = self._proponer().json()
+        r = self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 16}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.dir.post(f"/api/invitados/{inv['id']}/aprobar/")
+        r = self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 17}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_si_vuelve_es_el_mismo_jugador_con_las_fechas_nuevas(self):
+        from academy.models import PreferenciaPareja
+
+        primera = self._proponer().json()
+        j1 = self.dir.post(f"/api/invitados/{primera['id']}/aprobar/").json()["jugador_creado"]
+        r = self._proponer(fecha_desde="2026-11-16", fecha_hasta="2026-11-20",
+                           repite_de=primera["id"], jugar_con=None)
+        self.assertEqual(r.status_code, 201, r.content)
+        j2 = self.dir.post(f"/api/invitados/{r.json()['id']}/aprobar/").json()["jugador_creado"]
+        self.assertEqual(j1, j2)
+        j = Jugador.objects.get(pk=j2)
+        self.assertEqual(str(j.fecha_alta), "2026-11-16")
+        self.assertEqual(j.horario.count(), 6)
+        self.assertFalse(PreferenciaPareja.objects.filter(jugador=j).exists())

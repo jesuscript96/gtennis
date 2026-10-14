@@ -173,6 +173,8 @@ export const crearInvitado = (body) =>
   req("/invitados/", { method: "POST", body: JSON.stringify(body) });
 export const aprobarInvitado = (id) =>
   req(`/invitados/${id}/aprobar/`, { method: "POST", body: "{}" });
+export const editarInvitado = (id, body) =>
+  req(`/invitados/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
 export const rechazarInvitado = (id, motivo = "") =>
   req(`/invitados/${id}/rechazar/`, { method: "POST", body: JSON.stringify({ motivo }) });
 

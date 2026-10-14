@@ -17,6 +17,7 @@ from .models import (
     Feedback,
     Invitado,
     HorarioEntrenador,
+    HorarioJugador,
     Jugador,
     Pista,
     PreferenciaPareja,
@@ -27,6 +28,7 @@ from .models import (
     TareaMantenimiento,
     Turno,
     VacacionesEntrenador,
+    VetoEntrenador,
 )
 from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion
 from .scope import (
@@ -761,6 +763,100 @@ class AvisoViewSet(viewsets.ModelViewSet):
         return Response({"ok": True})
 
 
+def _jugador_previo(inv):
+    """El jugador de la última vez que vino, si esta invitación repite."""
+    vista = set()
+    previa = inv.repite_de
+    while previa is not None and previa.pk not in vista:
+        if previa.jugador_creado_id:
+            return previa.jugador_creado
+        vista.add(previa.pk)
+        previa = previa.repite_de
+    return None
+
+
+def _jugador_de_invitado(inv, escuela_default):
+    """El jugador que sale de un invitado aprobado: un alta como cualquier
+    otra, con su ficha deportiva y todo lo que mira el motor, y de alta solo
+    entre sus fechas (14/10/2026).
+
+    Si vuelve (otra invitación copiada de una anterior), es el mismo jugador:
+    se le ponen las fechas y la ficha de esta vez y conserva su historial. Lo
+    que mira el motor (semana, superficie, parejas, rencillas, entrenadores)
+    queda exactamente como dice esta invitación."""
+    solicitante = inv.entrenador_solicitante
+    campos = dict(
+        activo=True,
+        escuela_id=inv.escuela_id or escuela_default,
+        entrenador_responsable=solicitante,
+        division=inv.division,
+        edad=inv.edad,
+        sexo=inv.sexo,
+        vecindad=inv.vecindad or Jugador.Vecindad.CLUB,
+        pareja_division=inv.pareja_division or None,
+        sin_prioridad=inv.sin_prioridad,
+        fecha_alta=inv.fecha_desde,
+        fecha_baja=inv.fecha_hasta,
+        notas=(f"Invitado de {solicitante.nombre}"
+               + (f": {inv.nota}" if inv.nota else ""))[:200],
+        **({"sesiones_dia_max": inv.sesiones_dia_max}
+           if inv.sesiones_dia_max else {}),
+    )
+    jugador = _jugador_previo(inv)
+    if jugador is None:
+        jugador = Jugador.objects.create(nombre=f"{inv.nombre} (invitado)", **campos)
+    else:
+        for k, v in campos.items():
+            setattr(jugador, k, v)
+        jugador.save()
+        jugador.cogestores.clear()
+        HorarioJugador.objects.filter(jugador=jugador).delete()
+        PreferenciaSuperficie.objects.filter(
+            jugador=jugador, fecha_desde__isnull=True, fecha_hasta__isnull=True).delete()
+        PreferenciaPareja.objects.filter(jugador=jugador).delete()
+        Rencilla.objects.filter(Q(jugador_a=jugador) | Q(jugador_b=jugador)).delete()
+        Contrato.objects.filter(jugador=jugador).delete()
+        VetoEntrenador.objects.filter(jugador=jugador).delete()
+    pesos.guardar(jugador, pesos.propuesta(solicitante))
+    # La semana que viene: una fila por día de lunes a sábado. Los días que
+    # no se marcan, no viene (sin fila el motor le daría por venir).
+    turnos = {t.codigo: t for t in Turno.objects.filter(codigo__in=["M1", "M2", "T1", "T2"])}
+    for dia in range(6):
+        fila = (inv.dias or {}).get(str(dia)) or {}
+        manana, tarde = fila.get("manana"), fila.get("tarde")
+        HorarioJugador.objects.create(
+            jugador=jugador, dia=dia,
+            entrena_manana=manana is not None,
+            entrena_tarde=tarde is not None,
+            turno_manana=turnos.get(manana) if manana else None,
+            turno_tarde=turnos.get(tarde) if tarde else None,
+        )
+    if inv.superficie_pref:
+        PreferenciaSuperficie.objects.create(
+            jugador=jugador, superficie=inv.superficie_pref,
+            estricta=inv.superficie_estricta,
+        )
+    if inv.jugar_con_id:
+        PreferenciaPareja.objects.create(
+            jugador=jugador, jugador_objetivo=inv.jugar_con,
+            tipo=(PreferenciaPareja.Tipo.HARD if inv.pareja_estricta
+                  else PreferenciaPareja.Tipo.SOFT),
+        )
+    for otro in inv.no_coincidir_con.all():
+        Rencilla.objects.get_or_create(
+            jugador_a=jugador, jugador_b=otro,
+            defaults={"motivo": "Invitado: no coincidir"})
+    if inv.entrena_con_id:
+        Contrato.objects.create(
+            jugador=jugador, entrenador=inv.entrena_con,
+            tipo=(Contrato.Tipo.DURO if inv.entrena_con_estricto
+                  else Contrato.Tipo.BLANDO),
+        )
+    for ent in inv.no_entrena_con.all():
+        VetoEntrenador.objects.create(jugador=jugador, entrenador=ent)
+    return jugador
+
+
 class InvitadoViewSet(viewsets.ModelViewSet):
     """Invitados propuestos por entrenadores; aprobación por el Super Admin (#5)."""
 
@@ -803,6 +899,14 @@ class InvitadoViewSet(viewsets.ModelViewSet):
                 mensaje=f"«{inv.nombre}» — pendiente de aprobación por dirección.",
             )
 
+    def perform_update(self, serializer):
+        # Mientras está pendiente se corrige aquí; aprobado, ya es un jugador y
+        # su ficha se toca en Jugadores.
+        if serializer.instance.estado != Invitado.Estado.PENDIENTE:
+            raise PermissionDenied(
+                "El invitado ya está resuelto: cambia su ficha en Jugadores.")
+        serializer.save()
+
     def _avisar_solicitante(self, inv, titulo, mensaje):
         user = getattr(inv.entrenador_solicitante, "user", None)
         if user:
@@ -817,6 +921,9 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         inv = self.get_object()
         if inv.estado != Invitado.Estado.PENDIENTE:
             return Response({"error": "El invitado ya está resuelto."}, status=409)
+        if not (inv.fecha_desde and inv.fecha_hasta and inv.dias):
+            raise ValidationError(
+                "Antes de aprobarlo, indica las fechas y los días que viene.")
         # Asociación por entrenador solicitante (#5 feedback Sergio): el grupo
         # del invitado se entiende por el entrenador que lo propone, no por un
         # 'grupo_anfitrión'. Derivamos escuela y responsable de ahí.
@@ -833,39 +940,16 @@ class InvitadoViewSet(viewsets.ModelViewSet):
                 Escuela.objects.filter(nombre__icontains="alto rendimiento")
                 .values_list("id", flat=True).first()
             )
-        jugador = Jugador.objects.create(
-            nombre=f"{inv.nombre} (invitado)",
-            activo=True,
-            escuela_id=escuela_default,
-            entrenador_responsable=solicitante,
-            # Datos propios del invitado si se aportaron (#5).
-            division=inv.division,
-            edad=inv.edad,
-            notas="Invitado (pendiente de ubicar en el cuadrante)",
-        )
-        # Preferencia de superficie propia del invitado (#1/#5).
-        if inv.superficie_pref:
-            PreferenciaSuperficie.objects.create(
-                jugador=jugador, superficie=inv.superficie_pref, estricta=True,
-            )
-        # Pareja preferida: que el sistema lo ubique con ese jugador (#5).
-        if inv.jugar_con_id:
-            PreferenciaPareja.objects.create(
-                jugador=jugador,
-                jugador_objetivo=inv.jugar_con,
-                tipo=(
-                    PreferenciaPareja.Tipo.HARD
-                    if inv.pareja_estricta
-                    else PreferenciaPareja.Tipo.SOFT
-                ),
-            )
-        inv.estado = Invitado.Estado.APROBADO
-        inv.aprobado_por = request.user
-        inv.jugador_creado = jugador
-        inv.save()
+        with transaction.atomic():
+            jugador = _jugador_de_invitado(inv, escuela_default)
+            inv.estado = Invitado.Estado.APROBADO
+            inv.aprobado_por = request.user
+            inv.jugador_creado = jugador
+            inv.save()
         self._avisar_solicitante(
             inv, f"Invitado aprobado: {inv.nombre}",
-            "Ya puedes ubicarlo en el cuadrante desde el banquillo.",
+            "Entra en el cuadrante los días y fechas que se indicaron; su ficha, "
+            "en Jugadores.",
         )
         return Response(InvitadoSerializer(inv).data)
 

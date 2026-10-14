@@ -992,9 +992,10 @@ class Invitado(models.Model):
         related_name="invitados_aprobados",
     )
     # Jugador temporal creado al aprobar, para poder ubicarlo en el cuadrante.
-    jugador_creado = models.OneToOneField(
+    # Si vuelve otro mes, todas sus invitaciones apuntan al mismo jugador.
+    jugador_creado = models.ForeignKey(
         Jugador, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="invitado_origen",
+        related_name="invitaciones",
     )
     nota = models.CharField(max_length=200, blank=True)
     # Datos propios del invitado (#5): al aprobar, el jugador temporal se crea
@@ -1011,6 +1012,36 @@ class Invitado(models.Model):
         Jugador, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     pareja_estricta = models.BooleanField(default=True)
+    # 14/10/2026: el invitado se da de alta como un jugador nuevo, con su ficha
+    # deportiva y todo lo que mira el motor, y solo entre estas fechas.
+    fecha_desde = models.DateField(null=True, blank=True, verbose_name="Viene desde")
+    fecha_hasta = models.DateField(null=True, blank=True, verbose_name="hasta")
+    # Los días que viene: {"0": {"manana": "M1", "tarde": ""}, …} con el día
+    # de la semana (lunes = 0). Por bloque: el código de la franja, "" = la
+    # que mejor encaje, y sin clave (o null) = ese bloque no viene.
+    dias = models.JSONField(default=dict, blank=True)
+    sexo = models.CharField(max_length=5, choices=Jugador.Sexo.choices, blank=True)
+    vecindad = models.CharField(
+        max_length=6, choices=Jugador.Vecindad.choices, default=Jugador.Vecindad.CLUB)
+    pareja_division = models.CharField(
+        max_length=6, choices=Jugador.ParejaDivision.choices, blank=True)
+    sin_prioridad = models.BooleanField(default=False)
+    sesiones_dia_max = models.PositiveSmallIntegerField(null=True, blank=True)
+    superficie_estricta = models.BooleanField(default=True)
+    escuela = models.ForeignKey(
+        "Escuela", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # Con quién no debe coincidir en pista (rencillas).
+    no_coincidir_con = models.ManyToManyField(Jugador, blank=True, related_name="+")
+    # Entrenador con quien entrena (contrato) y con quién no (vetos).
+    entrena_con = models.ForeignKey(
+        Entrenador, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    entrena_con_estricto = models.BooleanField(default=False)
+    no_entrena_con = models.ManyToManyField(Entrenador, blank=True, related_name="+")
+    # Si vuelve otra vez (otro mes), la invitación de la que se copia: al
+    # aprobarla se reutiliza el mismo jugador, con su historial.
+    repite_de = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="repeticiones")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

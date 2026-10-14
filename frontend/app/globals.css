@@ -1283,3 +1283,23 @@ ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6
 .ficha-deportiva .chips { display: flex; flex-wrap: wrap; gap: .35rem; }
 .ficha-deportiva .chip { font-size: .78rem; }
 .ficha-deportiva .ok-msg { margin-left: .4rem; }
+
+/* Invitados como alta de jugador (14/10/2026) */
+.form-invitado h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.form-invitado fieldset { border: 1px solid var(--border); border-radius: var(--r); padding: .4rem .8rem .6rem; margin: 0 0 .8rem; }
+.form-invitado legend { font-size: .78rem; font-weight: 600; color: var(--muted); padding: 0 .3rem; }
+.form-invitado .fila-form { margin: .5rem 0; }
+.form-invitado .inv-check span { display: flex; align-items: center; gap: .3rem; color: var(--text); padding-bottom: .4rem; }
+.form-invitado table.dias-invitado { max-width: 34rem; margin: .3rem 0; }
+.form-invitado table.dias-invitado select { width: 100%; }
+.multiple-inv { margin: .5rem 0; }
+.multiple-inv .etiqueta { font-size: .8rem; color: var(--muted); display: block; margin-bottom: .25rem; }
+.multiple-inv .chips { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.multiple-inv .chip {
+  border: 1px solid var(--border-strong); background: var(--surface); color: inherit;
+  border-radius: 999px; padding: .25rem .65rem; font-size: .8rem; cursor: pointer;
+}
+.multiple-inv .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.invitados .sub-inv { font-size: .75rem; color: var(--muted); }
+.invitados td.dias-inv { font-size: .78rem; color: var(--muted); max-width: 18rem; }
+.invitados tr.fila-form-inv > td { background: var(--surface-2); }
