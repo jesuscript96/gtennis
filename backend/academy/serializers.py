@@ -9,6 +9,7 @@ from .models import (
     Escuela,
     Feedback,
     Invitado,
+    VisitaInvitado,
     HorarioEntrenador,
     HorarioJugador,
     Jugador,
@@ -317,79 +318,123 @@ class AvisoSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at"]
 
 
+FRANJAS_BLOQUE = {"manana": ("M1", "M2"), "tarde": ("T1", "T2")}
+
+
+def bloques_del_dia(dia, bloques):
+    """Lo que vale de {"manana": …, "tarde": …} ese día: por bloque, la franja
+    o "" (la que encaje); se cae lo que no abre (domingo; miércoles y sábado
+    por la tarde). None si no queda nada."""
+    if not isinstance(bloques, dict) or dia.weekday() == 6:
+        return None
+    fila = {}
+    for bloque, franjas in FRANJAS_BLOQUE.items():
+        valor = bloques.get(bloque)
+        if valor is None or (bloque == "tarde" and dia.weekday() in (2, 5)):
+            continue
+        if valor not in ("",) + franjas:
+            raise serializers.ValidationError(f"Franja no válida: {valor}.")
+        fila[bloque] = valor
+    return fila or None
+
+
+def fechas_validas(fechas):
+    """{"2026-10-14": {"manana": "M2"}} limpio y ordenado."""
+    from datetime import date
+
+    if not isinstance(fechas, dict):
+        raise serializers.ValidationError("Formato de fechas no válido.")
+    limpio = {}
+    for clave, bloques in fechas.items():
+        try:
+            dia = date.fromisoformat(str(clave))
+        except ValueError:
+            raise serializers.ValidationError(f"Fecha no válida: {clave}.")
+        fila = bloques_del_dia(dia, bloques)
+        if fila:
+            limpio[dia.isoformat()] = fila
+    return dict(sorted(limpio.items()))
+
+
+class VisitaInvitadoSerializer(serializers.ModelSerializer):
+    invitado_nombre = serializers.CharField(source="invitado.nombre", read_only=True)
+    invitado_estado = serializers.CharField(source="invitado.estado", read_only=True)
+    division = serializers.IntegerField(source="invitado.division.nivel", read_only=True, default=None)
+    solicitante_nombre = serializers.CharField(source="solicitante.nombre", read_only=True, default=None)
+    estado_display = serializers.CharField(source="get_estado_display", read_only=True)
+
+    class Meta:
+        model = VisitaInvitado
+        fields = [
+            "id", "invitado", "invitado_nombre", "invitado_estado", "division",
+            "fecha", "manana", "tarde", "solicitante", "solicitante_nombre",
+            "estado", "estado_display", "created_at",
+        ]
+        read_only_fields = ["invitado", "fecha", "solicitante", "estado", "created_at"]
+
+    def validate(self, attrs):
+        dia = self.instance.fecha
+        fila = bloques_del_dia(dia, {
+            "manana": attrs.get("manana", self.instance.manana),
+            "tarde": attrs.get("tarde", self.instance.tarde),
+        })
+        if not fila:
+            raise serializers.ValidationError("Tiene que venir por la mañana o por la tarde.")
+        return {"manana": fila.get("manana"), "tarde": fila.get("tarde")}
+
+
 class InvitadoSerializer(serializers.ModelSerializer):
+    """El invitado (la persona) con su ficha. Al crearlo, `fechas` son sus
+    primeros días; después se le añaden con /invitados/{id}/dias/."""
+
     entrenador_nombre = serializers.CharField(
         source="entrenador_solicitante.nombre", read_only=True
     )
-    grupo_nombre = serializers.CharField(
-        source="grupo_anfitrion.nombre", read_only=True, default=None
-    )
-    estado_display = serializers.CharField(
-        source="get_estado_display", read_only=True
-    )
+    estado_display = serializers.CharField(source="get_estado_display", read_only=True)
     jugar_con_nombre = serializers.CharField(
         source="jugar_con.nombre", read_only=True, default=None
     )
+    fechas = serializers.JSONField(write_only=True, required=False)
+    visitas = serializers.SerializerMethodField()
 
     class Meta:
         model = Invitado
         fields = [
             "id", "nombre", "entrenador_solicitante", "entrenador_nombre",
-            "grupo_anfitrion", "grupo_nombre", "estado", "estado_display",
-            "aprobado_por", "jugador_creado", "nota",
+            "estado", "estado_display", "aprobado_por", "jugador_creado", "nota",
             "division", "edad", "superficie_pref",
             "jugar_con", "jugar_con_nombre", "pareja_estricta", "created_at",
-            "fecha_desde", "fecha_hasta", "fechas", "sexo", "vecindad",
-            "pareja_division", "sin_prioridad", "sesiones_dia_max",
-            "superficie_estricta", "escuela", "no_coincidir_con",
-            "entrena_con", "entrena_con_estricto", "no_entrena_con",
-            "repite_de",
+            "sexo", "vecindad", "pareja_division", "sin_prioridad",
+            "sesiones_dia_max", "superficie_estricta", "escuela",
+            "no_coincidir_con", "entrena_con", "entrena_con_estricto",
+            "no_entrena_con", "fechas", "visitas",
         ]
-        read_only_fields = ["estado", "aprobado_por", "jugador_creado", "created_at",
-                            "fecha_desde", "fecha_hasta"]
+        read_only_fields = ["estado", "aprobado_por", "jugador_creado", "created_at"]
         extra_kwargs = {"entrenador_solicitante": {"required": False}}
 
-    BLOQUES = {"manana": ("M1", "M2"), "tarde": ("T1", "T2")}
+    def get_visitas(self, inv):
+        return [
+            {"id": v.id, "fecha": v.fecha.isoformat(), "manana": v.manana,
+             "tarde": v.tarde, "estado": v.estado, "solicitante": v.solicitante_id}
+            for v in inv.visitas.all()
+        ]
 
     def validate_fechas(self, fechas):
-        """{"2026-10-14": {"manana": "M2"|"", "tarde": …}}: los días que viene,
-        y por bloque la franja ("" = la que encaje). El domingo no hay
-        entrenamiento, y el miércoles y el sábado por la tarde tampoco."""
-        from datetime import date
-
-        if not isinstance(fechas, dict):
-            raise serializers.ValidationError("Formato de fechas no válido.")
-        limpio = {}
-        for clave, bloques in fechas.items():
-            try:
-                dia = date.fromisoformat(str(clave))
-            except ValueError:
-                raise serializers.ValidationError(f"Fecha no válida: {clave}.")
-            if not isinstance(bloques, dict) or dia.weekday() == 6:
-                continue
-            fila = {}
-            for bloque, franjas in self.BLOQUES.items():
-                valor = bloques.get(bloque)
-                if valor is None:
-                    continue
-                if bloque == "tarde" and dia.weekday() in (2, 5):
-                    continue
-                if valor not in ("",) + franjas:
-                    raise serializers.ValidationError(f"Franja no válida: {valor}.")
-                fila[bloque] = valor
-            if fila:
-                limpio[dia.isoformat()] = fila
-        return dict(sorted(limpio.items()))
+        return fechas_validas(fechas)
 
     def validate(self, attrs):
-        fechas = attrs.get("fechas", getattr(self.instance, "fechas", None) or {})
-        if self.instance is None and not fechas:
+        if self.instance is None and not attrs.get("fechas"):
             raise serializers.ValidationError(
                 "Marca en el calendario los días que viene.")
-        if "fechas" in attrs:
-            attrs["fecha_desde"] = min(fechas) if fechas else None
-            attrs["fecha_hasta"] = max(fechas) if fechas else None
         return attrs
+
+    def create(self, validated_data):
+        validated_data.pop("fechas", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("fechas", None)
+        return super().update(instance, validated_data)
 
 
 class TareaMantenimientoSerializer(serializers.ModelSerializer):

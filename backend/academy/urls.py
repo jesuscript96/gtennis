@@ -20,6 +20,7 @@ router.register("escuelas", views.EscuelaViewSet)
 router.register("preferencias-superficie", views.PreferenciaSuperficieViewSet)
 router.register("avisos", views.AvisoViewSet, basename="aviso")
 router.register("invitados", views.InvitadoViewSet, basename="invitado")
+router.register("visitas-invitado", views.VisitaInvitadoViewSet, basename="visita-invitado")
 router.register("mantenimiento", views.TareaMantenimientoViewSet)
 router.register("feedback", views.FeedbackViewSet)
 

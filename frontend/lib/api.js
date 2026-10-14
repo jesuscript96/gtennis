@@ -175,6 +175,18 @@ export const aprobarInvitado = (id) =>
   req(`/invitados/${id}/aprobar/`, { method: "POST", body: "{}" });
 export const editarInvitado = (id, body) =>
   req(`/invitados/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
+// Volver a invitarle: solo días, sin tocar la ficha.
+export const anadirDiasInvitado = (id, fechas) =>
+  req(`/invitados/${id}/dias/`, { method: "POST", body: JSON.stringify({ fechas }) });
+export const borrarInvitado = (id) => req(`/invitados/${id}/`, { method: "DELETE" });
+// Cada día que viene un invitado (el calendario).
+export const editarVisita = (id, body) =>
+  req(`/visitas-invitado/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
+export const quitarVisita = (id) => req(`/visitas-invitado/${id}/`, { method: "DELETE" });
+export const aprobarVisita = (id) =>
+  req(`/visitas-invitado/${id}/aprobar/`, { method: "POST", body: "{}" });
+export const rechazarVisita = (id) =>
+  req(`/visitas-invitado/${id}/rechazar/`, { method: "POST", body: "{}" });
 export const rechazarInvitado = (id, motivo = "") =>
   req(`/invitados/${id}/rechazar/`, { method: "POST", body: JSON.stringify({ motivo }) });
 

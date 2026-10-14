@@ -1216,8 +1216,9 @@ class GruposParaTodosTests(TestCase):
 
 
 class InvitadoComoJugadorTests(TestCase):
-    """14/10/2026: el invitado se da de alta como un jugador nuevo, con su
-    ficha deportiva, todo lo que mira el motor y las fechas en que viene."""
+    """14/10/2026: el invitado es una persona con su ficha deportiva y todo lo
+    que mira el motor; los días que viene son visitas, y dirección aprueba la
+    ficha y cada visita. Volver a invitarle solo añade días."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -1227,15 +1228,19 @@ class InvitadoComoJugadorTests(TestCase):
 
         u_ent = User.objects.create_user(
             username="ivan", password="x", role=User.Role.ENTRENADOR)
+        u_otro = User.objects.create_user(
+            username="blas", password="x", role=User.Role.ENTRENADOR)
         u_dir = User.objects.create_user(
             username="dir", password="x", role=User.Role.SUPERADMIN)
         self.ivan = Entrenador.objects.create(nombre="Ivan", user=u_ent)
+        self.blas = Entrenador.objects.create(nombre="Blas", user=u_otro)
         self.otro = Entrenador.objects.create(nombre="Otro")
         self.d3, _ = Division.objects.get_or_create(nivel=3)
         self.amigo = Jugador.objects.create(nombre="Amigo")
         self.enemigo = Jugador.objects.create(nombre="Enemigo")
-        self.ent, self.dir = APIClient(), APIClient()
+        self.ent, self.dir, self.ent2 = APIClient(), APIClient(), APIClient()
         self.ent.force_authenticate(u_ent)
+        self.ent2.force_authenticate(u_otro)
         self.dir.force_authenticate(u_dir)
 
     def _proponer(self, **extra):
@@ -1251,32 +1256,30 @@ class InvitadoComoJugadorTests(TestCase):
         datos.update(extra)
         return self.ent.post("/api/invitados/", datos, format="json")
 
-    def test_sin_fechas_no_se_puede_proponer(self):
-        r = self._proponer(fechas={})
-        self.assertEqual(r.status_code, 400)
+    def test_sin_dias_no_se_puede_proponer(self):
+        self.assertEqual(self._proponer(fechas={}).status_code, 400)
 
     def test_al_aprobar_sale_un_jugador_con_todo(self):
         from academy.models import (
-            Contrato, HorarioJugador, PreferenciaPareja, PreferenciaSuperficie,
-            Rencilla, VetoEntrenador,
+            Contrato, PreferenciaPareja, PreferenciaSuperficie, Rencilla,
+            VetoEntrenador, VisitaInvitado,
         )
 
         r = self._proponer()
         self.assertEqual(r.status_code, 201, r.content)
-        r = self.dir.post(f"/api/invitados/{r.json()['id']}/aprobar/")
+        inv = r.json()
+        self.assertEqual(len(inv["visitas"]), 2)
+        r = self.dir.post(f"/api/invitados/{inv['id']}/aprobar/")
         self.assertEqual(r.status_code, 200, r.content)
         j = Jugador.objects.get(pk=r.json()["jugador_creado"])
         self.assertEqual((j.division, j.edad, j.sexo, j.vecindad, j.entrenador_responsable),
                          (self.d3, 15, "CHICO", "ARRIBA", self.ivan))
         self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-10-21"))
-        self.assertFalse(j.en_alta(date(2026, 10, 26)))
-        # La semana habitual, vacía: los días los da el calendario. El
-        # miércoles por la tarde está cerrado y se descarta.
         self.assertFalse(HorarioJugador.objects.filter(jugador=j).filter(
             Q(entrena_manana=True) | Q(entrena_tarde=True)).exists())
-        self.assertEqual(Invitado.objects.get(jugador_creado=j).fechas,
-                         {"2026-10-19": {"manana": "M1", "tarde": ""},
-                          "2026-10-21": {"manana": ""}})
+        # El miércoles por la tarde está cerrado y se descarta.
+        v = VisitaInvitado.objects.get(invitado_id=inv["id"], fecha=date(2026, 10, 21))
+        self.assertEqual((v.manana, v.tarde, v.estado), ("", None, "APROBADA"))
         self.assertTrue(PreferenciaSuperficie.objects.filter(jugador=j, superficie="TIERRA").exists())
         self.assertEqual(PreferenciaPareja.objects.get(jugador=j).tipo, "SOFT")
         self.assertTrue(Rencilla.objects.filter(jugador_a__in=[j, self.enemigo],
@@ -1284,37 +1287,51 @@ class InvitadoComoJugadorTests(TestCase):
         self.assertEqual(Contrato.objects.get(jugador=j).entrenador, self.ivan)
         self.assertEqual(VetoEntrenador.objects.get(jugador=j).entrenador, self.otro)
 
-    def test_solo_se_corrige_mientras_esta_pendiente(self):
+    def test_volver_a_invitar_solo_anade_dias_y_hay_que_aprobarlos(self):
+        from academy.models import VisitaInvitado
+
         inv = self._proponer().json()
-        r = self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 16}, format="json")
-        self.assertEqual(r.status_code, 200)
         self.dir.post(f"/api/invitados/{inv['id']}/aprobar/")
-        r = self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 17}, format="json")
-        self.assertEqual(r.status_code, 403)
-
-    def test_si_vuelve_es_el_mismo_jugador_con_las_fechas_nuevas(self):
-        from academy.models import PreferenciaPareja
-
-        primera = self._proponer().json()
-        j1 = self.dir.post(f"/api/invitados/{primera['id']}/aprobar/").json()["jugador_creado"]
-        r = self._proponer(fechas={"2026-11-16": {"manana": ""}},
-                           repite_de=primera["id"], jugar_con=None)
-        self.assertEqual(r.status_code, 201, r.content)
-        j2 = self.dir.post(f"/api/invitados/{r.json()['id']}/aprobar/").json()["jugador_creado"]
-        self.assertEqual(j1, j2)
-        j = Jugador.objects.get(pk=j2)
-        # De alta del primer día de octubre al de noviembre.
+        # Otro entrenador le invita en noviembre: la ficha no se toca.
+        r = self.ent2.post(f"/api/invitados/{inv['id']}/dias/",
+                           {"fechas": {"2026-11-16": {"manana": "M2"}}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        v = VisitaInvitado.objects.get(invitado_id=inv["id"], fecha=date(2026, 11, 16))
+        self.assertEqual((v.estado, v.solicitante), ("PENDIENTE", self.blas))
+        self.assertEqual(Invitado.objects.filter(nombre="Llorca").count(), 1)
+        j = Jugador.objects.get(pk=Invitado.objects.get(pk=inv["id"]).jugador_creado_id)
+        self.assertEqual(str(j.fecha_baja), "2026-10-21")
+        self.dir.post(f"/api/visitas-invitado/{v.id}/aprobar/")
+        j.refresh_from_db()
         self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-11-16"))
-        self.assertEqual(j.horario.count(), 6)
-        self.assertFalse(PreferenciaPareja.objects.filter(jugador=j).exists())
+        self.assertEqual(Jugador.objects.filter(nombre__startswith="Llorca").count(), 1)
+
+    def test_el_calendario_lista_las_visitas_del_mes(self):
+        self._proponer()
+        r = self.ent2.get("/api/visitas-invitado/?desde=2026-10-01&hasta=2026-10-31")
+        filas = r.json().get("results", r.json())
+        self.assertEqual([(f["fecha"], f["invitado_nombre"], f["estado"]) for f in filas],
+                         [("2026-10-19", "Llorca", "PENDIENTE"),
+                          ("2026-10-21", "Llorca", "PENDIENTE")])
+
+    def test_la_ficha_aprobada_solo_la_cambia_direccion_y_pasa_al_jugador(self):
+        inv = self._proponer().json()
+        self.assertEqual(self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 16},
+                                        format="json").status_code, 200)
+        self.dir.post(f"/api/invitados/{inv['id']}/aprobar/")
+        self.assertEqual(self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 17},
+                                        format="json").status_code, 403)
+        self.assertEqual(self.dir.patch(f"/api/invitados/{inv['id']}/", {"edad": 17},
+                                        format="json").status_code, 200)
+        self.assertEqual(Jugador.objects.get(nombre__startswith="Llorca").edad, 17)
 
 
 class InvitadoEnElMotorTests(TestCase):
-    """El invitado entra en el cuadrante el día que se marcó en el calendario,
-    y en ningún otro."""
+    """El invitado entra en el cuadrante los días de sus visitas aprobadas, y
+    en ningún otro."""
 
-    def test_viene_solo_el_dia_marcado(self):
-        from academy.models import Division, Invitado
+    def test_viene_solo_el_dia_aprobado(self):
+        from academy.models import Division, VisitaInvitado
 
         Jugador.objects.update(activo=False)
         Entrenador.objects.update(activo=False)
@@ -1333,9 +1350,12 @@ class InvitadoEnElMotorTests(TestCase):
         for d in range(6):
             HorarioJugador.objects.create(jugador=kira, dia=d, entrena_manana=False,
                                           entrena_tarde=False)
-        Invitado.objects.create(
-            nombre="Kira", entrenador_solicitante=ent, estado="APROBADO",
-            jugador_creado=kira, fechas={(LUNES + timedelta(days=2)).isoformat(): {"manana": "M1"}})
+        inv = Invitado.objects.create(nombre="Kira", entrenador_solicitante=ent,
+                                      estado="APROBADO", jugador_creado=kira)
+        VisitaInvitado.objects.create(invitado=inv, fecha=LUNES + timedelta(days=2),
+                                      manana="M1", estado="APROBADA")
+        VisitaInvitado.objects.create(invitado=inv, fecha=LUNES + timedelta(days=1),
+                                      manana="M1", estado="PENDIENTE")
         semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
         generate(semana, dias=[0, 1, 2], bloques=["MANANA"])
         dias = set(Asignacion.objects.filter(semana=semana, jugador=kira).values_list("dia", flat=True))

@@ -965,9 +965,10 @@ class Aviso(models.Model):
 
 
 class Invitado(models.Model):
-    """Jugador invitado por un entrenador para un día de entrenamiento (#5).
-    Requiere aprobación del Director Deportivo (Super Admin) antes de entrar en
-    los entrenamientos."""
+    """Un invitado: la persona, con su ficha deportiva y lo que mira el motor
+    (#5; desde el 14/10/2026, una sola ficha por persona). Los días que viene
+    son sus `VisitaInvitado`: volver a invitarle es añadirle días, sin tocar
+    la ficha. Dirección aprueba la ficha la primera vez y cada visita."""
 
     class Estado(models.TextChoices):
         PENDIENTE = "PENDIENTE", "Pendiente"
@@ -992,7 +993,7 @@ class Invitado(models.Model):
         related_name="invitados_aprobados",
     )
     # Jugador temporal creado al aprobar, para poder ubicarlo en el cuadrante.
-    # Si vuelve otro mes, todas sus invitaciones apuntan al mismo jugador.
+    # El mismo jugador todas las veces que viene, con su historial.
     jugador_creado = models.ForeignKey(
         Jugador, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="invitaciones",
@@ -1014,13 +1015,6 @@ class Invitado(models.Model):
     pareja_estricta = models.BooleanField(default=True)
     # 14/10/2026: el invitado se da de alta como un jugador nuevo, con su ficha
     # deportiva y todo lo que mira el motor, y solo entre estas fechas.
-    fecha_desde = models.DateField(null=True, blank=True, verbose_name="Viene desde")
-    fecha_hasta = models.DateField(null=True, blank=True, verbose_name="hasta")
-    # Los días que viene, elegidos en un calendario: {"2026-10-14": {"manana":
-    # "M2", "tarde": ""}, …}. Por bloque: el código de la franja, "" = la que
-    # mejor encaje, y sin clave = ese bloque no viene. `fecha_desde` y
-    # `fecha_hasta` son la primera y la última.
-    fechas = models.JSONField(default=dict, blank=True)
     sexo = models.CharField(max_length=5, choices=Jugador.Sexo.choices, blank=True)
     vecindad = models.CharField(
         max_length=6, choices=Jugador.Vecindad.choices, default=Jugador.Vecindad.CLUB)
@@ -1038,11 +1032,6 @@ class Invitado(models.Model):
         Entrenador, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     entrena_con_estricto = models.BooleanField(default=False)
     no_entrena_con = models.ManyToManyField(Entrenador, blank=True, related_name="+")
-    # Si vuelve otra vez (otro mes), la invitación de la que se copia: al
-    # aprobarla se reutiliza el mismo jugador, con su historial.
-    repite_de = models.ForeignKey(
-        "self", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="repeticiones")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1052,6 +1041,41 @@ class Invitado(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.get_estado_display()})"
+
+
+class VisitaInvitado(models.Model):
+    """Un día que viene un invitado, con su mañana y su tarde. Cada visita la
+    aprueba dirección; el motor solo cuenta las aprobadas."""
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente"
+        APROBADA = "APROBADA", "Aprobada"
+        RECHAZADA = "RECHAZADA", "Rechazada"
+
+    invitado = models.ForeignKey(Invitado, on_delete=models.CASCADE, related_name="visitas")
+    fecha = models.DateField()
+    # Por bloque: None = ese bloque no viene; "" = la franja que mejor encaje;
+    # o el código de la franja (M1/M2, T1/T2).
+    manana = models.CharField(max_length=2, null=True, blank=True)
+    tarde = models.CharField(max_length=2, null=True, blank=True)
+    solicitante = models.ForeignKey(
+        Entrenador, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.PENDIENTE)
+    aprobado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Visita de invitado"
+        verbose_name_plural = "Visitas de invitados"
+        ordering = ["fecha", "invitado__nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["invitado", "fecha"], name="una_visita_por_dia"),
+        ]
+
+    def __str__(self):
+        return f"{self.invitado.nombre} {self.fecha:%d/%m} ({self.get_estado_display()})"
 
 
 class TareaMantenimiento(models.Model):

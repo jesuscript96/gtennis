@@ -874,16 +874,21 @@ def _emparejar_entrenadores(
 
 
 def _dias_de_invitados():
-    """{jugador: {"2026-10-14": {"manana": "M2", …}}} de las invitaciones
-    aprobadas: los días concretos que viene cada invitado (14/10/2026). Si ha
-    venido varias veces, todas cuentan."""
-    from academy.models import Invitado
+    """{jugador: {"2026-10-14": {"manana": "M2", …}}}: los días que viene cada
+    invitado, de sus visitas aprobadas (14/10/2026)."""
+    from academy.models import VisitaInvitado
 
     dias = defaultdict(dict)
-    for jid, fechas in Invitado.objects.filter(
-        estado=Invitado.Estado.APROBADO, jugador_creado__isnull=False,
-    ).values_list("jugador_creado_id", "fechas"):
-        dias[jid].update(fechas or {})
+    for jid, fecha, manana, tarde in VisitaInvitado.objects.filter(
+        estado=VisitaInvitado.Estado.APROBADA,
+        invitado__jugador_creado__isnull=False,
+    ).values_list("invitado__jugador_creado_id", "fecha", "manana", "tarde"):
+        fila = {}
+        if manana is not None:
+            fila["manana"] = manana
+        if tarde is not None:
+            fila["tarde"] = tarde
+        dias[jid][fecha.isoformat()] = fila
     return dias
 
 

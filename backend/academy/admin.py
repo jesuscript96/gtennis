@@ -9,6 +9,7 @@ from .models import (
     Feedback,
     HorarioJugador,
     Invitado,
+    VisitaInvitado,
     Jugador,
     Pista,
     Rencilla,
@@ -167,6 +168,12 @@ class AvisoAdmin(admin.ModelAdmin):
 @admin.register(Invitado)
 class InvitadoAdmin(admin.ModelAdmin):
     list_display = ("nombre", "entrenador_solicitante", "estado", "aprobado_por", "created_at")
+    list_filter = ("estado",)
+
+
+@admin.register(VisitaInvitado)
+class VisitaInvitadoAdmin(admin.ModelAdmin):
+    list_display = ("invitado", "fecha", "manana", "tarde", "estado", "solicitante")
     list_filter = ("estado",)
 
 

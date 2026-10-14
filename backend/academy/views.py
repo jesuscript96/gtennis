@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Value, When
 from rest_framework import filters, viewsets
@@ -29,6 +31,7 @@ from .models import (
     Turno,
     VacacionesEntrenador,
     VetoEntrenador,
+    VisitaInvitado,
 )
 from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion
 from .scope import (
@@ -46,6 +49,7 @@ from .serializers import (
     EscuelaSerializer,
     FeedbackSerializer,
     InvitadoSerializer,
+    VisitaInvitadoSerializer,
     JugadorSerializer,
     JugadorTurnosSerializer,
     PistaSerializer,
@@ -763,31 +767,29 @@ class AvisoViewSet(viewsets.ModelViewSet):
         return Response({"ok": True})
 
 
-def _jugador_previo(inv):
-    """El jugador de la última vez que vino, si esta invitación repite."""
-    vista = set()
-    previa = inv.repite_de
-    while previa is not None and previa.pk not in vista:
-        if previa.jugador_creado_id:
-            return previa.jugador_creado
-        vista.add(previa.pk)
-        previa = previa.repite_de
-    return None
+def _escuela_por_defecto(solicitante):
+    """La escuela de los alumnos del entrenador que lo propone; si no tiene,
+    Alto Rendimiento."""
+    escuela = (
+        Jugador.objects.filter(entrenadores_gestores=solicitante, activo=True)
+        .values_list("escuela_id", flat=True).first()
+    )
+    if escuela is None:
+        escuela = (Escuela.objects.filter(nombre__icontains="alto rendimiento")
+                   .values_list("id", flat=True).first())
+    return escuela
 
 
-def _jugador_de_invitado(inv, escuela_default):
-    """El jugador que sale de un invitado aprobado: un alta como cualquier
-    otra, con su ficha deportiva y todo lo que mira el motor, y de alta solo
-    entre sus fechas (14/10/2026).
-
-    Si vuelve (otra invitación copiada de una anterior), es el mismo jugador:
-    se le ponen las fechas y la ficha de esta vez y conserva su historial. Lo
-    que mira el motor (semana, superficie, parejas, rencillas, entrenadores)
-    queda exactamente como dice esta invitación."""
+def _aplicar_ficha(inv):
+    """El jugador del invitado con su ficha: lo crea la primera vez y después
+    le pone lo que diga la ficha (14/10/2026). Es siempre el mismo jugador, con
+    su historial. Lo que mira el motor (superficie, parejas, rencillas,
+    entrenadores) queda exactamente como dice la ficha; los días que viene son
+    sus visitas aprobadas (ver engine.service._dias_de_invitados)."""
     solicitante = inv.entrenador_solicitante
     campos = dict(
         activo=True,
-        escuela_id=inv.escuela_id or escuela_default,
+        escuela_id=inv.escuela_id or _escuela_por_defecto(solicitante),
         entrenador_responsable=solicitante,
         division=inv.division,
         edad=inv.edad,
@@ -800,19 +802,11 @@ def _jugador_de_invitado(inv, escuela_default):
         **({"sesiones_dia_max": inv.sesiones_dia_max}
            if inv.sesiones_dia_max else {}),
     )
-    jugador = _jugador_previo(inv)
-    # De alta desde el primer día que vino hasta el último que viene, contando
-    # las veces anteriores; qué días en concreto lo mira el motor en
-    # `Invitado.fechas` (ver engine.service._dias_de_invitados).
-    dias = set(inv.fechas or {})
-    if jugador is not None:
-        for previa in jugador.invitaciones.filter(estado=Invitado.Estado.APROBADO):
-            dias |= set(previa.fechas or {})
-    from datetime import date as _date
-    campos["fecha_alta"] = _date.fromisoformat(min(dias)) if dias else None
-    campos["fecha_baja"] = _date.fromisoformat(max(dias)) if dias else None
+    jugador = inv.jugador_creado
     if jugador is None:
         jugador = Jugador.objects.create(nombre=f"{inv.nombre} (invitado)", **campos)
+        inv.jugador_creado = jugador
+        inv.save(update_fields=["jugador_creado"])
     else:
         for k, v in campos.items():
             setattr(jugador, k, v)
@@ -826,8 +820,8 @@ def _jugador_de_invitado(inv, escuela_default):
         Contrato.objects.filter(jugador=jugador).delete()
         VetoEntrenador.objects.filter(jugador=jugador).delete()
     pesos.guardar(jugador, pesos.propuesta(solicitante))
-    # Semana habitual vacía: no viene ningún día salvo los de sus fechas, que
-    # el motor mira aparte. Sin filas, el motor le daría por venir todos.
+    # Semana habitual vacía: no viene ningún día salvo sus visitas, que el
+    # motor mira aparte. Sin filas, el motor le daría por venir todos.
     for dia in range(6):
         HorarioJugador.objects.create(
             jugador=jugador, dia=dia, entrena_manana=False, entrena_tarde=False)
@@ -854,119 +848,285 @@ def _jugador_de_invitado(inv, escuela_default):
         )
     for ent in inv.no_entrena_con.all():
         VetoEntrenador.objects.create(jugador=jugador, entrenador=ent)
+    _fechas_de_alta(inv)
     return jugador
 
 
+def _fechas_de_alta(inv):
+    """De alta del primer al último día de sus visitas aprobadas."""
+    jugador = inv.jugador_creado
+    if jugador is None:
+        return
+    fechas = list(inv.visitas.filter(estado=VisitaInvitado.Estado.APROBADA)
+                  .values_list("fecha", flat=True))
+    jugador.fecha_alta = min(fechas) if fechas else None
+    jugador.fecha_baja = max(fechas) if fechas else None
+    # Sin ninguna visita aprobada no entra en el cuadrante: de alta y baja el
+    # mismo día de su creación sería engañoso, así que se le da de baja ayer.
+    if not fechas:
+        from datetime import date, timedelta
+        jugador.fecha_baja = date.today() - timedelta(days=1)
+    jugador.save(update_fields=["fecha_alta", "fecha_baja"])
+
+
+def _avisar(usuario, titulo, mensaje=""):
+    if usuario:
+        Aviso.objects.create(usuario=usuario, tipo=Aviso.Tipo.INVITADO,
+                             titulo=titulo, mensaje=mensaje)
+
+
+def _avisar_direccion(titulo, mensaje=""):
+    Aviso.objects.create(para_direccion=True, tipo=Aviso.Tipo.INVITADO,
+                         titulo=titulo, mensaje=mensaje)
+
+
+def _dias_texto(fechas):
+    return ", ".join(f"{f:%d/%m}" for f in sorted(fechas))
+
+
+def _aprobar_visitas(visitas, usuario):
+    """Aprueba estas visitas (y la ficha del invitado, si aún no lo estaba)."""
+    por_invitado = defaultdict(list)
+    for v in visitas:
+        por_invitado[v.invitado].append(v)
+    for inv, suyas in por_invitado.items():
+        if inv.estado != Invitado.Estado.APROBADO:
+            inv.estado = Invitado.Estado.APROBADO
+            inv.aprobado_por = usuario
+            inv.save(update_fields=["estado", "aprobado_por"])
+            _aplicar_ficha(inv)
+        for v in suyas:
+            v.estado = VisitaInvitado.Estado.APROBADA
+            v.aprobado_por = usuario
+            v.save(update_fields=["estado", "aprobado_por"])
+        _fechas_de_alta(inv)
+        quien = suyas[0].solicitante or inv.entrenador_solicitante
+        _avisar(getattr(quien, "user", None), f"Invitado aprobado: {inv.nombre}",
+                f"Viene el {_dias_texto(v.fecha for v in suyas)}.")
+
+
 class InvitadoViewSet(viewsets.ModelViewSet):
-    """Invitados propuestos por entrenadores; aprobación por el Super Admin (#5)."""
+    """Los invitados (las personas) con su ficha (#5; 14/10/2026). Los ven
+    todos, para poder volver a invitar a uno conocido; dirección aprueba la
+    ficha y cada día que viene."""
 
     serializer_class = InvitadoSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        u = self.request.user
-        qs = Invitado.objects.select_related(
-            "entrenador_solicitante", "grupo_anfitrion"
-        )
-        if u.is_superadmin:
-            return qs
-        coach = getattr(u, "coach", None)
-        if coach is not None:
-            return qs.filter(entrenador_solicitante__in=coach.entrenadores.all())
-        ent = getattr(u, "entrenador", None)
-        return qs.filter(entrenador_solicitante=ent) if ent else qs.none()
+        return Invitado.objects.select_related(
+            "entrenador_solicitante", "jugar_con",
+        ).prefetch_related("visitas")
+
+    def _entrenador(self):
+        return getattr(self.request.user, "entrenador", None)
+
+    def _crear_visitas(self, inv, fechas, solicitante):
+        """Añade estos días al invitado. Los pone dirección: aprobados si su
+        ficha ya lo está. Los pone un entrenador: pendientes de dirección."""
+        from datetime import date
+
+        direccion = self.request.user.is_superadmin
+        directo = direccion and inv.estado == Invitado.Estado.APROBADO
+        nuevas = []
+        for clave, fila in fechas.items():
+            dia = date.fromisoformat(clave)
+            v = inv.visitas.filter(fecha=dia).first()
+            if v is not None and v.estado == VisitaInvitado.Estado.APROBADA and not direccion:
+                continue
+            if v is None:
+                v = VisitaInvitado(invitado=inv, fecha=dia)
+            v.manana, v.tarde = fila.get("manana"), fila.get("tarde")
+            v.solicitante = solicitante
+            if directo:
+                v.estado = VisitaInvitado.Estado.APROBADA
+                v.aprobado_por = self.request.user
+            elif v.estado != VisitaInvitado.Estado.APROBADA:
+                v.estado = VisitaInvitado.Estado.PENDIENTE
+            v.save()
+            nuevas.append(v)
+        if directo:
+            _fechas_de_alta(inv)
+        elif nuevas:
+            _avisar_direccion(
+                f"Invitado pendiente: {inv.nombre}",
+                f"{solicitante.nombre if solicitante else 'Dirección'} propone que venga el "
+                f"{_dias_texto(v.fecha for v in nuevas)}. Requiere tu aprobación.")
+        return nuevas
 
     def perform_create(self, serializer):
-        u = self.request.user
-        ent = getattr(u, "entrenador", None)
+        ent = self._entrenador()
         solicitante = serializer.validated_data.get("entrenador_solicitante") or ent
         if solicitante is None:
             raise PermissionDenied("Tu usuario no está enlazado a un entrenador.")
-        inv = serializer.save(entrenador_solicitante=solicitante)
-        Aviso.objects.create(
-            para_direccion=True,
-            tipo=Aviso.Tipo.INVITADO,
-            titulo=f"Invitado pendiente: {inv.nombre}",
-            mensaje=f"{solicitante.nombre} solicita añadir a «{inv.nombre}». Requiere tu aprobación.",
-        )
-        # Notificar siempre al Coach del entrenador solicitante (#5).
+        fechas = serializer.validated_data.get("fechas") or {}
+        with transaction.atomic():
+            inv = serializer.save(entrenador_solicitante=solicitante)
+            self._crear_visitas(inv, fechas, solicitante)
         from .scope import coaches_del_entrenador
         for coach_user in coaches_del_entrenador(solicitante):
-            Aviso.objects.create(
-                usuario=coach_user,
-                tipo=Aviso.Tipo.INVITADO,
-                titulo=f"Invitado propuesto por {solicitante.nombre}",
-                mensaje=f"«{inv.nombre}» — pendiente de aprobación por dirección.",
-            )
+            _avisar(coach_user, f"Invitado propuesto por {solicitante.nombre}",
+                    f"«{inv.nombre}» — pendiente de aprobación por dirección.")
+
+    def _puede_tocar(self, inv):
+        """Dirección siempre; quien lo propuso, mientras la ficha está
+        pendiente."""
+        if self.request.user.is_superadmin:
+            return True
+        ent = self._entrenador()
+        return (inv.estado == Invitado.Estado.PENDIENTE and ent is not None
+                and inv.entrenador_solicitante_id == ent.id)
 
     def perform_update(self, serializer):
-        # Mientras está pendiente se corrige aquí; aprobado, ya es un jugador y
-        # su ficha se toca en Jugadores.
-        if serializer.instance.estado != Invitado.Estado.PENDIENTE:
+        if not self._puede_tocar(serializer.instance):
             raise PermissionDenied(
-                "El invitado ya está resuelto: cambia su ficha en Jugadores.")
-        serializer.save()
+                "La ficha de un invitado aprobado la cambia dirección.")
+        with transaction.atomic():
+            inv = serializer.save()
+            # Aprobado, la ficha manda sobre su jugador.
+            if inv.estado == Invitado.Estado.APROBADO:
+                _aplicar_ficha(inv)
 
-    def _avisar_solicitante(self, inv, titulo, mensaje):
-        user = getattr(inv.entrenador_solicitante, "user", None)
-        if user:
-            Aviso.objects.create(
-                usuario=user, tipo=Aviso.Tipo.INVITADO, titulo=titulo, mensaje=mensaje
-            )
+    def perform_destroy(self, instance):
+        if not self.request.user.is_superadmin:
+            raise PermissionDenied("Solo la dirección deportiva borra invitados.")
+        if instance.jugador_creado_id:
+            raise PermissionDenied(
+                "Ya ha entrenado como jugador: no se borra, se queda en el historial.")
+        instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def dias(self, request, pk=None):
+        """Volver a invitarle: añade días, sin tocar su ficha."""
+        from .serializers import fechas_validas
+
+        inv = self.get_object()
+        if inv.estado == Invitado.Estado.RECHAZADO and not request.user.is_superadmin:
+            raise PermissionDenied("Dirección rechazó a este invitado.")
+        fechas = fechas_validas(request.data.get("fechas") or {})
+        if not fechas:
+            raise ValidationError("Marca al menos un día.")
+        solicitante = self._entrenador() or inv.entrenador_solicitante
+        with transaction.atomic():
+            if inv.estado == Invitado.Estado.RECHAZADO:
+                inv.estado = Invitado.Estado.PENDIENTE
+                inv.save(update_fields=["estado"])
+            nuevas = self._crear_visitas(inv, fechas, solicitante)
+        return Response(VisitaInvitadoSerializer(nuevas, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def aprobar(self, request, pk=None):
+        """La ficha y todos sus días pendientes."""
+        if not request.user.is_superadmin:
+            raise PermissionDenied("Solo la dirección deportiva aprueba invitados.")
+        inv = self.get_object()
+        pendientes = list(inv.visitas.filter(estado=VisitaInvitado.Estado.PENDIENTE))
+        if inv.estado == Invitado.Estado.APROBADO and not pendientes:
+            return Response({"error": "No tiene nada pendiente."}, status=409)
+        if not pendientes and not inv.visitas.filter(
+                estado=VisitaInvitado.Estado.APROBADA).exists():
+            raise ValidationError("Antes de aprobarlo, marca los días que viene.")
+        with transaction.atomic():
+            if pendientes:
+                _aprobar_visitas(pendientes, request.user)
+            else:
+                inv.estado = Invitado.Estado.APROBADO
+                inv.aprobado_por = request.user
+                inv.save(update_fields=["estado", "aprobado_por"])
+                _aplicar_ficha(inv)
+        inv.refresh_from_db()
+        return Response(InvitadoSerializer(inv).data)
+
+    @action(detail=True, methods=["post"])
+    def rechazar(self, request, pk=None):
+        """Sin aprobar aún: rechaza la ficha. Aprobado: rechaza sus días
+        pendientes."""
+        if not request.user.is_superadmin:
+            raise PermissionDenied("Solo la dirección deportiva rechaza invitados.")
+        inv = self.get_object()
+        with transaction.atomic():
+            inv.visitas.filter(estado=VisitaInvitado.Estado.PENDIENTE).update(
+                estado=VisitaInvitado.Estado.RECHAZADA, aprobado_por=request.user)
+            if inv.estado == Invitado.Estado.PENDIENTE:
+                inv.estado = Invitado.Estado.RECHAZADO
+                inv.aprobado_por = request.user
+                inv.save(update_fields=["estado", "aprobado_por"])
+        _avisar(getattr(inv.entrenador_solicitante, "user", None),
+                f"Invitado rechazado: {inv.nombre}", request.data.get("motivo", ""))
+        return Response(InvitadoSerializer(inv).data)
+
+
+class VisitaInvitadoViewSet(viewsets.ModelViewSet):
+    """Los días que viene cada invitado: el calendario de invitados. Se crean
+    desde el invitado (/invitados/{id}/dias/); aquí se ven, se cambia la
+    franja, se quitan y dirección los aprueba."""
+
+    serializer_class = VisitaInvitadoSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "patch", "delete", "post"]
+
+    def get_queryset(self):
+        qs = VisitaInvitado.objects.select_related(
+            "invitado__division", "solicitante")
+        p = self.request.query_params
+        if p.get("desde"):
+            qs = qs.filter(fecha__gte=p["desde"])
+        if p.get("hasta"):
+            qs = qs.filter(fecha__lte=p["hasta"])
+        if p.get("invitado"):
+            qs = qs.filter(invitado_id=p["invitado"])
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        raise PermissionDenied("Los días se añaden desde el invitado.")
+
+    def _puede_tocar(self, v):
+        if self.request.user.is_superadmin:
+            return True
+        ent = getattr(self.request.user, "entrenador", None)
+        return (v.estado == VisitaInvitado.Estado.PENDIENTE and ent is not None
+                and v.solicitante_id == ent.id)
+
+    def perform_update(self, serializer):
+        if not self._puede_tocar(serializer.instance):
+            raise PermissionDenied("Solo dirección cambia un día ya aprobado.")
+        v = serializer.save()
+        if v.estado == VisitaInvitado.Estado.APROBADA:
+            _fechas_de_alta(v.invitado)
+
+    def perform_destroy(self, instance):
+        if not self._puede_tocar(instance):
+            raise PermissionDenied("Solo dirección quita un día ya aprobado.")
+        inv, aprobada = instance.invitado, instance.estado == VisitaInvitado.Estado.APROBADA
+        instance.delete()
+        if aprobada:
+            _fechas_de_alta(inv)
 
     @action(detail=True, methods=["post"])
     def aprobar(self, request, pk=None):
         if not request.user.is_superadmin:
             raise PermissionDenied("Solo la dirección deportiva aprueba invitados.")
-        inv = self.get_object()
-        if inv.estado != Invitado.Estado.PENDIENTE:
-            return Response({"error": "El invitado ya está resuelto."}, status=409)
-        if not inv.fechas:
-            raise ValidationError(
-                "Antes de aprobarlo, marca en el calendario los días que viene.")
-        # Asociación por entrenador solicitante (#5 feedback Sergio): el grupo
-        # del invitado se entiende por el entrenador que lo propone, no por un
-        # 'grupo_anfitrión'. Derivamos escuela y responsable de ahí.
-        solicitante = inv.entrenador_solicitante
-        escuela_default = (
-            Jugador.objects.filter(
-                entrenadores_gestores=solicitante, activo=True
-            ).values_list("escuela_id", flat=True).first()
-        )
-        if escuela_default is None:
-            # Si el entrenador no tiene jugadores activos,alto rendimiento por defecto.
-            from .models import Escuela
-            escuela_default = (
-                Escuela.objects.filter(nombre__icontains="alto rendimiento")
-                .values_list("id", flat=True).first()
-            )
+        v = self.get_object()
         with transaction.atomic():
-            jugador = _jugador_de_invitado(inv, escuela_default)
-            inv.estado = Invitado.Estado.APROBADO
-            inv.aprobado_por = request.user
-            inv.jugador_creado = jugador
-            inv.save()
-        self._avisar_solicitante(
-            inv, f"Invitado aprobado: {inv.nombre}",
-            "Entra en el cuadrante los días y fechas que se indicaron; su ficha, "
-            "en Jugadores.",
-        )
-        return Response(InvitadoSerializer(inv).data)
+            _aprobar_visitas([v], request.user)
+        v.refresh_from_db()
+        return Response(VisitaInvitadoSerializer(v).data)
 
     @action(detail=True, methods=["post"])
     def rechazar(self, request, pk=None):
         if not request.user.is_superadmin:
             raise PermissionDenied("Solo la dirección deportiva rechaza invitados.")
-        inv = self.get_object()
-        if inv.estado != Invitado.Estado.PENDIENTE:
-            return Response({"error": "El invitado ya está resuelto."}, status=409)
-        inv.estado = Invitado.Estado.RECHAZADO
-        inv.aprobado_por = request.user
-        inv.save()
-        self._avisar_solicitante(
-            inv, f"Invitado rechazado: {inv.nombre}", request.data.get("motivo", "")
-        )
-        return Response(InvitadoSerializer(inv).data)
+        v = self.get_object()
+        aprobada = v.estado == VisitaInvitado.Estado.APROBADA
+        v.estado = VisitaInvitado.Estado.RECHAZADA
+        v.aprobado_por = request.user
+        v.save(update_fields=["estado", "aprobado_por"])
+        if aprobada:
+            _fechas_de_alta(v.invitado)
+        _avisar(getattr(v.solicitante, "user", None),
+                f"Día rechazado: {v.invitado.nombre} el {v.fecha:%d/%m}",
+                request.data.get("motivo", ""))
+        return Response(VisitaInvitadoSerializer(v).data)
 
 
 class TareaMantenimientoViewSet(viewsets.ModelViewSet):
