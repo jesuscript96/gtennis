@@ -192,6 +192,15 @@ class PairingInput:
     dedicados: dict[int, dict[int, set[int]]] = field(default_factory=dict)
     # Premio por cada jugador de la lista que va en su pista: que vayan juntos.
     w_dedicado: int = 0
+    # Números de las pistas de tierra que se prefieren sin entrenador,
+    # vigiladas desde la de al lado (14/10/2026: la 2 y la 5, y con entrenador
+    # la 1, 3, 4 y 6). Cada pista de tierra vigilada que no es de estas cuesta
+    # `w_vigilada_fuera`.
+    vigiladas_preferidas: frozenset[int] = frozenset()
+    w_vigilada_fuera: int = 0
+    # En resina siempre hay algún entrenador: si una sede abre pistas de
+    # resina, al menos una de ellas lo lleva (y vigila a la otra).
+    resina_con_entrenador: bool = False
 
 
 @dataclass
@@ -207,6 +216,8 @@ class PairingResult:
     cubiertas: dict[int, set[int]] = field(default_factory=dict)
     # franja -> {entrenador dedicado: su pista} (ver `dedicados`)
     dedicadas: dict[int, dict[int, int]] = field(default_factory=dict)
+    # franja -> {pista vigilada: pista con entrenador que la vigila}
+    vigilancia: dict[int, dict[int, int]] = field(default_factory=dict)
 
 
 def _normalise(a: int, b: int) -> tuple[int, int]:
@@ -450,6 +461,8 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     # entrenador (y dos como mucho) que la vigile. Vecinas son las de la misma
     # sede con número contiguo; cada pista con entrenador vigila a una sola.
     cub = {}
+    vig = {}
+    fuera_de_patron = []
     if data.entrenadores_reparto is not None:
         por_sede = defaultdict(dict)
         for c in courts:
@@ -488,12 +501,21 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                         model.Add(w <= 1 - dv)
                     vigila[v.id].append(w)
                     vigilada[c.id].append(w)
+                    vig[f, v.id, c.id] = w
             for c in courts:
                 occ = sum(en_pista[f, c.id])
                 extra = max(0, tope(c) - 2)
                 if extra:
                     model.Add(occ <= 2 + extra * cub[f, c.id])
                 model.Add(used[f, c.id] - cub[f, c.id] <= sum(vigilada[c.id]))
+                if len(vigilada[c.id]) > 1:
+                    model.Add(sum(vigilada[c.id]) <= 1)
+                # La 2 y la 5 son las que se dejan sin entrenador: vigilar otra
+                # de tierra cuesta.
+                if (data.w_vigilada_fuera and c.surface != "RESINA"
+                        and c.number is not None
+                        and c.number not in data.vigiladas_preferidas):
+                    fuera_de_patron.append(used[f, c.id] - cub[f, c.id])
                 if vigila[c.id]:
                     model.Add(sum(vigila[c.id]) <= 1)
                     if extra:
@@ -502,6 +524,15 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 for c in courts:
                     if (pid, f, c.id) in x:
                         model.Add(cub[f, c.id] >= x[pid, f, c.id])
+            if data.resina_con_entrenador:
+                resinas = defaultdict(list)
+                for c in courts:
+                    if c.surface == "RESINA":
+                        resinas[c.venue_id].append(c)
+                for de_sede in resinas.values():
+                    for c in de_sede:
+                        model.Add(used[f, c.id]
+                                  <= sum(cub[f, r.id] for r in de_sede))
 
     # Tantas pistas como entrenadores: por la tarde es un tope, por la mañana
     # una preferencia con su coste.
@@ -657,6 +688,10 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 model.Add(both <= x[b, f, c.id])
                 terms.append(data.w_pair * both)
 
+    # 5a) Pistas de tierra vigiladas que no son la 2 ni la 5.
+    for e in fuera_de_patron:
+        terms.append(-data.w_vigilada_fuera * e)
+
     # 5b) Los de la lista de un dedicado, juntos en su pista.
     if data.w_dedicado:
         for (f, e, cid), d in ded.items():
@@ -745,7 +780,11 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                         cubiertas[f].add(c.id)
 
     dedicadas: dict = {}
+    vigilancia: dict = {}
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        for (f, v, c), w in vig.items():
+            if solver.Value(w):
+                vigilancia.setdefault(f, {})[c] = v
         for (f, e, cid), d in ded.items():
             if solver.Value(d):
                 dedicadas.setdefault(f, {})[e] = cid
@@ -759,4 +798,5 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         franjas=por_franja if data.franjas else {},
         cubiertas=cubiertas if cub else {},
         dedicadas=dedicadas,
+        vigilancia=vigilancia,
     )

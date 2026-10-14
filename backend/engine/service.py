@@ -186,6 +186,13 @@ FRANJA_CERRADA = {(4, "T2")}
 # que vale colocar a alguien, así que nunca deja a nadie fuera.
 PESO_JUNTOS_DEDICADO = 500
 
+# Pistas de tierra que se dejan sin entrenador, vigiladas por la de al lado:
+# con entrenador la 1, 3, 4 y 6, y sin él la 2 y la 5 (14/10/2026). Es
+# preferencia: vigilar otra cuesta esto, menos que abrir pista o dejar a
+# alguien fuera.
+VIGILADAS_PREFERIDAS = frozenset({2, 5})
+PESO_VIGILADA_FUERA = 300
+
 
 def hay_entrenamiento(dia, bloque):
     """¿Se entrena ese día en ese bloque? El miércoles por la tarde, no."""
@@ -866,6 +873,30 @@ def _emparejar_entrenadores(
     return asignado, repetidos
 
 
+def _con_la_de_menos(entrenador_de, pistas, vigilancia, courts_by_id, atados,
+                     vetos, solo_atado):
+    """El entrenador que cuida dos pistas —la suya y la que vigila al lado—
+    va en el cuadrante con la que menos jugadores tiene (14/10/2026).
+
+    No se cambia si así la resina se queda sin entrenador, si alguno de los de
+    la pista nueva le tiene vetado, si tiene contrato con alguno de la suya, ni
+    si es de los que solo entran por unos jugadores (banquillo, Dani)."""
+    for vigilada, suya in vigilancia.items():
+        cid = entrenador_de.get(suya)
+        if (cid is None or vigilada in entrenador_de or cid in solo_atado
+                or vigilada not in pistas or suya not in pistas
+                or len(pistas[vigilada]) >= len(pistas[suya])):
+            continue
+        if (courts_by_id[suya].surface == "RESINA"
+                and courts_by_id[vigilada].surface != "RESINA"):
+            continue
+        if any(cid in vetos.get(j, ()) for j in pistas[vigilada]):
+            continue
+        if any(cid in atados.get(j, ()) for j in pistas[suya]):
+            continue
+        entrenador_de[vigilada] = entrenador_de.pop(suya)
+
+
 @transaction.atomic
 def _con_preferencia(base, extra):
     """`base` (contratos) más las preferencias de esta franja, sin tocar `base`."""
@@ -1264,13 +1295,16 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                                       for cid in reparto[t.id] if cid in solo_con}
                                for t in fase},
                     w_dedicado=PESO_JUNTOS_DEDICADO,
+                    vigiladas_preferidas=VIGILADAS_PREFERIDAS,
+                    w_vigilada_fuera=PESO_VIGILADA_FUERA,
+                    resina_con_entrenador=True,
                 ))
 
             # Por la tarde, T1 primero con todos y, quien no cabe, a T2 (si
             # hace falta T2, se usa: 13/10/2026). La mañana se decide entera.
             fases = [[t] for t in orden] if es_tarde else [grupo]
             franjas_res, cubiertas_res, estados = {}, {}, {}
-            dedicadas_res = {}
+            dedicadas_res, vigilancia_res = {}, {}
             pendientes = list(players)
             for fase in fases:
                 ids = {t.id for t in fase}
@@ -1282,6 +1316,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     franjas_res[t.id] = r.franjas.get(t.id, {})
                     cubiertas_res[t.id] = r.cubiertas.get(t.id)
                     dedicadas_res[t.id] = r.dedicadas.get(t.id, {})
+                    vigilancia_res[t.id] = r.vigilancia.get(t.id, {})
                     estados[t.id] = r.status
                 puestos = {jid for t in fase for m in franjas_res[t.id].values()
                            for jid in m}
@@ -1320,6 +1355,8 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     cubrir=cubiertas_res.get(turno.id),
                     sin_rescate=set(solo_con),
                 )
+                _con_la_de_menos(entrenador_de, pistas, vigilancia_res.get(turno.id, {}),
+                                 courts_by_id, atados, vetos_coach, solo_atado)
                 sin_entrenador = [p for p in pistas if p not in entrenador_de]
                 if sin_entrenador:
                     report.setdefault("sin_entrenador", []).append(

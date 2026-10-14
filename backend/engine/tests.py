@@ -1079,3 +1079,46 @@ class CubrirConLosQueSobranTests(SimpleTestCase):
             info_pistas={10: (1, 1, 0), 11: (1, 2, 0)}, cubrir={11},
         )
         self.assertEqual(set(asig), {10, 11})
+
+
+class PatronVigiladasYResinaTests(SimpleTestCase):
+    """14/10/2026: en tierra, con entrenador la 1, 3, 4 y 6 y vigiladas la 2
+    y la 5; en resina siempre hay algún entrenador; y quien cuida dos pistas
+    va en el cuadrante con la que menos jugadores tiene."""
+
+    def _resolver(self, pistas, n_jugadores, entrenadores, **kw):
+        return solve_pairing(PairingInput(
+            players=[Player(id=i, division=5) for i in range(n_jugadores)],
+            courts=pistas, franjas=[1], capacidad_max=3, time_limit_s=5,
+            entrenadores_reparto={1: entrenadores}, **kw,
+        ))
+
+    def test_con_cuatro_entrenadores_la_2_y_la_5_vigiladas(self):
+        pistas = [Court(id=i, venue_id=1, capacity=3, number=i, surface="TIERRA")
+                  for i in range(1, 7)]
+        r = self._resolver(pistas, 12, 4, vigiladas_preferidas=frozenset({2, 5}),
+                           w_vigilada_fuera=300)
+        self.assertEqual(len(r.franjas[1]), 6)
+        self.assertEqual(r.cubiertas[1], {1, 3, 4, 6})
+        self.assertEqual(r.vigilancia[1], {2: r.vigilancia[1][2], 5: r.vigilancia[1][5]})
+
+    def test_la_resina_no_la_vigila_la_tierra(self):
+        pistas = [Court(id=6, venue_id=1, capacity=3, number=6, surface="TIERRA"),
+                  Court(id=7, venue_id=1, capacity=3, number=7, surface="RESINA")]
+        r = self._resolver(pistas, 4, 1, resina_con_entrenador=True)
+        self.assertEqual(len(r.franjas[1]), 2)
+        self.assertEqual(r.cubiertas[1], {7})
+
+    def test_el_entrenador_va_con_la_pista_de_menos(self):
+        from .service import _con_la_de_menos
+
+        pistas = {1: [10, 11], 2: [12]}
+        tierra = Court(id=0, venue_id=1, surface="TIERRA")
+        por_id = {1: tierra, 2: tierra}
+        entrenador_de = {1: 99}
+        _con_la_de_menos(entrenador_de, pistas, {2: 1}, por_id, {}, {}, set())
+        self.assertEqual(entrenador_de, {2: 99})
+        # Con un veto en la pista de menos, se queda donde estaba.
+        entrenador_de = {1: 99}
+        _con_la_de_menos(entrenador_de, pistas, {2: 1}, por_id, {}, {12: {99}}, set())
+        self.assertEqual(entrenador_de, {1: 99})
