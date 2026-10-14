@@ -2,7 +2,7 @@ from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Value, When
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -1190,16 +1190,10 @@ class GrupoViewSet(viewsets.ViewSet):
     dirección.
     """
 
-    # El organigrama es cosa de dirección y de los coaches (que ven el suyo).
-    # El entrenador no reorganiza a nadie: lo suyo son sus jugadores.
+    # El organigrama lo ve todo el mundo igual (14/10/2026): dirección,
+    # coaches y entrenadores. Reorganizarlo es cosa de dirección y del head
+    # coach de cada color; el entrenador solo mira.
     permission_classes = [DireccionOrCoachWrite]
-
-    def initial(self, request, *args, **kwargs):
-        super().initial(request, *args, **kwargs)
-        if not (request.user.is_superadmin or _coach_activo(request.user)):
-            raise PermissionDenied(
-                "Los grupos los ve la dirección deportiva y los coaches."
-            )
 
     def _ficha(self, j, con=None):
         return {
@@ -1226,6 +1220,13 @@ class GrupoViewSet(viewsets.ViewSet):
             return None
         return set(coach.entrenadores.values_list("pk", flat=True))
 
+    def _puede_ordenar(self, coach_id):
+        """Ordenar las columnas de un bloque: dirección, o su head coach."""
+        if self.request.user.is_superadmin:
+            return True
+        coach = _coach_activo(self.request.user)
+        return coach is not None and bool(coach.color) and coach.pk == coach_id
+
     def _assert_gestiona(self, jugador, entrenador):
         """Dirección mueve a cualquiera; el head coach, dentro de su color: el
         alumno es de una columna de su color (o no tiene grupo) y la columna
@@ -1245,22 +1246,19 @@ class GrupoViewSet(viewsets.ViewSet):
     def list(self, request):
         from collections import defaultdict
 
+        # Todos ven la página entera, como dirección: no se filtra por usuario.
         entrenadores = list(
-            entrenadores_visibles(request.user)
-            .filter(activo=True)
+            Entrenador.objects.filter(activo=True)
             .prefetch_related("coaches")
-            .order_by("nombre")
+            .order_by("orden_grupo", "nombre")
         )
         ids = {e.id for e in entrenadores}
         nombres = {e.id: e.nombre for e in entrenadores}
         jugadores = {
             j.id: j
-            for j in jugadores_visibles(
-                request.user,
-                base=Jugador.objects.filter(activo=True).select_related(
-                    "division", "escuela", "entrenador_responsable"
-                ).prefetch_related("cogestores"),
-            )
+            for j in Jugador.objects.filter(activo=True).select_related(
+                "division", "escuela", "entrenador_responsable"
+            ).prefetch_related("cogestores")
         }
 
         propios = defaultdict(list)
@@ -1284,6 +1282,11 @@ class GrupoViewSet(viewsets.ViewSet):
         por_bloque = defaultdict(list)
         for e in entrenadores:
             coach = bloque_de(e)
+            # El head coach no sale como columna de su propio grupo si no lleva
+            # a nadie: ya está en la cabecera (Dani Gimeno).
+            if (coach is not None and coach.color and coach.user_id
+                    and coach.user_id == e.user_id and not propios[e.id]):
+                continue
             # Los niveles de sus alumnos, para situarse: la división ya no dice
             # a quién puede entrenar.
             niveles = sorted({f["division"] for f in propios[e.id] if f["division"]})
@@ -1300,7 +1303,13 @@ class GrupoViewSet(viewsets.ViewSet):
         # Se devuelven TODOS los bloques, también los que se han quedado sin
         # entrenadores: si no, no habría dónde soltar al que se arrastra.
         orden = {v: i for i, v in enumerate(Coach.Color.values)}
-        coaches = sorted(coaches_visibles(request.user),
+        # Los bloques sin color (Sergio, Iván, Álvaro…) solo le sirven a
+        # dirección, que es quien coloca ahí columnas: los demás ven los grupos.
+        direccion = bool(request.user.is_superadmin)
+        visibles = Coach.objects.filter(activo=True)
+        if not direccion:
+            visibles = visibles.exclude(color="")
+        coaches = sorted(visibles,
                          key=lambda c: (orden.get(c.color, len(orden)), c.nombre))
         bloques = [
             {
@@ -1310,7 +1319,8 @@ class GrupoViewSet(viewsets.ViewSet):
             }
             for c in coaches
         ]
-        bloques.append({"coach": None, "grupos": por_bloque.get(None, [])})
+        if direccion:
+            bloques.append({"coach": None, "grupos": por_bloque.get(None, [])})
 
         # Sin grupo es quien no tiene responsable (o lo tiene de baja). El
         # coach ve además a alumnos que gestiona otro color porque los
@@ -1321,7 +1331,6 @@ class GrupoViewSet(viewsets.ViewSet):
                 j.entrenador_responsable is None
                 or not j.entrenador_responsable.activo)
         ]
-        direccion = bool(request.user.is_superadmin)
         return Response({
             "bloques": bloques,
             "sin_grupo": sin_grupo,
@@ -1330,6 +1339,8 @@ class GrupoViewSet(viewsets.ViewSet):
             # (entrenadores de un bloque a otro): solo dirección.
             "puede_editar": direccion or self._color_propio() is not None,
             "puede_mover_entrenadores": direccion,
+            # Bloques cuyas columnas puede ordenar (todos, para dirección).
+            "puede_ordenar": [c.id for c in coaches if self._puede_ordenar(c.id)],
         })
 
     def _jugador(self, request):
@@ -1364,6 +1375,22 @@ class GrupoViewSet(viewsets.ViewSet):
             jugador.save(update_fields=["entrenador_responsable"])
             # Cambia de columna: quien compartía la gestión ya no la comparte.
             jugador.cogestores.clear()
+        return Response({"ok": True})
+
+    @action(detail=False, methods=["post"])
+    def ordenar(self, request):
+        """Las columnas de un bloque, de izquierda a derecha: `orden` es la
+        lista de entrenadores en el orden en que se quieren ver."""
+        try:
+            coach_id = int(request.data.get("coach"))
+            orden = [int(i) for i in request.data.get("orden") or []]
+        except (TypeError, ValueError):
+            raise ValidationError("Falta el bloque o el orden.")
+        if not self._puede_ordenar(coach_id):
+            raise PermissionDenied("Solo puedes ordenar las columnas de tu grupo.")
+        with transaction.atomic():
+            for i, eid in enumerate(orden):
+                Entrenador.objects.filter(pk=eid).update(orden_grupo=i + 1)
         return Response({"ok": True})
 
     @action(detail=False, methods=["post"])

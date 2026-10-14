@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getGrupos, grupoMover, grupoMoverEntrenador, grupoQuitar, resource,
+  getGrupos, grupoMover, grupoMoverEntrenador, grupoOrdenar, grupoQuitar, resource,
 } from "../../../lib/api";
 
 /**
@@ -30,6 +30,10 @@ import {
  * de su color. Salen primero y pintados de ese color. Su head coach (Dani,
  * Pablo, Santi) mueve a los alumnos de su color; las columnas entre bloques
  * solo las mueve dirección.
+ *
+ * Desde el 14/10/2026 la ven todos igual (el entrenador, solo mirando), y las
+ * columnas de un bloque se ordenan de izquierda a derecha arrastrándolas por la
+ * cabecera: dirección en todos los bloques, el head coach en el suyo.
  */
 export default function Page() {
   const [datos, setDatos] = useState(null);
@@ -39,6 +43,9 @@ export default function Page() {
   // Lo que se está moviendo, se arrastre o se toque: { tipo, id, nombre, desde }
   const [cogido, setCogido] = useState(null);
   const [encima, setEncima] = useState(null);
+  // Al arrastrar una columna: en qué bloque cae y delante de quién
+  // ({ coach, antes }; `antes` null = al final).
+  const [insercion, setInsercion] = useState(null);
   const [fantasma, setFantasma] = useState(null);
   // Se arrastra con el puntero (true) o se ha cogido tocando (false). Importa
   // porque los botones "Traer aquí" solo valen para el toque: si salieran
@@ -64,10 +71,13 @@ export default function Page() {
   // de un bloque a otro (solo dirección).
   const editable = !!datos?.puede_editar;
   const columnasEditables = !!datos?.puede_mover_entrenadores;
+  const ordenables = new Set(datos?.puede_ordenar || []);
+  const puedeOrdenar = (coachId) => coachId != null && ordenables.has(coachId);
 
   const limpiar = useCallback(() => {
     setCogido(null);
     setEncima(null);
+    setInsercion(null);
     setFantasma(null);
     setArrastrando(false);
     document.body.classList.remove("arrastrando");
@@ -115,6 +125,25 @@ export default function Page() {
         `${q.nombre} fuera de la lista de grupos.`
       );
     }
+    if (zona.orden) {
+      // Orden nuevo del bloque: sus columnas sin la que se mueve, y esta
+      // delante de `antes` (o al final).
+      const bloque = datos?.bloques.find((b) => b.coach?.id === zona.coach);
+      const ids = (bloque?.grupos || []).map((g) => g.entrenador.id)
+        .filter((id) => id !== q.id);
+      const i = zona.antes == null ? ids.length : ids.indexOf(zona.antes);
+      ids.splice(i < 0 ? ids.length : i, 0, q.id);
+      if (zona.coach === q.desde) {
+        const antes = (bloque?.grupos || []).map((g) => g.entrenador.id);
+        if (antes.join() === ids.join()) return;
+        return accion(() => grupoOrdenar(zona.coach, ids),
+          `Orden de ${zona.nombre} guardado.`);
+      }
+      return accion(async () => {
+        await grupoMoverEntrenador(q.id, zona.coach, q.desde);
+        await grupoOrdenar(zona.coach, ids);
+      }, `${q.nombre} y sus alumnos pasan al bloque de ${zona.nombre}.`);
+    }
     if (zona.coach === q.desde) return;
     return accion(
       () => grupoMoverEntrenador(q.id, zona.coach, q.desde),
@@ -122,19 +151,49 @@ export default function Page() {
         ? `${q.nombre} y sus alumnos pasan al bloque de ${zona.nombre}.`
         : `${q.nombre} se queda fuera de los bloques.`
     );
-  }, [accion, limpiar]);
+  }, [accion, limpiar, datos]);
 
   // --- arrastre con eventos de puntero -------------------------------------
+  // Delante de qué columna del bloque cae el puntero, en orden de lectura (de
+  // izquierda a derecha y, si se apilan, de arriba abajo). null = al final.
+  function columnaSiguiente(bloque, x, y, mover) {
+    const cols = [...bloque.querySelectorAll(".columnas > .columna")]
+      .filter((c) => Number(c.dataset.entrenador) !== mover);
+    for (const c of cols) {
+      const r = c.getBoundingClientRect();
+      if (y < r.top || (y <= r.bottom && x < r.left + r.width / 2)) {
+        return Number(c.dataset.entrenador);
+      }
+    }
+    return null;
+  }
+
   // Zona de destino bajo el cursor, de las que aceptan lo que se lleva.
-  function zonaEn(x, y, tipo) {
+  function zonaEn(x, y, tipo, payload) {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
     if (tipo === "entrenador") {
-      // Soltar a un entrenador encima de otra columna no hace nada: se queda
-      // en la suya. Solo cuentan el bloque y la zona de quitar.
       const papelera = el.closest('[data-zona="quitar"]');
       if (papelera) return { clave: "quitar", quitar: true };
-      if (el.closest(".columna")) return null;
+      // Una columna cae en un bloque, delante de la columna que toque: en el
+      // suyo se reordena (dirección y su head coach) y en otro, se muda
+      // (solo dirección).
+      const bloque = el.closest('[data-zona="entrenador"]');
+      if (!bloque) return null;
+      const coach = bloque.dataset.coach ? Number(bloque.dataset.coach) : null;
+      const mismo = coach === payload.desde;
+      if (coach == null) {
+        // «Sin bloque»: ahí no hay orden, solo se deja fuera (dirección).
+        return payload.muda && !mismo
+          ? { clave: "bloque-sin", coach: null, nombre: bloque.dataset.nombre }
+          : null;
+      }
+      if (mismo ? !payload.ordena : !payload.muda) return null;
+      const antes = columnaSiguiente(bloque, x, y, payload.id);
+      return {
+        clave: `orden-${coach}-${antes ?? "fin"}`, orden: true,
+        coach, antes, nombre: bloque.dataset.nombre,
+      };
     }
     const destino = el.closest(`[data-zona="${tipo}"]`);
     if (!destino) return null;
@@ -160,8 +219,9 @@ export default function Page() {
         document.body.classList.add("arrastrando");
       }
       setFantasma({ x: e.clientX, y: e.clientY, nombre: a.payload.nombre });
-      const zona = zonaEn(e.clientX, e.clientY, a.payload.tipo);
+      const zona = zonaEn(e.clientX, e.clientY, a.payload.tipo, a.payload);
       setEncima(zona ? zona.clave : null);
+      setInsercion(zona?.orden ? { coach: zona.coach, antes: zona.antes } : null);
 
       // Al llegar a los bordes la página se desplaza sola: si no, no se puede
       // llevar a nadie de la lista de arriba a un bloque de más abajo.
@@ -177,7 +237,7 @@ export default function Page() {
       window.removeEventListener("pointerup", alSoltar);
       window.removeEventListener("pointercancel", alCancelar);
       if (!a || !a.activo) return;  // fue un clic: lo recoge el onClick
-      soltarEn(zonaEn(e.clientX, e.clientY, a.payload.tipo), a.payload);
+      soltarEn(zonaEn(e.clientX, e.clientY, a.payload.tipo, a.payload), a.payload);
     }
 
     function alCancelar() {
@@ -197,8 +257,9 @@ export default function Page() {
   }, [soltarEn, limpiar]);
 
   function empezarArrastre(e, payload) {
-    if (!editable || ocupado) return;
-    if (payload.tipo === "entrenador" && !columnasEditables) return;
+    if (ocupado) return;
+    if (payload.tipo === "jugador" && !editable) return;
+    if (payload.tipo === "entrenador" && !payload.ordena && !payload.muda) return;
     // El dedo tiene que poder desplazar la lista: en táctil se mueve tocando.
     if (e.pointerType === "touch" || e.button !== 0) return;
     if (e.target.closest("button.quitar, button.traer")) return;
@@ -227,7 +288,7 @@ export default function Page() {
   const conBotones = !!cogido && !arrastrando;
 
   // --- piezas --------------------------------------------------------------
-  const alumno = (j, entrenador, conComun = "") => {
+  const alumno = (j, entrenador) => {
     const payload = {
       tipo: "jugador", id: j.id, nombre: j.nombre,
       desde: entrenador ? entrenador.id : null,
@@ -241,9 +302,6 @@ export default function Page() {
           onClick={() => setCogido(payload)}>
           <span className="div-badge">{j.division ? `D${j.division}` : "—"}</span>
           <span className="txt">{j.nombre}</span>
-          {j.con?.length > 0 && j.con.join(" y ") !== conComun && (
-            <span className="de-quien">con {j.con.join(" y ")}</span>
-          )}
         </button>
         {editable && entrenador && (
           <button type="button" className="quitar" disabled={ocupado}
@@ -259,15 +317,16 @@ export default function Page() {
     );
   };
 
-  const columna = (g, coachId) => {
+  const columna = (g, coachId, ultima) => {
     const e = g.entrenador;
     const propios = g.jugadores.filter(coincide);
     const clave = `col-${e.id}`;
-    const payload = { tipo: "entrenador", id: e.id, nombre: e.nombre, desde: coachId };
-    // Si toda la columna la comparte con el mismo (Mario y Jorge I.), se dice
-    // una vez en la cabecera y no en cada alumno.
-    const cons = new Set(g.jugadores.map((j) => (j.con || []).join(" y ")));
-    const conComun = cons.size === 1 ? [...cons][0] : "";
+    const payload = {
+      tipo: "entrenador", id: e.id, nombre: e.nombre, desde: coachId,
+      ordena: puedeOrdenar(coachId), muda: columnasEditables,
+    };
+    const arrastrable = payload.ordena || payload.muda;
+    const aqui = insercion && insercion.coach === coachId;
     return (
       <article key={e.id}
         onPointerDown={(ev) => empezarArrastre(ev, payload)}
@@ -277,16 +336,22 @@ export default function Page() {
           moviendoEntrenador && cogido.id === e.id ? "cogido" : "",
           encima === clave ? "encima" : "",
           moviendoJugador ? "esperando" : "",
+          aqui && insercion.antes === e.id ? "insertar-antes" : "",
+          aqui && insercion.antes == null && ultima ? "insertar-despues" : "",
         ].filter(Boolean).join(" ")}>
         <header className="col-head"
+          style={arrastrable ? undefined : { cursor: "default" }}
           onClick={() => columnasEditables && setCogido(payload)}
-          title={columnasEditables ? "Arrastra la columna a otro bloque" : undefined}>
-          <span className="agarre" aria-hidden="true">⠿</span>
+          title={arrastrable
+            ? (columnasEditables
+              ? "Arrastra la columna para ordenarla o llevarla a otro bloque"
+              : "Arrastra la columna para ordenarla")
+            : undefined}>
+          {arrastrable && <span className="agarre" aria-hidden="true">⠿</span>}
           <div>
             <h3>{e.nombre}</h3>
             <p className="sub">{e.divisiones} · {g.jugadores.length} alumno
               {g.jugadores.length === 1 ? "" : "s"}</p>
-            {conComun && <p className="sub comparte">Gestión compartida con {conComun}</p>}
           </div>
         </header>
 
@@ -300,7 +365,7 @@ export default function Page() {
         {propios.length === 0 ? (
           <p className="msg">{busca ? "Ninguno con ese nombre." : "Sin alumnos."}</p>
         ) : (
-          <ul className="miembros">{propios.map((j) => alumno(j, e, conComun))}</ul>
+          <ul className="miembros">{propios.map((j) => alumno(j, e))}</ul>
         )}
 
       </article>
@@ -319,6 +384,8 @@ export default function Page() {
         <p className="help">
           Arrastra un <b>alumno</b> a la columna de otro entrenador
           {columnasEditables && <>, o una <b>columna entera</b> (por su cabecera) a otro bloque</>}.
+          {ordenables.size > 0 && <> Las columnas se ordenan de izquierda a derecha
+          arrastrándolas por la cabecera.</>}{" "}
           El alumno pasa a ese grupo: responsable y principal el de la columna,
           y un 10% al resto del bloque (se retoca en Jugadores → Entrenadores).
           En el móvil, toca a quien mueves y luego <b>Traer aquí</b>.
@@ -396,8 +463,11 @@ export default function Page() {
             className={[
               "bloque",
               color ? `grupo-color color-${color}` : "",
-              encima === clave ? "encima" : "",
-              moviendoEntrenador ? "esperando" : "",
+              encima === clave
+                || (moviendoEntrenador && b.coach && insercion?.coach === b.coach.id
+                    && b.coach.id !== cogido.desde) ? "encima" : "",
+              moviendoEntrenador && (columnasEditables || b.coach?.id === cogido.desde)
+                ? "esperando" : "",
             ].filter(Boolean).join(" ")}>
             <header className="bloque-head">
               <h2>{b.coach ? b.coach.nombre : "Sin bloque"}</h2>
@@ -428,7 +498,8 @@ export default function Page() {
               </p>
             ) : (
               <div className="columnas">
-                {b.grupos.map((g) => columna(g, b.coach ? b.coach.id : null))}
+                {b.grupos.map((g, i) => columna(g, b.coach ? b.coach.id : null,
+                  i === b.grupos.length - 1))}
               </div>
             )}
           </section>

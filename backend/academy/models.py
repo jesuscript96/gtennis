@@ -163,16 +163,19 @@ class Entrenador(models.Model):
         blank=True,
         related_name="entrenadores_gestores",
     )
-    # Entrenador que por la tarde solo viene por alguien (13/10/2026: Dani
-    # Gimeno, solo con Carlos Taberner). Si no hay ninguno de estos esa tarde
-    # no entra, y si hay, va a su pista y a ninguna otra. Vacío = la tarde
-    # como cualquiera.
-    tarde_solo_con = models.ManyToManyField(
+    # Entrenador que solo entra en pista con unos jugadores (14/10/2026: Dani
+    # Gimeno, con Taberner, Sánchez, Brancaccio, López, Córdoba y Milev). Mañana
+    # y tarde: lleva una pista solo de ellos —el motor intenta juntarlos— y si
+    # no viene ninguno o ya están cubiertos, se queda en el banquillo. Vacío =
+    # entrena como cualquiera.
+    solo_con = models.ManyToManyField(
         "Jugador",
         blank=True,
-        related_name="entrenadores_de_tarde",
-        verbose_name="Por la tarde solo entrena si viene",
+        related_name="entrenadores_dedicados",
+        verbose_name="Solo entra en pista con",
     )
+    # Su sitio, de izquierda a derecha, en su bloque de la página de Grupos.
+    orden_grupo = models.PositiveSmallIntegerField(default=0)
     # El grupo que entrena: de la división `desde` a la `hasta` (p. ej. Dani
     # Gimeno, de la 1 a la 2). Vacío = cualquiera. No es una regla dura: si no
     # queda nadie de ese grupo el motor le pone otro, pero cuesta, y cuanto más

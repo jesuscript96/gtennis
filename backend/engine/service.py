@@ -181,6 +181,11 @@ CERRADO = {(2, "TARDE"), (5, "TARDE")}
 # viernes por la tarde todo el mundo entrena a las 14:15.
 FRANJA_CERRADA = {(4, "T2")}
 
+# Premio por cada jugador de su lista que va en la pista de quien solo entra
+# con ellos (Dani Gimeno): que vayan juntos cuando se pueda. Por debajo de lo
+# que vale colocar a alguien, así que nunca deja a nadie fuera.
+PESO_JUNTOS_DEDICADO = 500
+
 
 def hay_entrenamiento(dia, bloque):
     """¿Se entrena ese día en ese bloque? El miércoles por la tarde, no."""
@@ -580,6 +585,7 @@ def _emparejar_entrenadores(
     sesiones=None, blandos=None, info_pistas=None, divisiones=None,
     peso_division=0, vetos=None, solo_si_atado=frozenset(),
     nivel_protegido=0, tolerancia_division=None, cubrir=None,
+    sin_rescate=frozenset(),
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
@@ -620,6 +626,9 @@ def _emparejar_entrenadores(
     que cada una sin él tenga una vecina con él (`reparto_pistas`), y el reparto
     trabaja sobre esas. A las que vigila el de al lado no se les repite a nadie;
     solo a las que se quedan sin vecina que las cubra.
+
+    `sin_rescate` son los de `solo_si_atado` que nunca salen a rescatar una
+    pista del grupo 1-2: quien solo entra con su lista (Dani Gimeno).
 
     `cubrir` son las pistas que el motor ha decidido que llevan entrenador
     (las demás tienen dos como mucho y una vecina con entrenador que las
@@ -838,7 +847,7 @@ def _emparejar_entrenadores(
         if not huerfana(pista, asignado):
             continue
         ocupados = set(asignado.values())
-        libres = [c for c in sorted(solo_si_atado & ids_elegibles)
+        libres = [c for c in sorted((solo_si_atado - set(sin_rescate)) & ids_elegibles)
                   if c not in ocupados and c not in vetado.get(pista, ())]
         if libres:
             asignado[pista] = min(libres, key=lambda c: (
@@ -937,17 +946,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
             activo=True, disponible_semana=True, solo_manual=False)
     )
     de_banquillo = {c.id for c in all_coaches if c.reserva}
-    # Quien por la tarde solo viene por alguien (Dani Gimeno, por Taberner):
-    # {entrenador: jugadores} y, al revés, {jugador: entrenadores}.
+    # Quien solo entra en pista con unos jugadores (14/10/2026: Dani Gimeno,
+    # con sus seis del grupo 1-2): {entrenador: jugadores}. Mañana y tarde.
     solo_con = defaultdict(set)
-    for cid, jid in Entrenador.tarde_solo_con.through.objects.filter(
+    for cid, jid in Entrenador.solo_con.through.objects.filter(
         entrenador_id__in=[c.id for c in all_coaches]
     ).values_list("entrenador_id", "jugador_id"):
         solo_con[cid].add(jid)
-    solo_con_de = defaultdict(set)
-    for cid, jids in solo_con.items():
-        for jid in jids:
-            solo_con_de[jid].add(cid)
     pesos = pesos_de_entrenamiento()
     # Nivel de cada alumno: lo usa el reparto de entrenadores para respetar
     # los grupos de cada uno.
@@ -1064,26 +1069,22 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
 
         def elegibles_para(turno, presentes=frozenset()):
             """Entrenadores que pueden dar clase en este turno y no están ya en
-            otra pista a esa hora. Por la tarde, quien solo viene por alguien
-            entra solo si ese alguien está entre los `presentes`."""
+            otra pista a esa hora. Quien solo entra con unos jugadores, solo si
+            alguno está entre los `presentes`."""
             ini_t, fin_t = turno.horas(fecha)
-            tarde = turno.bloque == Turno.Bloque.TARDE
             return [
                 c for c in all_coaches
                 if motivo_no_disponible(c, dia, turno, fecha, vac_de, jornada, coach_ovr) is None
                 # No puede estar en dos pistas a la vez.
                 and not any(i < fin_t and f > ini_t for i, f in ocupacion_coach[c.id])
-                and not (tarde and solo_con.get(c.id)
+                and not (solo_con.get(c.id)
                          and not solo_con[c.id] & set(presentes))
             ]
 
         def atados_de(turno):
-            """Contratos duros de este turno: los de siempre, las preferencias
-            de franja y, por la tarde, quien solo viene por alguien."""
-            base = _con_preferencia(sponsors, pref_franja_duro.get(turno.id))
-            if turno.bloque == Turno.Bloque.TARDE and solo_con_de:
-                base = _con_preferencia(base, solo_con_de)
-            return base
+            """Contratos duros de este turno: los de siempre y las preferencias
+            de franja."""
+            return _con_preferencia(sponsors, pref_franja_duro.get(turno.id))
 
         def del_reparto(turno, presentes):
             """Los que el reparto puede poner: los elegibles menos los de
@@ -1252,14 +1253,19 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     entrenadores_reparto=(
                         {f: len(c) for f, c in reparto.items()} if regla else None),
                     con_entrenador=con_entrenador,
-                    no_vigilan={t.id: set(solo_con_de) & set(opciones)
-                                for t in fase if t.bloque == Turno.Bloque.TARDE},
+                    # Quien solo entra con su lista lleva, como mucho, una
+                    # pista solo de ellos; si no, al banquillo.
+                    dedicados={t.id: {cid: solo_con[cid] & set(opciones)
+                                      for cid in reparto[t.id] if cid in solo_con}
+                               for t in fase},
+                    w_dedicado=PESO_JUNTOS_DEDICADO,
                 ))
 
             # Por la tarde, T1 primero con todos y, quien no cabe, a T2 (si
             # hace falta T2, se usa: 13/10/2026). La mañana se decide entera.
             fases = [[t] for t in orden] if es_tarde else [grupo]
             franjas_res, cubiertas_res, estados = {}, {}, {}
+            dedicadas_res = {}
             pendientes = list(players)
             for fase in fases:
                 ids = {t.id for t in fase}
@@ -1270,6 +1276,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 for t in fase:
                     franjas_res[t.id] = r.franjas.get(t.id, {})
                     cubiertas_res[t.id] = r.cubiertas.get(t.id)
+                    dedicadas_res[t.id] = r.dedicadas.get(t.id, {})
                     estados[t.id] = r.status
                 puestos = {jid for t in fase for m in franjas_res[t.id].values()
                            for jid in m}
@@ -1285,13 +1292,15 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 en_turno = {j for m in pistas.values() for j in m} | fijos_en[turno.id]
                 # Un entrenador por pista, y a cada una quien más les toca a sus
                 # alumnos según sus porcentajes y lo que llevan hecho esta semana.
-                atados = atados_de(turno)
+                # Quien solo entra con su lista va a la pista que el motor le
+                # ha dado y a ninguna otra, como los del banquillo con contrato.
+                atados = _con_preferencia(atados_de(turno), {
+                    jid: {cid}
+                    for cid, pista in dedicadas_res.get(turno.id, {}).items()
+                    for jid in pistas.get(pista, ())
+                })
                 sueltos = _con_preferencia(blandos, pref_franja_blando.get(turno.id))
-                # Quien por la tarde solo viene por alguien va a esa pista y a
-                # ninguna otra, como los del banquillo con contrato.
-                solo_atado = set(de_banquillo)
-                if turno.bloque == Turno.Bloque.TARDE:
-                    solo_atado |= set(solo_con)
+                solo_atado = set(de_banquillo) | set(solo_con)
                 entrenador_de, repetidos = _emparejar_entrenadores(
                     pistas, atados, elegibles_para(turno, en_turno), load,
                     pesos=pesos, con_quien=coach_share, sesiones=player_sessions,
@@ -1304,6 +1313,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                     nivel_protegido=cfg.nivel_protegido,
                     tolerancia_division=cfg.tolerancia_division,
                     cubrir=cubiertas_res.get(turno.id),
+                    sin_rescate=set(solo_con),
                 )
                 sin_entrenador = [p for p in pistas if p not in entrenador_de]
                 if sin_entrenador:

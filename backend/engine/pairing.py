@@ -184,6 +184,14 @@ class PairingInput:
     # Franja -> jugadores cuya pista no vigila a la de al lado: su entrenador
     # viene solo por ellos (Dani con Taberner).
     no_vigilan: dict[int, set[int]] = field(default_factory=dict)
+    # Franja -> {entrenador: jugadores}: quien solo entra en pista con estos
+    # (14/10/2026: Dani Gimeno, con sus seis del grupo 1-2). Lleva una pista
+    # como mucho y en ella solo van jugadores de su lista (uno solo también
+    # vale: viene para eso); su pista no vigila a la de al lado. Si no hay
+    # pista así, se queda en el banquillo y no cuenta para cubrir otras.
+    dedicados: dict[int, dict[int, set[int]]] = field(default_factory=dict)
+    # Premio por cada jugador de la lista que va en su pista: que vayan juntos.
+    w_dedicado: int = 0
 
 
 @dataclass
@@ -197,6 +205,8 @@ class PairingResult:
     franjas: dict[int, dict[int, list[int]]] = field(default_factory=dict)
     # franja -> pistas que llevan entrenador (solo con `entrenadores_reparto`)
     cubiertas: dict[int, set[int]] = field(default_factory=dict)
+    # franja -> {entrenador dedicado: su pista} (ver `dedicados`)
+    dedicadas: dict[int, dict[int, int]] = field(default_factory=dict)
 
 
 def _normalise(a: int, b: int) -> tuple[int, int]:
@@ -384,6 +394,36 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         return (c.capacity if data.capacidad_max is None
                 else min(c.capacity, data.capacidad_max))
 
+    # Quien solo entra en pista con unos jugadores (Dani Gimeno): `ded[f, e,
+    # pista]` vale 1 en la pista que lleva `e`. Solo jugadores de su lista, una
+    # pista como mucho, y nadie más la lleva.
+    ded = {}
+    for f in franjas:
+        for e, lista in data.dedicados.get(f, {}).items():
+            suyas = []
+            for c in courts:
+                suyos = [x[pid, f, c.id] for pid in lista if (pid, f, c.id) in x]
+                if not suyos:
+                    continue
+                d = model.NewBoolVar(f"ded_{f}_{e}_{c.id}")
+                model.Add(d <= sum(suyos))
+                model.Add(d <= used[f, c.id])
+                for p in players:
+                    if p.id not in lista and (p.id, f, c.id) in x:
+                        model.Add(x[p.id, f, c.id] <= 1 - d)
+                ded[f, e, c.id] = d
+                suyas.append(d)
+            if suyas:
+                model.Add(sum(suyas) <= 1)
+        for c in courts:
+            de_pista = [v for (ff, _e, cid), v in ded.items()
+                        if ff == f and cid == c.id]
+            if len(de_pista) > 1:
+                model.Add(sum(de_pista) <= 1)
+
+    def dedicada(f, cid):
+        return [v for (ff, _e, c), v in ded.items() if ff == f and c == cid]
+
     for f in franjas:
         # Quien tiene su entrenador atado (Taberner con Dani) puede ir solo con
         # él aunque el bloque no abra individuales: viene para eso.
@@ -392,6 +432,7 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             occ = sum(en_pista[f, c.id])
             model.Add(occ <= tope(c) * used[f, c.id])
             solo_ok = [x[pid, f, c.id] for pid in atados_f if (pid, f, c.id) in x]
+            solo_ok += dedicada(f, c.id)
             model.Add(occ >= min_occ * used[f, c.id]
                       - (min_occ - 1) * sum(solo_ok))
             e = model.NewIntVar(0, max(0, tope(c) - c.normal_density),
@@ -418,8 +459,16 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             for c in courts:
                 cub[f, c.id] = model.NewBoolVar(f"cub_{f}_{c.id}")
                 model.Add(cub[f, c.id] <= used[f, c.id])
+            # El dedicado cuenta en el reparto solo si lleva su pista: si no,
+            # está en el banquillo y no cubre ninguna otra.
+            n_ded = len(data.dedicados.get(f, {}))
+            ded_f = [v for (ff, _e, _c), v in ded.items() if ff == f]
             model.Add(sum(cub[f, c.id] for c in courts)
-                      <= max(0, data.entrenadores_reparto.get(f, 0)))
+                      <= max(0, data.entrenadores_reparto.get(f, 0) - n_ded)
+                      + sum(ded_f))
+            for (ff, _e, cid), v in ded.items():
+                if ff == f:
+                    model.Add(cub[f, cid] >= v)
             vigila, vigilada = defaultdict(list), defaultdict(list)
             for c in courts:
                 if c.number is None:
@@ -435,6 +484,8 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                     for pid in data.no_vigilan.get(f, ()):
                         if (pid, f, v.id) in x:
                             model.Add(w <= 1 - x[pid, f, v.id])
+                    for dv in dedicada(f, v.id):
+                        model.Add(w <= 1 - dv)
                     vigila[v.id].append(w)
                     vigilada[c.id].append(w)
             for c in courts:
@@ -606,6 +657,17 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 model.Add(both <= x[b, f, c.id])
                 terms.append(data.w_pair * both)
 
+    # 5b) Los de la lista de un dedicado, juntos en su pista.
+    if data.w_dedicado:
+        for (f, e, cid), d in ded.items():
+            for pid in data.dedicados[f][e]:
+                if (pid, f, cid) not in x:
+                    continue
+                y = model.NewBoolVar(f"conded_{pid}_{f}_{cid}")
+                model.Add(y <= d)
+                model.Add(y <= x[pid, f, cid])
+                terms.append(data.w_dedicado * y)
+
     # 6) Preferencia de división: quien pide jugar hacia arriba (o abajo)
     #    cobra un premio si comparte pista con alguien de ese lado, y paga la
     #    mitad si le toca alguien del lado contrario. Es un desempate: la
@@ -682,6 +744,12 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                     if (f, c.id) in cub and solver.Value(cub[f, c.id]):
                         cubiertas[f].add(c.id)
 
+    dedicadas: dict = {}
+    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        for (f, e, cid), d in ded.items():
+            if solver.Value(d):
+                dedicadas.setdefault(f, {})[e] = cid
+
     unassigned = [p.id for p in players if p.id not in assigned]
     return PairingResult(
         courts=por_franja[franjas[0]] if len(franjas) == 1 else {},
@@ -690,4 +758,5 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         objective=solver.ObjectiveValue() if status != cp_model.UNKNOWN else 0.0,
         franjas=por_franja if data.franjas else {},
         cubiertas=cubiertas if cub else {},
+        dedicadas=dedicadas,
     )

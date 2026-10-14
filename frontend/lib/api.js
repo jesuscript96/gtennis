@@ -230,6 +230,9 @@ export const grupoMoverEntrenador = (entrenador, coach, desde) =>
   req("/grupos/mover_entrenador/", {
     method: "POST", body: JSON.stringify({ entrenador, coach, desde }),
   });
+// Ordenar las columnas de un bloque, de izquierda a derecha.
+export const grupoOrdenar = (coach, orden) =>
+  req("/grupos/ordenar/", { method: "POST", body: JSON.stringify({ coach, orden }) });
 
 // --- Ausencias de jugador por rango de fechas ------------------------------
 export const getAusenciasFechas = async (jugador) =>

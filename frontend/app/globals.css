@@ -933,7 +933,7 @@ ul.semana-jugador .vacio { color: var(--muted); font-size: .8rem; }
    desplazan a lo ancho dentro del bloque (nunca la página entera). */
 .columnas {
   display: flex; gap: .7rem; align-items: flex-start;
-  overflow-x: auto; padding-bottom: .3rem;
+  overflow-x: auto; padding: 0 .4rem .3rem; margin: 0 -.4rem;
 }
 .columna {
   flex: 0 0 232px; max-width: 232px;
@@ -951,13 +951,20 @@ ul.semana-jugador .vacio { color: var(--muted); font-size: .8rem; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .col-head .sub { margin: .1rem 0 .45rem; font-size: .72rem; color: var(--muted); }
-.col-head .sub.comparte { margin-top: -.35rem; font-style: italic; }
+/* Dónde cae la columna que se arrastra: una raya antes (o después de la
+   última). */
+.columna.insertar-antes { box-shadow: -.45rem 0 0 -.15rem var(--accent); }
+.columna.insertar-despues { box-shadow: .45rem 0 0 -.15rem var(--accent); }
+@media (max-width: 640px) {
+  .columna.insertar-antes { box-shadow: 0 -.45rem 0 -.15rem var(--accent); }
+  .columna.insertar-despues { box-shadow: 0 .45rem 0 -.15rem var(--accent); }
+}
 .btn.sm.traer { width: 100%; margin-bottom: .5rem; }
 .bloque-head .btn.sm.traer { width: auto; margin-bottom: 0; }
 
 ul.miembros { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
 ul.miembros > li {
-  display: flex; align-items: center; gap: .2rem; border-radius: 7px;
+  display: flex; align-items: center; gap: .2rem; border-radius: 7px; min-width: 0;
   padding: .05rem .1rem; cursor: grab;
 }
 ul.miembros > li:hover { background: var(--surface-2); }
@@ -974,7 +981,6 @@ ul.miembros.sueltos {
 }
 .nombre-alumno:disabled { cursor: default; }
 .nombre-alumno .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nombre-alumno .de-quien { flex: none; font-size: .66rem; color: var(--muted); }
 .div-badge {
   flex: none; font-size: .64rem; font-weight: 700; color: var(--muted);
   background: var(--surface-2); border: 1px solid var(--border);

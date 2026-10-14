@@ -702,8 +702,9 @@ class TopeDiasParejaTests(TestCase):
 
 class TardeConT2YEntrenadorDeTardeTests(TestCase):
     """13/10/2026: por la tarde, quien no cabe en T1 pasa a T2 (aunque T2 sea
-    la franja de una escuela); y el entrenador que por la tarde solo viene por
-    alguien (Dani con Taberner) entra solo si ese alguien viene, y a su pista."""
+    la franja de una escuela); y el entrenador que solo entra con unos
+    jugadores (Dani con su lista, mañana y tarde desde el 14/10) entra solo si
+    alguno viene, y a una pista solo de ellos."""
 
     def setUp(self):
         from academy.models import Escuela
@@ -764,7 +765,7 @@ class TardeConT2YEntrenadorDeTardeTests(TestCase):
         dani = Entrenador.objects.create(nombre="Dani")
         otro = Entrenador.objects.create(nombre="Otro")
         taberner = self._jugador("Taberner", 1, tarde=viene_taberner)
-        dani.tarde_solo_con.add(taberner)
+        dani.solo_con.add(taberner)
         for i in range(3):
             self._jugador(f"D6-{i}", 6)
         return dani, otro, taberner, self._tarde()
@@ -779,6 +780,72 @@ class TardeConT2YEntrenadorDeTardeTests(TestCase):
         dani, otro, _t, asig = self._con_dani(False)
         self.assertFalse(asig.filter(entrenador=dani).exists())
         self.assertEqual(asig.filter(entrenador=otro).count(), 3)
+
+    def test_dani_junta_a_los_de_su_lista_en_su_pista(self):
+        # 14/10/2026: Dani solo entra con su lista, y el motor los junta.
+        for n in (1, 2):
+            Pista.objects.create(sede=self.sede, numero=n, superficie="TIERRA")
+        dani = Entrenador.objects.create(nombre="Dani")
+        Entrenador.objects.create(nombre="Otro")
+        taberner = self._jugador("Taberner", 1)
+        lopez = self._jugador("Lopez", 2)
+        dani.solo_con.add(taberner, lopez)
+        for i in range(3):
+            self._jugador(f"D6-{i}", 6)
+        asig = self._tarde()
+        self.assertEqual(set(asig.filter(entrenador=dani).values_list("jugador", flat=True)),
+                         {taberner.id, lopez.id})
+
+    def test_en_la_pista_de_dani_no_entra_nadie_de_fuera_de_su_lista(self):
+        for n in (1, 2):
+            Pista.objects.create(sede=self.sede, numero=n, superficie="TIERRA")
+        dani = Entrenador.objects.create(nombre="Dani")
+        Entrenador.objects.create(nombre="Otro")
+        taberner = self._jugador("Taberner", 1)
+        self._jugador("Ajeno", 1)
+        dani.solo_con.add(taberner)
+        asig = self._tarde()
+        self.assertEqual(asig.count(), 2)
+        self.assertTrue(set(asig.filter(entrenador=dani).values_list("jugador", flat=True))
+                        <= {taberner.id})
+
+    def test_por_la_manana_dani_tambien_solo_con_su_lista(self):
+        from academy.models import Division
+
+        m1 = Turno.objects.get(codigo="M1")
+        for n in (1, 2, 3):
+            Pista.objects.create(sede=self.sede, numero=n, superficie="TIERRA")
+        dani = Entrenador.objects.create(nombre="Dani")
+        for i in range(2):
+            Entrenador.objects.create(nombre=f"Otro{i}")
+
+        def de_manana(nombre, nivel):
+            division, _ = Division.objects.get_or_create(nivel=nivel)
+            j = Jugador.objects.create(nombre=nombre, activo=True, division=division)
+            HorarioJugador.objects.create(
+                jugador=j, dia=0, entrena_manana=True, entrena_tarde=False,
+                turno_manana=m1)
+            return j
+
+        taberner, sanchez = de_manana("Taberner", 1), de_manana("Sanchez", 1)
+        dani.solo_con.add(taberner, sanchez)
+        for i in range(4):
+            de_manana(f"D2-{i}", 2)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        asig = Asignacion.objects.filter(semana=self.semana, dia=0)
+        self.assertEqual(asig.count(), 6)
+        self.assertEqual(set(asig.filter(entrenador=dani).values_list("jugador", flat=True)),
+                         {taberner.id, sanchez.id})
+
+    def test_sin_nadie_de_su_lista_dani_se_queda_en_el_banquillo(self):
+        Pista.objects.create(sede=self.sede, numero=1, superficie="TIERRA")
+        dani = Entrenador.objects.create(nombre="Dani")
+        dani.solo_con.add(self._jugador("Taberner", 1, tarde=False))
+        for i in range(2):
+            self._jugador(f"D1-{i}", 1)
+        asig = self._tarde()
+        self.assertEqual(asig.count(), 2)
+        self.assertFalse(asig.filter(entrenador=dani).exists())
 
 
 class ResponsableGestionTests(TestCase):
@@ -1075,3 +1142,59 @@ class FichaDeportivaCoachTests(TestCase):
         self.assertEqual((nuevo.division_id, nuevo.entrenador_responsable_id, nuevo.vecindad),
                          (div.id, blas.id, "SOLO"))
         self.assertEqual(list(nuevo.cogestores.all()), [ajeno])
+
+
+class GruposParaTodosTests(TestCase):
+    """14/10/2026: la página de Grupos se ve igual para todos; el head coach
+    no sale como columna vacía de su grupo, y las columnas se ordenan."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        u_dani = User.objects.create_user(
+            username="dani", password="x", role=User.Role.COACH)
+        u_blas = User.objects.create_user(
+            username="blas", password="x", role=User.Role.ENTRENADOR)
+        self.dani_e = Entrenador.objects.create(nombre="Dani", user=u_dani)
+        self.blas = Entrenador.objects.create(nombre="Blas", user=u_blas)
+        self.javi = Entrenador.objects.create(nombre="Javi")
+        self.nacho = Entrenador.objects.create(nombre="Nacho")
+        self.amarillo = Coach.objects.create(nombre="Dani", color="amarillo", user=u_dani)
+        self.amarillo.entrenadores.set([self.dani_e, self.blas, self.javi])
+        self.naranja = Coach.objects.create(nombre="Santi", color="naranja")
+        self.naranja.entrenadores.set([self.nacho])
+        Jugador.objects.create(nombre="De Blas", entrenador_responsable=self.blas)
+        Jugador.objects.create(nombre="De Nacho", entrenador_responsable=self.nacho)
+        self.api = APIClient()
+        self.u_dani, self.u_blas = u_dani, u_blas
+
+    def _bloques(self, user):
+        self.api.force_authenticate(user)
+        r = self.api.get("/api/grupos/")
+        self.assertEqual(r.status_code, 200)
+        mios = {self.amarillo.id, self.naranja.id}
+        return {b["coach"]["nombre"]: [g["entrenador"]["nombre"] for g in b["grupos"]]
+                for b in r.json()["bloques"] if b["coach"] and b["coach"]["id"] in mios}
+
+    def test_el_entrenador_ve_todos_los_grupos_y_sin_el_head_coach(self):
+        bloques = self._bloques(self.u_blas)
+        self.assertEqual(bloques, {"Dani": ["Blas", "Javi"], "Santi": ["Nacho"]})
+        self.assertEqual(self._bloques(self.u_dani), bloques)
+
+    def test_el_head_coach_ordena_su_grupo_y_no_otro(self):
+        self.api.force_authenticate(self.u_dani)
+        r = self.api.post("/api/grupos/ordenar/", {
+            "coach": self.amarillo.id, "orden": [self.javi.id, self.blas.id]}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self._bloques(self.u_dani)["Dani"], ["Javi", "Blas"])
+        r = self.api.post("/api/grupos/ordenar/", {
+            "coach": self.naranja.id, "orden": [self.nacho.id]}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_el_entrenador_no_ordena(self):
+        self.api.force_authenticate(self.u_blas)
+        r = self.api.post("/api/grupos/ordenar/", {
+            "coach": self.amarillo.id, "orden": [self.javi.id]}, format="json")
+        self.assertEqual(r.status_code, 403)
