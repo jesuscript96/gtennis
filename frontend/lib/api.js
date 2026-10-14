@@ -263,3 +263,29 @@ export const addPreferenciaSuperficie = (body) =>
   req("/preferencias-superficie/", { method: "POST", body: JSON.stringify(body) });
 export const delPreferenciaSuperficie = (id) =>
   req(`/preferencias-superficie/${id}/`, { method: "DELETE" });
+
+// --- Torneos (módulo aparte: comparte jugadores y entrenadores) -----------
+export const getTorneos = async (params = {}) => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) p.set(k, v);
+  const s = p.toString();
+  return rows(await req(`/torneos/${s ? `?${s}` : ""}`));
+};
+export const getTorneo = (id) => req(`/torneos/${id}/`);
+export const crearTorneo = (body) => req("/torneos/", { method: "POST", body: JSON.stringify(body) });
+export const guardarTorneo = (id, body) =>
+  req(`/torneos/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
+export const borrarTorneo = (id) => req(`/torneos/${id}/`, { method: "DELETE" });
+export const getTorneosResumen = () => req("/torneos/resumen/");
+export const getTorneosPorJugador = () => req("/torneos/por_jugador/");
+export const addParticipante = (body) =>
+  req("/torneos-participantes/", { method: "POST", body: JSON.stringify(body) });
+export const updParticipante = (id, body) =>
+  req(`/torneos-participantes/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
+export const delParticipante = (id) => req(`/torneos-participantes/${id}/`, { method: "DELETE" });
+// Entrenadores activos con sus vacaciones en el tramo: para el desplegable de «acompaña».
+export const getTorneosEntrenadores = (desde, hasta) =>
+  req(`/torneos/entrenadores/?${new URLSearchParams({ ...(desde && { desde }), ...(hasta && { hasta }) })}`);
+// Dos filas que son el mismo torneo: `con` se vuelca en `id` y desaparece.
+export const fusionarTorneo = (id, con) =>
+  req(`/torneos/${id}/fusionar/`, { method: "POST", body: JSON.stringify({ con }) });

@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "scheduling",
     "engine",
     "integrations",
+    "torneos",
 ]
 
 MIDDLEWARE = [

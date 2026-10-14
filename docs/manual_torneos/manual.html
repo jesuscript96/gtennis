@@ -1,0 +1,213 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Calendario de torneos · manual de la demo</title><style>
+:root{--bg:#fff;--fg:#1f1e1d;--mut:#75716a;--bor:#e9e6df;--sur:#faf9f6;--ac:#c96442;--verde:#3d5c49;--warn:#b07d2a;}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 18px 64px;background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-family:Georgia,"Times New Roman",serif;font-weight:500;font-size:30px;margin:0 0 4px}
+h1 span{color:var(--ac)}
+.sub{color:var(--mut);margin:0 0 28px}
+h2{font-family:Georgia,serif;font-weight:500;font-size:22px;margin:40px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--bor);page-break-after:avoid}
+h3{font-size:16px;margin:22px 0 6px;page-break-after:avoid}
+p,li{margin:0 0 10px} ul,ol{padding-left:22px}
+.card{background:var(--sur);border:1px solid var(--bor);border-radius:10px;padding:14px 16px;margin:14px 0;page-break-inside:avoid}
+.card.warn{border-left:4px solid var(--warn)}
+.card.ok{border-left:4px solid var(--verde)}
+figure{margin:16px 0 22px;page-break-inside:avoid}
+figure img{width:100%;border:1px solid var(--bor);border-radius:10px;display:block}
+figure.movil{display:flex;gap:16px;align-items:flex-start}
+figure.movil img{width:calc(50% - 8px)}
+figcaption{color:var(--mut);font-size:13px;margin-top:6px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--bor);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+.pill{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;background:#eef3ee;color:var(--verde)}
+.pill.nar{background:#fdf4ea;color:#a35a1f;border:1px solid #ecc9a4}
+.pill.pend{background:#f4ecd5;color:#a9832b}
+kbd{background:var(--sur);border:1px solid var(--bor);border-radius:4px;padding:1px 6px;font-size:13px}
+.toc{columns:2;font-size:14px;margin:0 0 10px}
+.toc li{margin:0 0 4px}
+a{color:var(--ac);text-decoration:none}
+.pb{page-break-before:always}
+@media print{body{padding:0;font-size:12.5px}.wrap{max-width:none}h2{margin-top:28px}
+figure{margin:10px 0 14px}figure img{border-radius:6px;max-height:168mm;width:auto;max-width:100%;margin:0 auto}
+figure.movil{justify-content:center}figure.movil img{max-height:150mm;width:auto}
+figcaption{text-align:center}.toc{columns:2}}
+</style></head><body><div class="wrap">
+
+<h1>G<span>Tennis</span> · Calendario de torneos</h1>
+<p class="sub">Manual de la demo · versión del 12 de octubre de 2026 · datos del Excel «CALENDARIO 2026»</p>
+
+<div class="card ok">
+<b>En una frase:</b> el calendario de torneos del club ya está dentro de la aplicación. Están los 765 torneos
+de la temporada con sus fechas, cierre de inscripción, coach que acompaña y jugadores apuntados, y Sergio
+puede añadir torneos nuevos, editarlos y apuntar jugadores sin tocar el Excel.
+</div>
+
+<ol class="toc">
+<li><a href="#que">Qué es y qué contiene</a></li>
+<li><a href="#donde">Dónde está y quién puede hacer qué</a></li>
+<li><a href="#calendario">El calendario</a></li>
+<li><a href="#buscar">Buscar y filtrar</a></li>
+<li><a href="#ficha">La ficha de un torneo</a></li>
+<li><a href="#apuntar">Apuntar y quitar jugadores</a></li>
+<li><a href="#editar">Editar o borrar un torneo</a></li>
+<li><a href="#nuevo">Dar de alta un torneo</a></li>
+<li><a href="#jugador">Torneos por jugador</a></li>
+<li><a href="#movil">En el móvil</a></li>
+<li><a href="#datos">De dónde salen los datos y qué conviene revisar</a></li>
+<li><a href="#siguiente">Qué no está todavía</a></li>
+</ol>
+
+<h2 id="que">1. Qué es y qué contiene</h2>
+<p>Es un módulo aparte del cuadrante de entrenamientos. Comparte con él los jugadores y los entrenadores
+(son las mismas fichas), pero no toca las faltas ni la generación de pistas: lo que se haga aquí no cambia nada
+del cuadrante. Más adelante, si se decide, una falta «En torneo» podrá apuntar a un torneo de este calendario.</p>
+<table>
+<tr><th>Qué</th><th>Cuántos</th><th>De dónde</th></tr>
+<tr><td>Torneos en el calendario</td><td>765</td><td>Pestaña «Calendario completo» del Excel limpio: todos los torneos que aparecen en la hoja maestra y en las 12 hojas de grupo, también los que nadie tiene asignados (ATP, WTA, Challengers del plan de los profesionales…).</td></tr>
+<tr><td>Torneos con jugadores apuntados</td><td>283</td><td>Los que en alguna hoja tienen al menos un jugador.</td></tr>
+<tr><td>Participaciones jugador × torneo</td><td>1.090</td><td>Pestaña «Jugador × torneo». 989 están enlazadas a una ficha de la academia; el resto son nombres que no están (o ya no están) en el cuadrante.</td></tr>
+<tr><td>Jugadores con torneos</td><td>107</td><td>Incluye jugadores de fuera de las fichas (p. ej. Carlos Taberner, Elina Avanesian).</td></tr>
+<tr><td>Cierres de inscripción</td><td>con fecha en la mayoría de los torneos del club</td><td>Columna «Cierre» de las hojas; los años 2025 copiados de la plantilla se han corregido a 2026.</td></tr>
+</table>
+
+<h2 id="donde">2. Dónde está y quién puede hacer qué</h2>
+<p>En el menú de la izquierda hay una sección nueva, <b>Torneos</b>, con tres entradas:</p>
+<ul>
+<li><b>Calendario de torneos</b>: la lista completa, por meses, con buscador y filtros.</li>
+<li><b>Torneos por jugador</b>: cuántos torneos tiene cada jugador y cuál es el siguiente.</li>
+<li><b>Nuevo torneo</b>: el formulario de alta (solo lo ven dirección y coaches).</li>
+</ul>
+<table>
+<tr><th>Rol</th><th>Ver el calendario y las fichas</th><th>Crear, editar, borrar torneos y apuntar jugadores</th></tr>
+<tr><td>Dirección deportiva</td><td>Sí</td><td>Sí</td></tr>
+<tr><td>Coach</td><td>Sí</td><td>Sí</td></tr>
+<tr><td>Entrenador</td><td>Sí</td><td>No (solo consulta)</td></tr>
+</table>
+<div class="card">En la demo se entra como <b>Sergio Gallego (coach)</b>, que tiene todos los permisos del módulo.</div>
+
+<h2 id="calendario" class="pb">3. El calendario</h2>
+<p>Es la pantalla principal. De arriba abajo:</p>
+<ol>
+<li><b>Cuatro cifras</b>: torneos en el calendario, cuántos tienen jugadores, cuántos se están jugando esta semana y cuántos cierran inscripción en las próximas tres semanas.</li>
+<li><b>Próximos cierres de inscripción</b>: los torneos cuya inscripción cierra en los próximos 21 días, con los días que faltan (en rojo si son tres o menos), la fecha de inicio y cuántos jugadores hay apuntados. Pulsando el nombre se abre la ficha.</li>
+<li><b>Buscador y filtros</b> (ver apartado siguiente).</li>
+<li><b>La tabla</b>, mes a mes: fechas, nombre del torneo con su circuito, cierre de inscripción, coach que acompaña y jugadores apuntados.</li>
+</ol>
+<figure><img src="img/01-calendario.png" alt="Calendario de torneos"><figcaption>El calendario con el mes actual (octubre) seleccionado.</figcaption></figure>
+<p>Detalles de la tabla:</p>
+<ul>
+<li>Un torneo que se está jugando ahora lleva la marca <span class="pill">en juego</span> y la fila sombreada; los ya pasados salen en gris.</li>
+<li>Si el cierre de inscripción es en los próximos 7 días aparece <span class="pill pend">3 d</span> junto a la fecha.</li>
+<li>En «Acompaña» sale el entrenador de la ficha; si el Excel decía «Sí con coach (sin nombre)», «Sin acompañante» o un nombre que no es de la plantilla (Ricardo, Marcos E.), se muestra tal cual.</li>
+<li>Los jugadores se muestran como etiquetas. A partir de cuatro aparece <b>+N</b>: pulsándolo se despliegan todos.</li>
+<li>Una etiqueta <span class="pill nar">naranja</span> es un jugador que en el Excel estaba con dudas: deducido de un nombre de pila ambiguo («ERIC», «DIEGO», «CARLA») o con interrogación. En la ficha se puede confirmar o quitar.</li>
+</ul>
+
+<h2 id="buscar">4. Buscar y filtrar</h2>
+<ul>
+<li><b>Buscador</b>: busca en el nombre del torneo, la ciudad, el circuito, los jugadores apuntados y el coach que acompaña. Escribir «Bokova» deja solo los torneos de Valeriia; escribir «Villena» o «ITF» hace lo propio.</li>
+<li><b>Mes</b>: por defecto el mes actual. «Desde hoy» muestra todo lo que queda de temporada; «Todo 2026», el año entero agrupado por meses. Un torneo de varias semanas aparece en cada mes que toca.</li>
+<li><b>Circuito</b>: ITF Junior, MARCA, TTK Warriors, Champions Cup, Mutua Sub-16, Rafa Nadal Tour… con el número de torneos entre paréntesis.</li>
+<li><b>Solo con jugadores</b>: oculta los torneos que están en el calendario pero sin nadie apuntado (útil para quitar de en medio el circuito profesional).</li>
+</ul>
+<figure><img src="img/02-buscar.png" alt="Búsqueda por jugador"><figcaption>«Desde hoy» + «Bokova»: lo que le queda de temporada a Valeriia Bokova.</figcaption></figure>
+
+<h2 id="ficha" class="pb">5. La ficha de un torneo</h2>
+<p>Se abre pulsando el nombre del torneo en cualquier lista. Tiene tres bloques:</p>
+<ol>
+<li><b>Cabecera</b>: nombre, circuito y nivel, y los botones <kbd>Editar</kbd> y <kbd>Borrar</kbd>.</li>
+<li><b>Datos</b>: fechas, cierre de inscripción (con los días que faltan, o «cerrado»), lugar, coach que acompaña y notas de viaje si las hay.</li>
+<li><b>Jugadores apuntados</b>: nombre, certeza, entrenador de referencia (el que figuraba en las hojas-rejilla del Excel, que no implica que viaje) y el detalle que pusiera el Excel.</li>
+</ol>
+<figure><img src="img/03-ficha.png" alt="Ficha de un torneo"><figcaption>Ficha del ITF J60 Majadahonda con ocho jugadores, dos de ellos deducidos del Excel.</figcaption></figure>
+<p>La <b>certeza</b> de cada jugador:</p>
+<table>
+<tr><th>Etiqueta</th><th>Significa</th><th>Qué hacer</th></tr>
+<tr><td><span class="pill">Confirmado</span></td><td>En el Excel aparecía con nombre y apellido, sin dudas.</td><td>Nada.</td></tr>
+<tr><td><span class="pill nar">Deducido</span></td><td>El Excel ponía solo un nombre de pila que comparten dos personas y se ha asignado al más probable según la hoja.</td><td>Si es correcto, <kbd>Confirmar</kbd>; si no, <kbd>Quitar</kbd> y apuntar al que sea.</td></tr>
+<tr><td><span class="pill pend">Pendiente</span></td><td>En el Excel iba con «?» o no se pudo identificar.</td><td>Igual: confirmar o quitar.</td></tr>
+</table>
+<p>Abajo del todo, <b>«Ver de dónde sale este dato»</b> muestra la hoja y la celda del Excel original de las que
+viene el torneo y las otras formas en que estaba escrito («Warrrios Madrid», «WARRIORS Madrid (previa…)»). Sirve
+para resolver dudas sin abrir el Excel a ciegas.</p>
+
+<h2 id="apuntar">6. Apuntar y quitar jugadores</h2>
+<p>En la barra inferior del bloque de jugadores:</p>
+<ul>
+<li>Elegir un <b>jugador de la academia</b> en el desplegable (solo salen los que no están ya apuntados) y pulsar <kbd>Apuntar</kbd>.</li>
+<li>O escribir un <b>nombre libre</b> para alguien que no tiene ficha (un invitado, un jugador de otro club que viaja con el grupo).</li>
+<li>Para quitar a alguien, <kbd>Quitar</kbd> en su fila. No pide confirmación: se puede volver a apuntar al momento.</li>
+</ul>
+<p>No se puede apuntar dos veces a la misma persona al mismo torneo: la app avisa.</p>
+<figure><img src="img/05-apuntar.png" alt="Apuntar un jugador"><figcaption>Jugador elegido en el desplegable, listo para «Apuntar».</figcaption></figure>
+
+<h2 id="editar" class="pb">7. Editar o borrar un torneo</h2>
+<p><kbd>Editar</kbd> abre el formulario sobre la propia ficha, con todos los campos: nombre, circuito, nivel,
+lugar, estado, fechas, cierre de inscripción, coach que acompaña (se marca pulsando el nombre), nota sobre el
+acompañante y notas de viaje. <kbd>Guardar cambios</kbd> aplica; <kbd>Cancelar</kbd> deja todo como estaba.</p>
+<figure><img src="img/04-editar.png" alt="Editar un torneo"><figcaption>El formulario de edición sobre la ficha.</figcaption></figure>
+<p><kbd>Borrar</kbd> quita el torneo del calendario y a sus jugadores apuntados. Pide confirmación. Si el torneo
+simplemente no se va a jugar, es mejor cambiar su estado a <b>Cancelado</b> que borrarlo.</p>
+<div class="card warn">El formulario no deja que un torneo termine antes de empezar ni que la inscripción cierre
+después de que haya terminado el torneo.</div>
+
+<h2 id="nuevo">8. Dar de alta un torneo</h2>
+<p>Desde el menú <b>Nuevo torneo</b> o con el botón <kbd>+ Nuevo torneo</kbd> del calendario.</p>
+<ol>
+<li>Escribir el <b>nombre</b> tal como se dice en el club (p. ej. «ITF J60 La Nucía»).</li>
+<li>Elegir el <b>circuito</b>: al escribir se proponen los ya existentes, para no tener «ITF Junior» e «ITF junior» como dos cosas distintas. Se puede escribir uno nuevo.</li>
+<li><b>Nivel</b> (J60, M25, Sub-16, Cadete…) y <b>lugar</b>, opcionales.</li>
+<li><b>Fechas</b>: empieza y termina. Si solo se pone la de inicio, el torneo dura un día.</li>
+<li><b>Cierre de inscripción</b>: es lo que alimenta la lista de «Próximos cierres» del calendario.</li>
+<li><b>Coach que acompaña</b>: pulsar uno o varios nombres. Si va otra persona o van solos, escribirlo en la nota.</li>
+<li><b>Notas</b> de viaje, alojamiento, logística.</li>
+<li><b>Estado</b>: <b>Validado</b> es lo normal. <b>Propuesto</b> sirve para dejar un torneo pendiente de que dirección lo vea; en el calendario sale marcado.</li>
+</ol>
+<p>Al crear, se abre directamente la ficha para apuntar a los jugadores.</p>
+<figure><img src="img/06-nuevo.png" alt="Nuevo torneo"><figcaption>Alta de un torneo con Pablo Gil como acompañante.</figcaption></figure>
+
+<h2 id="jugador" class="pb">9. Torneos por jugador</h2>
+<p>Una fila por jugador: cuántos torneos tiene en la temporada, cuántos ya se han jugado, el siguiente y el
+próximo cierre de inscripción que le afecta. Pulsando la fila se despliega la lista completa con enlaces a cada
+ficha. Hay buscador y un filtro para quedarse solo con los que tienen ficha en la academia.</p>
+<figure><img src="img/07-por-jugador.png" alt="Torneos por jugador"><figcaption>Bonnie (Jinxuan Liao) con la lista desplegada: 57 torneos en el año.</figcaption></figure>
+
+<h2 id="movil">10. En el móvil</h2>
+<p>Como el resto de la aplicación, funciona en el móvil y se puede instalar en la pantalla de inicio. Las tablas
+se convierten en tarjetas y los filtros se apilan.</p>
+<figure class="movil"><img src="img/08-movil.png" alt="Calendario en el móvil"><img src="img/09-movil-ficha.png" alt="Ficha en el móvil"><figcaption>El calendario y una ficha vistos en un iPhone.</figcaption></figure>
+
+<h2 id="datos" class="pb">11. De dónde salen los datos y qué conviene revisar</h2>
+<p>Todo viene del Excel «CALENDARIO 2026» pasado por la limpieza que se entregó el 28 de septiembre (PDF de
+validación, PDF semana a semana y Excel de datos limpios). Reglas aplicadas al cargarlo en la app:</p>
+<ul>
+<li><b>Un torneo por tramo</b>: si el mismo nombre aparece varias semanas seguidas (Champions Cup Silla del 14 de febrero al 9 de marzo), es un solo torneo con todo el tramo. Si reaparece más adelante con semanas de por medio (MARCA Carlet en marzo y en septiembre), son dos.</li>
+<li><b>Fechas</b>: cuando el nombre las lleva («2 - 9 Enero», «del 16 al 24 de mayo», «28 29 30»), se usan esas (95 torneos). Si no, el torneo va de lunes a domingo de la semana en que estaba apuntado.</li>
+<li><b>Cierre de inscripción</b>: el del Excel. Los que tenían año 2025 por arrastre de la plantilla se han pasado a 2026. Si había dos cierres, se guarda el primero.</li>
+<li><b>Jugadores</b>: se cruzan con las fichas por nombre y apellidos, admitiendo que el Excel ponga menos apellidos que la ficha («Amparo Gil» = Amparo Gil Pitarque) y corrigiendo erratas conocidas (Teporoca/Teporaca, Andrienko/Adrienko, Ximo/Chimo Mínguez).</li>
+<li><b>Coach que acompaña</b>: de la columna COACH de las hojas-lista. Los nombres que no son de la plantilla quedan como nota.</li>
+</ul>
+<div class="card warn">
+<b>Para revisar con calma (no bloquea la demo):</b>
+<ul>
+<li>20 nombres del Excel no tienen ficha en la academia y quedan como texto: Aarish, Andy Liu, Ashmita Mitra, Barry, Cristian Borriello, Daniela Martínez, Diego Inostroza, Elene Churruca, Emma Ghibardato, Félix Gil, Omar Ally, Sofía Fandos, Viraj, «Daniel» y «Elena» sin apellido, «David (¿Mas o Castillo?)» y cuatro columnas sin nombre de la hoja de Mario.</li>
+<li>Dos acompañantes sin ficha de entrenador: <b>Marcos E.</b> y <b>Ricardo</b>.</li>
+<li>Los jugadores marcados como <span class="pill nar">deducidos</span>: confirmarlos o quitarlos desde cada ficha.</li>
+<li>Los 190 avisos de la pestaña «Incidencias» del Excel limpio siguen siendo la lista de dudas; la app no los repite.</li>
+</ul>
+</div>
+<p>La carga es repetible: si se corrige el Excel, se puede volver a cargar sin perder los torneos dados de alta
+a mano en la app.</p>
+
+<h2 id="siguiente">12. Qué no está todavía</h2>
+<ul>
+<li><b>Enlace con las faltas</b>: que al declarar «En torneo» en el cuadrante se elija el torneo y la falta se rellene sola con sus fechas. Está diseñado; se activa cuando se valide este módulo.</li>
+<li><b>Avisos</b> de cierre de inscripción y de viaje en el buzón de avisos de la app (hoy el aviso es la lista de «Próximos cierres» del calendario).</li>
+<li><b>Flujo propuesta → validación</b> completo: el estado «Propuesto» existe, pero no hay todavía un aviso a dirección ni un botón «Validar» específico.</li>
+<li>Resultados y la vista para familias: fuera del alcance, como se acordó.</li>
+</ul>
+
+</div></body></html>

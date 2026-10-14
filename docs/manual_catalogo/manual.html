@@ -1,0 +1,240 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Catálogo de torneos y jugadores · manual</title><style>
+:root{--bg:#fff;--fg:#1f1e1d;--mut:#75716a;--bor:#e9e6df;--sur:#faf9f6;--ac:#c96442;--verde:#3d5c49;--warn:#b07d2a;}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 18px 64px;background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-family:Georgia,"Times New Roman",serif;font-weight:500;font-size:30px;margin:0 0 4px}
+h1 span{color:var(--ac)}
+.sub{color:var(--mut);margin:0 0 28px}
+h2{font-family:Georgia,serif;font-weight:500;font-size:22px;margin:40px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--bor);page-break-after:avoid}
+h3{font-size:16px;margin:22px 0 6px;page-break-after:avoid}
+p,li{margin:0 0 10px} ul,ol{padding-left:22px}
+.card{background:var(--sur);border:1px solid var(--bor);border-radius:10px;padding:14px 16px;margin:14px 0;page-break-inside:avoid}
+.card.warn{border-left:4px solid var(--warn)}
+.card.ok{border-left:4px solid var(--verde)}
+.card.rol{border-left:4px solid var(--ac)}
+figure{margin:16px 0 22px;page-break-inside:avoid}
+figure img{width:100%;border:1px solid var(--bor);border-radius:10px;display:block}
+figure.movil{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;justify-content:center}
+figure.movil figcaption{flex-basis:100%;text-align:center}
+figure.movil img{width:46%}
+figcaption{color:var(--mut);font-size:13px;margin-top:6px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--bor);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+.pill{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;background:#eef3ee;color:var(--verde)}
+.pill.nar{background:#fdf4ea;color:#a35a1f;border:1px solid #ecc9a4}
+.pill.pend{background:#f4ecd5;color:#a9832b}
+.pill.rojo{background:#fbeaea;color:#d33b3b}
+kbd{background:var(--sur);border:1px solid var(--bor);border-radius:4px;padding:1px 6px;font-size:13px}
+.toc{columns:2;font-size:14px;margin:0 0 10px}
+.toc li{margin:0 0 4px}
+a{color:var(--ac);text-decoration:none}
+.pb{page-break-before:always}
+.check li{list-style:none;position:relative;padding-left:26px}
+.check li::before{content:"☐";position:absolute;left:0;top:-1px;font-size:16px;color:var(--mut)}
+@media print{body{padding:0;font-size:12.5px}.wrap{max-width:none}h2{margin-top:28px}
+figure{margin:10px 0 14px}figure img{border-radius:6px;max-height:160mm;width:auto;max-width:100%;margin:0 auto}
+figure.movil img{max-height:150mm;width:auto}
+figcaption{text-align:center}.toc{columns:2}}
+</style></head><body><div class="wrap">
+
+<h1>G<span>Tennis</span> · Catálogo de torneos y jugadores</h1>
+<p class="sub">Manual para head coaches y dirección · 14 de octubre de 2026</p>
+
+<div class="card ok">
+<b>Para qué sirve este manual.</b> Para dejar bien el catálogo de torneos de lo que queda de 2026 y la lista de
+jugadores que van a cada uno. Cuando esté bien, la app avisa de los cierres de inscripción, dice quién viaja con
+quién y, más adelante, rellenará sola las faltas por torneo en el cuadrante. Mientras no esté bien, nada de eso es fiable.
+</div>
+
+<ol class="toc">
+<li><a href="#quien">Quién hace qué</a></li>
+<li><a href="#calendario">El calendario por semanas</a></li>
+<li><a href="#revisar">Cómo revisar una semana</a></li>
+<li><a href="#anadir">Añadir un torneo que falta</a></li>
+<li><a href="#duplicados">Fusionar un torneo repetido</a></li>
+<li><a href="#editar">Editar, cancelar o borrar</a></li>
+<li><a href="#acompana">Quién acompaña</a></li>
+<li><a href="#jugadores">Gestionar a tus jugadores</a></li>
+<li><a href="#porjugador">La temporada de cada jugador</a></li>
+<li><a href="#movil">En el móvil</a></li>
+<li><a href="#direccion">Solo dirección: fichas, grupos y vacaciones</a></li>
+<li><a href="#plan">Calendario de la revisión y lista final</a></li>
+<li><a href="#faq">Dudas frecuentes</a></li>
+</ol>
+
+<h2 id="quien">1. Quién hace qué</h2>
+<p>El calendario de torneos solo lo ven y lo tocan los <b>head coaches</b> y <b>dirección</b>. Los entrenadores no
+tienen esta sección. Cada head coach responde de su gran grupo; dirección arbitra y valida.</p>
+<table>
+<tr><th>Tarea</th><th>Head coach</th><th>Dirección</th></tr>
+<tr><td>Ver el calendario y las fichas de torneo</td><td>Sí</td><td>Sí</td></tr>
+<tr><td>Añadir, editar, cancelar o fusionar torneos</td><td>Sí</td><td>Sí</td></tr>
+<tr><td>Poner quién acompaña</td><td>Sí</td><td>Sí</td></tr>
+<tr><td>Apuntar, mover o quitar jugadores</td><td>Solo los de su grupo</td><td>Todos</td></tr>
+<tr><td>Dar de alta a un jugador que no tiene ficha</td><td>No</td><td>Sí (Datos → Jugadores)</td></tr>
+<tr><td>Decidir a qué grupo pertenece un jugador</td><td>No</td><td>Sí (Datos → Grupos)</td></tr>
+<tr><td>Registrar vacaciones de entrenadores</td><td>Las de su equipo</td><td>Todas</td></tr>
+<tr><td>Validar torneos propuestos</td><td>No</td><td>Sí</td></tr>
+</table>
+<p>Se entra con el usuario de siempre en <b>gtennis.vercel.app</b> (también desde el móvil). En el menú de la
+izquierda hay una sección <b>Torneos</b> con tres entradas: Calendario de torneos, Torneos por jugador y Nuevo torneo.</p>
+
+<h2 id="calendario" class="pb">2. El calendario por semanas</h2>
+<p>Es la pantalla de trabajo. Cada torneo está en la <b>semana en que empieza</b>, y cada semana tiene su color en
+el borde izquierdo. Por defecto se ve «Desde hoy» hasta final de año.</p>
+<figure><img src="img/c01-calendario.png" alt="Calendario por semanas"><figcaption>Cabecera con cifras y próximos cierres; debajo, las semanas con sus torneos.</figcaption></figure>
+<p>Qué hay en cada fila:</p>
+<ul>
+<li><b>Fechas</b> del torneo. Si se está jugando ahora, lleva <span class="pill">en juego</span>. Los ya pasados salen en gris.</li>
+<li><b>Torneo</b>: nombre, circuito, nivel y lugar. Pulsando el nombre se abre la ficha.</li>
+<li><b>Cierre insc.</b>: fecha de cierre de inscripción. Si quedan 7 días o menos, aparece <span class="pill pend">3 d</span>.</li>
+<li><b>Acompaña</b>: desplegable con los entrenadores que pueden viajar esas fechas (apartado 7).</li>
+<li><b>Jugadores</b>: todos los apuntados, sin recortes. Los que están en <span class="pill nar">naranja</span> vienen del Excel con dudas y hay que confirmarlos o quitarlos.</li>
+</ul>
+<p>Arriba están el buscador (nombre, ciudad, circuito, jugador o coach), el filtro de mes, el de circuito y la
+casilla «Solo con jugadores», que quita de en medio los torneos del calendario a los que no va nadie.</p>
+<div class="card">La cabecera de cada semana tiene el enlace <b>«+ añadir un torneo esta semana»</b>: abre el alta con las fechas de esa semana ya puestas.</div>
+
+<h2 id="revisar">3. Cómo revisar una semana</h2>
+<p>Con el filtro «Desde hoy», bajar semana a semana y hacerse cinco preguntas. Entre 5 y 10 minutos por semana.</p>
+<table>
+<tr><th>Pregunta</th><th>Qué hacer en la app</th></tr>
+<tr><td>¿Falta algún torneo al que va alguien de mi grupo?</td><td>«+ añadir un torneo esta semana» (apartado 4).</td></tr>
+<tr><td>¿Hay dos filas que son el mismo torneo?</td><td>Abrir la ficha de la buena → «¿Está repetido?» → fusionar (apartado 5).</td></tr>
+<tr><td>¿Mis jugadores están en el torneo correcto?</td><td>Arrastrar al que está mal, quitar al que no va, apuntar al que falta, confirmar los naranjas (apartado 8).</td></tr>
+<tr><td>¿Quién acompaña?</td><td>Elegirlo en el desplegable de la fila (apartado 7).</td></tr>
+<tr><td>¿Este torneo se juega?</td><td>Si no, Editar → estado Cancelado. Los torneos sin nadie apuntado se dejan tal cual.</td></tr>
+</table>
+
+<h2 id="anadir" class="pb">4. Añadir un torneo que falta</h2>
+<ol>
+<li>En la cabecera de la semana, pulsar <b>«+ añadir un torneo esta semana»</b> (o «+ Nuevo torneo» arriba a la derecha).</li>
+<li><b>Nombre</b> tal como se dice en el club. <b>Circuito</b>: al escribir se proponen los que ya existen; elegir uno de la lista evita tener el mismo circuito escrito de dos formas.</li>
+<li><b>Nivel</b> (J30, M25, Sub-16, Cadete…) y <b>lugar</b>.</li>
+<li><b>Fechas</b>: vienen puestas de lunes a domingo; ajustarlas si el torneo es más corto o más largo.</li>
+<li><b>Cierre de inscripción</b>: imprescindible para que la app avise a tiempo.</li>
+<li><b>Coach que acompaña</b>: pulsar el nombre. Si va otra persona o van solos, escribirlo en la nota.</li>
+<li><b>Estado</b>: Validado si es seguro. <b>Propuesto</b> si quieres que dirección lo vea antes.</li>
+<li><kbd>Crear torneo</kbd>. Se abre la ficha para apuntar a los jugadores.</li>
+</ol>
+<figure><img src="img/c03-nuevo.png" alt="Alta de un torneo"><figcaption>Alta de un ITF J30 en la semana del 16 de noviembre, con Santi Panzarasa como acompañante.</figcaption></figure>
+
+<h2 id="duplicados">5. Fusionar un torneo repetido</h2>
+<p>El Excel tenía el mismo torneo escrito de varias formas en distintas hojas. Cuando dos filas son el mismo torneo:</p>
+<ol>
+<li>Abrir la ficha de la fila que quieres conservar (la del nombre mejor escrito).</li>
+<li>Abajo, en <b>«¿Está repetido?»</b>, elegir la otra fila en el desplegable. Solo salen torneos a dos semanas de distancia.</li>
+<li><kbd>Fusionar aquí</kbd> y confirmar.</li>
+</ol>
+<p>Los jugadores de la otra fila pasan a esta (sin repetir a nadie), los acompañantes se suman, el nombre antiguo
+queda guardado como «también escrito como», y si esta ficha no tenía cierre o lugar se cogen de la otra. La fila sobrante desaparece.</p>
+<figure><img src="img/c05-fusionar.png" alt="Fusionar un torneo repetido"><figcaption>Ficha con la tarjeta «¿Está repetido?» y un candidato elegido.</figcaption></figure>
+
+<h2 id="editar" class="pb">6. Editar, cancelar o borrar</h2>
+<p>En la ficha, <kbd>Editar</kbd> abre el formulario con todos los campos. <kbd>Guardar cambios</kbd> aplica; <kbd>Cancelar</kbd> deja todo como estaba.</p>
+<ul>
+<li>Un torneo que no se va a jugar: estado <b>Cancelado</b>. Se conserva, pero queda marcado.</li>
+<li><kbd>Borrar</kbd> solo para filas que no son un torneo real (una fila de prueba, un error). Pide confirmación y quita también a sus jugadores.</li>
+</ul>
+<figure><img src="img/c06-editar.png" alt="Editar un torneo"><figcaption>El formulario de edición sobre la ficha.</figcaption></figure>
+
+<h2 id="acompana">7. Quién acompaña</h2>
+<p>En la columna «Acompaña» del calendario hay un desplegable por cada entrenador asignado y otro para añadir. Se guarda al elegir, sin botón.</p>
+<ul>
+<li>Solo se ofrecen entrenadores que <b>no están de vacaciones</b> en las fechas del torneo. Para que esto funcione, las vacaciones tienen que estar en Disponibilidad → Vacaciones (apartado 11).</li>
+<li>Si un entrenador ya acompaña a otro torneo esa misma semana, su nombre lleva «· ya en …». Se puede elegir igual, pero avisa.</li>
+<li>Un entrenador que estaba asignado y luego se ha puesto de vacaciones sale en rojo: hay que cambiarlo.</li>
+<li>«— quitar —» lo quita de ese torneo.</li>
+</ul>
+
+<h2 id="jugadores" class="pb">8. Gestionar a tus jugadores</h2>
+<p>Cada head coach apunta, mueve y quita a los jugadores de su grupo. Si intentas tocar a uno de otro grupo, la app
+lo dice. Los nombres que no tienen ficha (están en gris con «sin ficha») los puede tocar cualquiera.</p>
+<h3>Apuntar a un jugador</h3>
+<p>En la ficha del torneo, barra inferior: elegir al jugador en el desplegable (solo salen los que no están ya) y
+<kbd>Apuntar</kbd>. Si alguien no tiene ficha, escribir su nombre en la casilla de al lado. Nadie puede apuntarse dos veces al mismo torneo.</p>
+<figure><img src="img/c04-ficha.png" alt="Ficha con jugadores"><figcaption>Jugadores apuntados y la barra para apuntar a uno más.</figcaption></figure>
+<h3>Mover a un jugador a otro torneo</h3>
+<p>En el calendario, <b>arrastrar</b> la etiqueta del jugador y soltarla en la columna de jugadores del torneo de destino.
+También vale tocar al jugador (queda resaltado y aparece una barra «Moviendo a…») y luego tocar el torneo de destino.
+Los destinos posibles se marcan con línea de puntos.</p>
+<figure><img src="img/c02-mover.png" alt="Mover un jugador"><figcaption>María Andrienko seleccionada; cualquier otra fila se puede tocar como destino.</figcaption></figure>
+<h3>Quitar y confirmar</h3>
+<ul>
+<li><kbd>Quitar</kbd> en la fila del jugador dentro de la ficha. No pide confirmación: se puede volver a apuntar.</li>
+<li>Un jugador en <span class="pill nar">naranja</span> es <b>deducido</b> (el Excel ponía solo un nombre de pila ambiguo) o <b>pendiente</b> (iba con «?»). Si es correcto, <kbd>Confirmar</kbd>; si no, <kbd>Quitar</kbd> y apuntar al que sea.</li>
+</ul>
+
+<h2 id="porjugador">9. La temporada de cada jugador</h2>
+<p>En Torneos → <b>Torneos por jugador</b>: una fila por jugador con cuántos torneos tiene, cuántos ya ha jugado, el
+siguiente y su próximo cierre de inscripción. Pulsando la fila se despliega toda la lista. Sirve para ver de un vistazo
+si a alguien le falta o le sobra competición, y para comprobar que lo que se ha movido en el calendario ha quedado bien.</p>
+<figure><img src="img/c07-por-jugador.png" alt="Torneos por jugador"><figcaption>Valeriia Bokova con su lista desplegada.</figcaption></figure>
+
+<h2 id="movil" class="pb">10. En el móvil</h2>
+<p>Todo lo anterior funciona en el móvil. Las filas se convierten en tarjetas. Para mover a un jugador, tocarlo y
+luego tocar la tarjeta del torneo de destino; el arrastre está pensado para ordenador.</p>
+<figure class="movil"><img src="img/c08-movil.png" alt="Calendario en el móvil"><figcaption>Semana con un jugador seleccionado para mover.</figcaption></figure>
+
+<h2 id="direccion">11. Solo dirección: fichas, grupos y vacaciones</h2>
+<p>Tres cosas que los head coaches no pueden hacer y que condicionan el catálogo.</p>
+<h3>Dar de alta a los jugadores sin ficha</h3>
+<p>En Datos → <b>Jugadores</b> → <kbd>+ Nuevo</kbd>. Nombre, escuela, fecha de nacimiento, división y <b>entrenador responsable</b>.
+Un jugador sin responsable no aparece en el grupo de ningún head coach y nadie podrá apuntarlo desde el desplegable.</p>
+<p>Nombres que están en torneos y no tienen ficha hoy: Aarish, Andy Liu, Ashmita Mitra, Barry, Cristian Borriello,
+Daniela Martínez, Diego Inostroza, Elene Churruca, Emma Ghibardato, Félix Gil, Omar Ally, Sofía Fandos, Viraj,
+«Daniel» y «Elena» sin apellido, «David (¿Mas o Castillo?)» y cuatro columnas sin nombre de la hoja de Mario.
+Los que entrenan en el club deberían tener ficha; los demás pueden quedarse como nombre libre.</p>
+<figure><img src="img/a02-nuevo-jugador.png" alt="Alta de un jugador"><figcaption>Alta de ficha con el entrenador responsable.</figcaption></figure>
+<h3>Decidir el grupo de cada jugador</h3>
+<p>En Datos → <b>Grupos</b> está el organigrama: cada bloque es un head coach, dentro las columnas de sus entrenadores y
+bajo cada columna sus alumnos. Se arrastra un alumno a la columna de otro entrenador y pasa a ese grupo. Esto es lo que
+decide <b>qué head coach puede apuntar o mover a cada jugador</b> en los torneos.</p>
+<figure><img src="img/a03-grupos.png" alt="Grupos"><figcaption>El organigrama de grupos.</figcaption></figure>
+<h3>Vacaciones de entrenadores</h3>
+<p>En Disponibilidad → <b>Vacaciones</b>. Cada periodo con su entrenador, fechas y motivo. El desplegable de «Acompaña»
+se fía de esto: un entrenador sin vacaciones registradas aparece siempre como disponible. Conviene meter también
+los viajes a torneos ya cerrados.</p>
+<figure><img src="img/a04-vacaciones.png" alt="Vacaciones de entrenadores"><figcaption>Periodos de vacaciones y viajes de los entrenadores.</figcaption></figure>
+<h3>Validar y revisar</h3>
+<ul>
+<li>Los torneos en estado <b>Propuesto</b> salen marcados en el calendario: validarlos (Editar → Validado) o cancelarlos.</li>
+<li>Torneos con jugadores y sin acompañante, y un mismo entrenador en dos torneos la misma semana: se ven en el calendario con el filtro «Solo con jugadores».</li>
+</ul>
+
+<h2 id="plan" class="pb">12. Calendario de la revisión y lista final</h2>
+<table>
+<tr><th>Cuándo</th><th>Quién</th><th>Qué</th></tr>
+<tr><td>Del 19 al 25 de octubre</td><td>Head coaches</td><td>Revisar sus semanas de aquí a fin de año con las cinco preguntas del apartado 3.</td></tr>
+<tr><td>Del 26 de octubre al 1 de noviembre</td><td>Dirección</td><td>Fichas de los jugadores sin ficha, grupos, vacaciones, torneos sin acompañante, propuestos.</td></tr>
+<tr><td>2 de noviembre</td><td>Todos</td><td>Catálogo cerrado. Desde entonces, alta nueva = Propuesto y dirección valida.</td></tr>
+</table>
+<div class="card ok">
+<b>El catálogo está bien cuando, de hoy a fin de año:</b>
+<ul class="check">
+<li>Cada torneo al que va alguien del club está una sola vez, con sus fechas y su cierre de inscripción.</li>
+<li>Todos los jugadores apuntados están confirmados (ningún naranja).</li>
+<li>Todos los torneos con jugadores tienen acompañante decidido (o la nota de que van solos).</li>
+<li>Ningún entrenador acompaña a dos torneos la misma semana sin saberlo.</li>
+<li>Todo jugador que entrena en el club tiene ficha y grupo.</li>
+<li>Las vacaciones y viajes de los entrenadores están registrados.</li>
+</ul>
+</div>
+
+<h2 id="faq">13. Dudas frecuentes</h2>
+<table>
+<tr><th>Qué pasa</th><th>Por qué y qué hacer</th></tr>
+<tr><td>«No es de tu grupo» al mover o quitar a un jugador</td><td>Lo gestiona otro head coach. Habla con él o pide a dirección que lo cambie en Grupos.</td></tr>
+<tr><td>Un entrenador no sale en «Acompaña»</td><td>Tiene vacaciones registradas en esas fechas. Si es un error, corregirlo en Vacaciones.</td></tr>
+<tr><td>Un jugador no está en el desplegable para apuntarlo</td><td>Ya está apuntado a ese torneo, o no tiene ficha (dirección la crea), o está de baja.</td></tr>
+<tr><td>El torneo dura varias semanas y solo lo veo en una</td><td>Está en la semana en que empieza. Con el filtro de mes aparece en todos los meses que toca.</td></tr>
+<tr><td>Veo torneos profesionales (ATP, WTA, Challenger) que no son míos</td><td>Son del plan de los jugadores profesionales. Marca «Solo con jugadores» y usa el buscador para quedarte con lo tuyo.</td></tr>
+<tr><td>He fusionado mal</td><td>No hay deshacer. Vuelve a dar de alta el torneo y mueve a los jugadores arrastrando.</td></tr>
+<tr><td>Quiero saber de dónde salió un dato</td><td>Abajo de la ficha, «Ver de dónde sale este dato»: hoja y celda del Excel y otras formas en que estaba escrito.</td></tr>
+</table>
+
+</div></body></html>

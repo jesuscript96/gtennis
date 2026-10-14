@@ -1376,3 +1376,133 @@ ul.lista-dia .franjas select { min-width: 7.5rem; }
 .invitados table.data .row-actions { flex-wrap: wrap; justify-content: flex-end; gap: .3rem; }
 .invitados table.data td:last-child { min-width: 9rem; }
 .invitados > .card { overflow-x: auto; }
+
+/* ── Módulo de torneos ─────────────────────────────────────────────── */
+.muted { color: var(--muted); }
+.volver { margin: -6px 0 10px; font-size: 13px; }
+.volver a { color: var(--muted); }
+.volver a:hover { color: var(--text); }
+.pill.circ { background: #eef3ee; color: #3d5c49; font-weight: 500; }
+.pill.gris { background: #f0efeb; color: var(--muted); margin-left: 6px; }
+.pill.ded { background: #fbefe3; color: #b4672f; }
+.pill.live { background: #e6f4ec; color: var(--st-disponible); margin-left: 8px; }
+.td-cierre .pill { margin-left: 6px; }
+.mes-torneos { margin-bottom: 26px; }
+.mes-titulo { font-family: var(--font-serif); font-size: 19px; font-weight: 500; margin: 0 0 10px; text-transform: capitalize; }
+.mes-titulo span { font-family: var(--font-sans); font-size: 12px; color: var(--muted); margin-left: 10px; text-transform: none; }
+.tabla-torneos td { vertical-align: top; }
+.tabla-torneos tr.pasado td { color: var(--muted); }
+.tabla-torneos tr.pasado .torneo-link { color: var(--muted); }
+.tabla-torneos tr.en-curso td { background: #f6fbf7; }
+.td-fechas { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 500; }
+.torneo-link { font-weight: 500; }
+.torneo-link:hover { color: var(--accent); }
+.torneo-sub { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; font-size: 12px; }
+.torneo-sub.grande { margin-top: 8px; font-size: 13px; }
+.torneo-jug { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.jug-chip { font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+.jug-chip.dudoso { border-color: #ecc9a4; background: #fdf4ea; color: #a35a1f; }
+.link-mas { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+.torneos-toolbar { flex-wrap: wrap; }
+.cierres-card { padding: 14px 18px; margin-bottom: 20px; border-left: 3px solid var(--st-torneo); }
+.cierres-head { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 8px; font-weight: 500; }
+.cierres-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cierres-lista li { display: flex; gap: 10px; align-items: baseline; font-size: 14px; flex-wrap: wrap; }
+.cierres-lista a { font-weight: 500; }
+.cierres-lista .muted { font-size: 12px; }
+.cierre-dias { font-size: 11px; font-weight: 600; background: #fbf2e3; color: var(--st-calentamiento); border-radius: 999px; padding: 2px 9px; white-space: nowrap; min-width: 58px; text-align: center; }
+.cierre-dias.urgente { background: #fbeaea; color: var(--st-ausencia); }
+/* Ficha */
+.ficha-torneo { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.ficha-torneo .dato { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; display: grid; gap: 3px; }
+.ficha-torneo .dato span { color: var(--muted); font-size: 12px; }
+.ficha-torneo .dato b { font-size: 17px; font-weight: 600; }
+.ficha-torneo .dato b.normal { font-size: 14px; font-weight: 400; white-space: pre-wrap; }
+.ficha-torneo .dato small { color: var(--muted); font-size: 12px; }
+.ficha-torneo .dato small.aviso { color: var(--st-torneo); font-weight: 600; }
+.ficha-torneo .col-todo { grid-column: 1 / -1; }
+.bloque-participantes { margin-bottom: 18px; }
+.bloque-participantes .bloque-head { padding: 14px 18px 0; }
+.bloque-participantes h2 { font-size: 16px; font-weight: 500; margin: 0 0 10px; font-family: var(--font-serif); }
+.bloque-participantes .pill.gris { font-size: 10px; }
+.sin-margen { padding: 10px 18px 18px; margin: 0; }
+.apuntar { display: flex; gap: 10px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface-2); flex-wrap: wrap; }
+.apuntar select, .apuntar input { width: auto; flex: 1; min-width: 200px; }
+.fuente-excel { font-size: 12px; color: var(--muted); line-height: 1.6; }
+/* Formulario */
+.torneo-form { padding: 20px 22px; margin-bottom: 22px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 16px; }
+.form-grid .field { margin-bottom: 12px; }
+.form-grid .field > span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.form-grid .col-2 { grid-column: span 2; }
+.form-grid .col-3 { grid-column: 1 / -1; }
+.form-grid textarea { width: 100%; resize: vertical; }
+.chips-acomp { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-acomp { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; color: var(--text); }
+.chip-acomp:hover { background: #f3f1ec; }
+.chip-acomp.on { background: #eef3ee; border-color: #3d5c49; color: #3d5c49; font-weight: 600; }
+.form-acciones { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+/* Por jugador */
+.fila-click { cursor: pointer; }
+.fila-detalle td { background: var(--surface-2); padding: 10px 18px 14px; }
+.lista-torneos-jugador { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.lista-torneos-jugador li { display: flex; gap: 10px; align-items: center; font-size: 13.5px; flex-wrap: wrap; }
+.lista-torneos-jugador li.pasado { color: var(--muted); }
+.lista-torneos-jugador .td-fechas { min-width: 110px; }
+@media (max-width: 860px) {
+  .form-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid .col-2, .form-grid .col-3 { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+.td-cierre, .td-cierre .pill { white-space: nowrap; }
+/* Calendario por semanas */
+.fila-semana td { background: var(--surface-2); padding: 9px 16px; font-size: 13px; border-top: 2px solid var(--border-strong); }
+.fila-semana .sem-marca { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 9px; vertical-align: -1px; background: var(--sem); }
+.fila-semana .link-mas { margin-left: 12px; }
+tbody.semana tr:not(.fila-semana) td:first-child { box-shadow: inset 4px 0 0 var(--sem); }
+tbody.semana tr:not(.fila-semana) td { background: var(--sem-bg); }
+tbody.semana tr.en-curso td { background: #f3faf5; }
+tbody.sem-0 { --sem: #c96442; --sem-bg: #fff; }
+tbody.sem-1 { --sem: #3b6ea5; --sem-bg: #f6f8fb; }
+tbody.sem-2 { --sem: #3d8b5a; --sem-bg: #fff; }
+tbody.sem-3 { --sem: #b8862b; --sem-bg: #fbf9f3; }
+tbody.sem-4 { --sem: #7b54e0; --sem-bg: #fff; }
+.h1-sub { font-size: 18px; color: var(--muted); }
+/* Acompaña */
+.acomp-cell { display: flex; flex-direction: column; gap: 5px; min-width: 170px; }
+.acomp-cell select { font-size: 13px; padding: 5px 8px; width: 100%; }
+.acomp-cell select.anadir { color: var(--muted); border-style: dashed; background: transparent; }
+.acomp-cell select.vacas { border-color: #e6b3b3; color: var(--st-ausencia); }
+.acomp-cell .nota { font-size: 12px; }
+/* Jugadores: todos a la vista, arrastrables */
+.td-jug { min-width: 260px; }
+.torneo-jug { min-height: 30px; padding: 3px; border-radius: 8px; border: 1px dashed transparent; }
+.torneo-jug.destino { border-color: var(--border-strong); cursor: copy; }
+.torneo-jug.drop-ok, .torneo-jug.destino:hover { border-color: var(--accent); background: #fdf3ee; }
+.jug-chip.movible { cursor: grab; }
+.jug-chip.movible:active { cursor: grabbing; }
+.jug-chip.sel { outline: 2px solid var(--accent); background: #fdf3ee; }
+.mover-bar { position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center; background: #fdf3ee; border: 1px solid #ecc9a4; border-radius: var(--r); padding: 9px 14px; margin-bottom: 12px; font-size: 14px; }
+/* Duplicados */
+.dup-card { padding: 14px 18px; margin-bottom: 18px; display: grid; gap: 10px; font-size: 14px; }
+.dup-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.dup-row select { flex: 1; min-width: 260px; width: auto; }
+@media (max-width: 640px) {
+  .tabla-torneos tr.fila-semana { background: var(--surface-2); padding: 0; }
+  .tabla-torneos .fila-semana td { display: block; text-align: left; padding: 10px 14px; }
+  .tabla-torneos .fila-semana td::before { content: none; }
+  .tabla-torneos .fila-semana .link-mas { display: block; margin: 4px 0 0; padding: 0; }
+  .tabla-torneos td.td-coach, .tabla-torneos td.td-jug { flex-direction: column; align-items: stretch; text-align: left; }
+  .tabla-torneos td.td-coach::before, .tabla-torneos td.td-jug::before { margin-bottom: 2px; }
+  .tabla-torneos td.td-estado:empty { display: none; }
+  .tabla-torneos td.td-fechas, .tabla-torneos td[data-label="Torneo"] { flex-wrap: wrap; }
+  .tabla-torneos td[data-label="Torneo"] { flex-direction: column; align-items: flex-start; text-align: left; }
+  tbody.semana tr:not(.fila-semana) td:first-child { box-shadow: none; }
+  tbody.semana tr:not(.fila-semana) { border-left: 4px solid var(--sem); }
+}
+@media (max-width: 640px) {
+  .tabla-torneos td.td-coach .acomp-cell { width: 100%; min-width: 0; }
+  .mover-bar span { flex: 1; }
+}

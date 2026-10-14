@@ -22,7 +22,7 @@ const WRITE = {
   sedes: "direccion", pistas: "direccion", turnos: "direccion",
   divisiones: "direccion", escuelas: "direccion", coaches: "direccion",
   entrenadores: "coach", responsables: "coach", vacaciones: "coach",
-  contratos: "coach", rencillas: "coach",
+  contratos: "coach", rencillas: "coach", torneos: "coach",
 };
 
 export function canWrite(endpoint, user = getUser()) {
@@ -45,9 +45,15 @@ const PATH_MIN = {
   "/mis-jugadores": "direccion",
   "/configuracion": "direccion",
   "/entrenadores": "coach",
+  // El calendario de torneos (y sus subrutas) es de los head coaches.
+  "/torneos": "coach",
 };
 
 export function canVisit(path, user = getUser()) {
-  const need = NEED[PATH_MIN[path] || "entrenador"];
+  // La ruta exacta o la más larga de la que cuelga (/torneos/123 → /torneos).
+  const clave = Object.keys(PATH_MIN)
+    .filter((k) => path === k || (k !== "/" && path.startsWith(k + "/")))
+    .sort((a, b) => b.length - a.length)[0];
+  const need = NEED[PATH_MIN[clave] || "entrenador"];
   return roleRank(user) >= need;
 }

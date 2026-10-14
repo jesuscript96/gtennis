@@ -32,6 +32,11 @@ const SECTIONS = [
     ["/escuelas", "Escuelas", "direccion"],
     ["/preferencias-superficie", "Pref. superficie"],
   ] },
+  { title: "Torneos", items: [
+    ["/torneos", "Calendario de torneos", "coach"],
+    ["/torneos/jugadores", "Torneos por jugador", "coach"],
+    ["/torneos/nuevo", "Nuevo torneo", "coach"],
+  ] },
   { title: "Gestión", items: [
     ["/invitados", "Invitados"],
     ["/mantenimiento", "Mantenimiento"],
@@ -90,7 +95,7 @@ export default function Sidebar({ onNavigate }) {
             {section.items
               .filter(([, , role]) => !role || roleRank(user) >= NEED[role])
               .map(([href, label]) => (
-                <Link key={href} href={href} className={pathname === href ? "active" : ""} onClick={onNavigate}>
+                <Link key={href} href={href} className={pathname === href || (href === "/torneos" && /^\/torneos\/\d+/.test(pathname)) ? "active" : ""} onClick={onNavigate}>
                   {label}
                   {href === "/avisos" && sinLeer > 0 && <span className="nav-badge">{sinLeer}</span>}
                 </Link>
