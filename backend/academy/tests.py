@@ -837,6 +837,20 @@ class TardeConT2YEntrenadorDeTardeTests(TestCase):
         self.assertEqual(set(asig.filter(entrenador=dani).values_list("jugador", flat=True)),
                          {taberner.id, sanchez.id})
 
+    def test_el_contrato_no_le_lleva_a_una_pista_con_alguien_de_fuera(self):
+        from academy.models import Contrato
+
+        Pista.objects.create(sede=self.sede, numero=1, superficie="TIERRA")
+        dani = Entrenador.objects.create(nombre="Dani")
+        Entrenador.objects.create(nombre="Otro")
+        taberner = self._jugador("Taberner", 1)
+        dani.solo_con.add(taberner)
+        Contrato.objects.create(jugador=taberner, entrenador=dani, tipo="DURO", activo=True)
+        self._jugador("Ajeno", 1)
+        asig = self._tarde()
+        self.assertEqual(asig.filter(turno=self.t1).count(), 2)
+        self.assertFalse(asig.filter(entrenador=dani).exists())
+
     def test_sin_nadie_de_su_lista_dani_se_queda_en_el_banquillo(self):
         Pista.objects.create(sede=self.sede, numero=1, superficie="TIERRA")
         dani = Entrenador.objects.create(nombre="Dani")

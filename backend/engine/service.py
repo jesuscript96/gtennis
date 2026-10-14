@@ -1083,8 +1083,13 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
 
         def atados_de(turno):
             """Contratos duros de este turno: los de siempre y las preferencias
-            de franja."""
-            return _con_preferencia(sponsors, pref_franja_duro.get(turno.id))
+            de franja. Quien solo entra con su lista no se ata por contrato (Dani
+            lo tenía con Taberner y acababa en su pista aunque fuera con alguien
+            de fuera): a él le da la pista el motor, y solo de los suyos."""
+            base = _con_preferencia(sponsors, pref_franja_duro.get(turno.id))
+            if not solo_con:
+                return base
+            return {j: c - set(solo_con) for j, c in base.items() if c - set(solo_con)}
 
         def del_reparto(turno, presentes):
             """Los que el reparto puede poner: los elegibles menos los de
