@@ -73,8 +73,4 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.RunPython(a_visitas, migrations.RunPython.noop),
-        migrations.RemoveField(model_name='invitado', name='fechas'),
-        migrations.RemoveField(model_name='invitado', name='fecha_desde'),
-        migrations.RemoveField(model_name='invitado', name='fecha_hasta'),
-        migrations.RemoveField(model_name='invitado', name='repite_de'),
     ]
