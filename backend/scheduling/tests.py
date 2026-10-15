@@ -372,3 +372,47 @@ class CoachDeclaraPorSuEquipoTests(TestCase):
         # Se ignora el entrenador que manda y se guarda el suyo.
         self.assertEqual(
             DisponibilidadEntrenador.objects.get(dia=1).entrenador_id, self.blas.id)
+
+
+class RehacerConCambiosAManoTests(DeshacerTests):
+    """15/10/2026: al rehacer, si hay cambios a mano se pregunta si mantenerlos
+    o rehacer todo; rehacer se puede deshacer, y un fijado se puede soltar."""
+
+    def setUp(self):
+        super().setUp()
+        self.asig.manual = True
+        self.asig.save()
+        # Ana no tiene semana habitual ese día: sin lo manual, no entrena.
+        from academy.models import HorarioJugador
+        for d in range(6):
+            HorarioJugador.objects.create(jugador=self.ana, dia=d,
+                                          entrena_manana=False, entrena_tarde=False)
+
+    def _rehacer(self, **extra):
+        return self.api.post(f"/api/semanas/{self.semana.id}/generar/",
+                             {"solo_dia": 0, "bloques": ["MANANA"], **extra}, format="json")
+
+    def test_pregunta_si_hay_cambios_a_mano(self):
+        r = self._rehacer()
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.json()["pregunta_manual"])
+        self.assertEqual(r.json()["manuales"], 1)
+        self.assertIn("Ana", r.json()["detalle"][0])
+
+    def test_mantener_deja_lo_manual(self):
+        self.assertEqual(self._rehacer(manual="mantener").status_code, 200)
+        self.assertTrue(Asignacion.objects.filter(jugador=self.ana, manual=True).exists())
+
+    def test_rehacer_todo_lo_quita_y_se_puede_deshacer(self):
+        self.assertEqual(self._rehacer(manual="rehacer").status_code, 200)
+        self.assertFalse(Asignacion.objects.filter(jugador=self.ana).exists())
+        r = self.api.post(f"/api/semanas/{self.semana.id}/deshacer/", {}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(Asignacion.objects.filter(jugador=self.ana, manual=True).exists())
+
+    def test_soltar_quita_el_fijado(self):
+        r = self.api.post(f"/api/asignaciones/{self.asig.id}/soltar/", {}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.asig.refresh_from_db()
+        self.assertFalse(self.asig.manual)
+        self.assertEqual(self._rehacer().status_code, 200)  # ya no pregunta

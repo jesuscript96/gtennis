@@ -1077,8 +1077,12 @@ def _con_preferencia(base, extra):
     return fusion
 
 
-def generate(semana: Semana, dias=None, bloques=None) -> dict:
+def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> dict:
     """Generate (or regenerate) the cuadrante.
+
+    mantener_manual: lo puesto a mano (y los mandados al banquillo a mano) se
+    queda. Con False se rehace todo desde cero (15/10/2026: lo elige quien
+    regenera; la generación de las 19:00 siempre lo mantiene).
 
     dias: iterable of day indices (por defecto de lunes a sábado).
 
@@ -1338,7 +1342,7 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                 ).select_related("turno")
                 if _effective_state(overrides, a.jugador_id, a.turno, fecha)
                 not in ESTADOS_EXCLUYENTES
-            ]
+            ] if mantener_manual else []
             ocupadas = set()
             fijos = set()
             for a in fijas:
@@ -1354,6 +1358,9 @@ def generate(semana: Semana, dias=None, bloques=None) -> dict:
                         ocupacion_coach[a.entrenador_id].append(a.turno.horas(fecha))
             # A quien se mandó al banquillo a mano no se le vuelve a poner en
             # este bloque ese día.
+            if not mantener_manual:
+                QuitadoAMano.objects.filter(
+                    semana=semana, dia=dia, turno__in=grupo).delete()
             quitados = set(QuitadoAMano.objects.filter(
                 semana=semana, dia=dia, turno__bloque=bloque,
             ).values_list("jugador_id", flat=True))

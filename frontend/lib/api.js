@@ -110,15 +110,35 @@ export const getLatestSemana = async () => {
   return r[0] || null;
 };
 export const getCuadrante = (id, dia) => req(`/semanas/${id}/cuadrante/?dia=${dia}`);
-// Un día ya cerrado (pasado su corte de las 19:00) pide confirmación antes de
-// rehacerse: el servidor contesta 409 y aquí se pregunta.
+// Antes de rehacer, el servidor contesta 409 si hay algo que preguntar: que
+// hay cambios hechos a mano (mantenerlos o rehacer todo, 15/10/2026) o que el
+// día ya está cerrado (pasado su corte de las 19:00).
 async function conConfirmacion(path, body) {
   try {
     return await req(path, { method: "POST", body: JSON.stringify(body) });
   } catch (e) {
-    if (e.status !== 409 || !e.cuerpo?.cerrado) throw e;
-    if (!window.confirm(`${e.message}\n\n¿Rehacerlo igualmente?`)) return null;
-    return req(path, { method: "POST", body: JSON.stringify({ ...body, confirmar: true }) });
+    if (e.status !== 409 || !(e.cuerpo?.cerrado || e.cuerpo?.pregunta_manual)) throw e;
+    const c = e.cuerpo;
+    if (!c.pregunta_manual) {
+      if (!window.confirm(`${e.message} Rehacerlo puede mover a quien no está puesto a mano.\n\n¿Rehacerlo igualmente?`)) return null;
+      return req(path, { method: "POST", body: JSON.stringify({ ...body, confirmar: true }) });
+    }
+    const { preguntar } = await import("./preguntar");
+    const n = c.manuales;
+    const manual = await preguntar({
+      titulo: `Hay ${n} cambio${n === 1 ? "" : "s"} hecho${n === 1 ? "" : "s"} a mano`,
+      texto: (c.cerrado ? `${c.error} ` : "") +
+        "¿Los mantengo y rehago el resto, o lo rehago todo desde cero? " +
+        "En los dos casos se puede deshacer después.",
+      lista: c.detalle.concat(n > c.detalle.length ? [`… y ${n - c.detalle.length} más`] : []),
+      opciones: [
+        { valor: "mantener", texto: "Mantenerlos y rehacer el resto" },
+        { valor: "rehacer", texto: "Rehacer todo desde cero", tipo: "ghost" },
+        { valor: null, texto: "Cancelar", tipo: "ghost" },
+      ],
+    });
+    if (!manual) return null;
+    return req(path, { method: "POST", body: JSON.stringify({ ...body, manual }) });
   }
 }
 export const generarSemana = (id, opts = {}) =>
@@ -130,6 +150,9 @@ export const publicarSemana = (id) =>
 export const despublicarSemana = (id) =>
   req(`/semanas/${id}/despublicar/`, { method: "POST", body: "{}" });
 
+// Deja de estar fijado a mano: el motor vuelve a decidir sobre él al rehacer.
+export const soltarAsignacion = (id) =>
+  req(`/asignaciones/${id}/soltar/`, { method: "POST", body: "{}" });
 export const deshacerSemana = (id) =>
   req(`/semanas/${id}/deshacer/`, { method: "POST", body: "{}" });
 export const getCambios = (id) => req(`/semanas/${id}/cambios/`);

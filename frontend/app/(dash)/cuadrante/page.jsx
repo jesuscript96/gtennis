@@ -20,6 +20,7 @@ import {
   setCoach,
   removeAsignacion,
   deshacerSemana,
+  soltarAsignacion,
   getCambios,
 } from "../../../lib/api";
 
@@ -402,6 +403,7 @@ function Inner() {
                         <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
                         <span className="nombre-jug">{a.jugador_nombre}{a.division_nivel ? ` · D${a.division_nivel}` : ""}</span>
                         {a.forzada && <span className="aviso-forzada" title={a.motivo_forzado}>⚠ forzada</span>}
+                        <Fijado a={a} onSoltar={(id) => op(() => soltarAsignacion(id))} />
                         {a.falta && <span className="falta-tag">{a.falta.motivo}</span>}
                       </div>
                     );
@@ -644,6 +646,7 @@ function Inner() {
                         onDropCell={onDropCell}
                         onDropPlayer={onDropPlayer}
                         onDropCoach={onDropCoach}
+                        onSoltar={(id) => op(() => soltarAsignacion(id))}
                       />
                     ))}
                   </tr>
@@ -718,7 +721,17 @@ function Inner() {
   );
 }
 
-function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach }) {
+// Puesto a mano: se queda al rehacer. Tocar el 📌 lo suelta.
+function Fijado({ a, onSoltar }) {
+  if (!a.manual) return null;
+  return (
+    <button type="button" className="fijado" title="Puesto a mano: se mantiene al rehacer. Toca para soltarlo y que lo decida el motor."
+      onClick={(e) => { e.stopPropagation(); onSoltar(a.id); }}
+      onPointerDown={(e) => e.stopPropagation()} draggable={false}>📌</button>
+  );
+}
+
+function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach, onSoltar }) {
   const empty = !items || items.length === 0;
   const color = empty ? "var(--border-strong)" : (ESTADO_COLOR[items[0].estado] || "var(--border-strong)");
   return (
@@ -734,6 +747,7 @@ function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach }) {
           <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
           <span className="nombre-jug">{a.jugador_nombre}</span>
           {a.forzada && <span className="aviso-forzada" title={a.motivo_forzado}>⚠ forzada</span>}
+          <Fijado a={a} onSoltar={onSoltar} />
           {a.division_nivel ? <span className="div">D{a.division_nivel}</span> : null}
           {a.falta && <span className="falta-tag">{a.falta.motivo}</span>}
         </div>

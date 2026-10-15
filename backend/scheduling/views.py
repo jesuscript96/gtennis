@@ -175,28 +175,65 @@ class AhoraView(APIView):
         })
 
 
-def _pide_confirmar(semana, dias, request):
-    """Un día ya cerrado (pasado su corte) se ha revisado y retocado a mano:
-    rehacerlo pide confirmarlo. Devuelve la respuesta 409, o None si se puede
+def _pide_confirmar(semana, dias, request, bloques=None):
+    """Antes de rehacer se pregunta (15/10/2026):
+
+    - si hay cambios a mano en lo que se rehace: mantenerlos o rehacer todo
+      desde cero (`manual` = "mantener" | "rehacer");
+    - si el día ya está cerrado (pasado su corte): que se confirme.
+
+    Devuelve la respuesta 409 con lo que hay que preguntar, o None si se puede
     seguir."""
     from .corte import cerrado
+    from .models import QuitadoAMano
 
-    if request.data.get("confirmar"):
-        return None
+    dias = dias if dias is not None else [d for d, _ in DIAS]
+    nombres_dia = dict(DIAS)
     hoy = djtz.localdate()
-    cerrados = []
-    for d in (dias if dias is not None else [d for d, _ in DIAS]):
-        fecha = semana.fecha_inicio + timedelta(days=d)
-        if fecha >= hoy and cerrado(fecha):
-            cerrados.append(d)
-    if not cerrados:
+    cerrados = [d for d in dias
+                if (semana.fecha_inicio + timedelta(days=d)) >= hoy
+                and cerrado(semana.fecha_inicio + timedelta(days=d))]
+    a_mano = Asignacion.objects.filter(semana=semana, dia__in=dias, manual=True)
+    quitados = QuitadoAMano.objects.filter(semana=semana, dia__in=dias)
+    if bloques:
+        a_mano = a_mano.filter(turno__bloque__in=bloques)
+        quitados = quitados.filter(turno__bloque__in=bloques)
+    a_mano = list(a_mano.select_related("turno", "pista", "jugador").order_by("dia", "turno__orden"))
+    quitados = list(quitados.select_related("turno", "jugador"))
+    # `confirmar` sin más es la app de antes: mantener lo manual, como era.
+    decidido = (request.data.get("manual") in ("mantener", "rehacer")
+                or bool(request.data.get("confirmar")))
+    pide_manual = (a_mano or quitados) and not decidido
+    pide_cierre = cerrados and not decidido
+    if not (pide_manual or pide_cierre):
         return None
-    nombres = " y ".join(dict(DIAS)[d].lower() for d in cerrados)
+    detalle = [
+        f"{nombres_dia[a.dia][:3]} {a.turno.codigo} P{a.pista.numero}: {a.jugador.nombre}"
+        for a in a_mano[:8]
+    ] + [
+        f"{nombres_dia[q.dia][:3]} {q.turno.codigo}: {q.jugador.nombre} (al banquillo)"
+        for q in quitados[:4]
+    ]
+    nombres = " y ".join(nombres_dia[d].lower() for d in cerrados)
     return Response({
-        "cerrado": True, "dias": cerrados,
-        "error": f"El cuadrante del {nombres} ya está cerrado. Rehacerlo "
-                 f"conserva lo puesto a mano, pero puede mover al resto.",
+        "cerrado": bool(cerrados), "dias": cerrados,
+        "pregunta_manual": bool(a_mano or quitados),
+        "manuales": len(a_mano) + len(quitados),
+        "detalle": detalle,
+        "error": (f"El cuadrante del {nombres} ya está cerrado." if cerrados
+                  else "Hay cambios hechos a mano."),
     }, status=409)
+
+
+def _rehacer(semana, request, dias=None, bloques=None):
+    """Rehace con lo que se haya decidido sobre los cambios a mano, guardando
+    antes una foto para poder deshacerlo."""
+    from .historial import registrar
+
+    mantener = request.data.get("manual", "mantener") != "rehacer"
+    registrar(semana.id, "Rehacer el cuadrante" + ("" if mantener else " desde cero"),
+              request.user)
+    return generate(semana, dias=dias, bloques=bloques, mantener_manual=mantener)
 
 
 class SemanaViewSet(viewsets.ModelViewSet):
@@ -255,23 +292,21 @@ class SemanaViewSet(viewsets.ModelViewSet):
         user = request.user
         if not (user.is_superadmin or user.is_coach):
             raise PermissionDenied("Generar es de dirección y coaches.")
-        aviso = _pide_confirmar(semana, dias, request)
+        aviso = _pide_confirmar(semana, dias, request, bloques)
         if aviso is not None:
             return aviso
 
-        report = generate(semana, dias=dias, bloques=bloques)
-        return Response(report)
+        return Response(_rehacer(semana, request, dias=dias, bloques=bloques))
 
     @action(detail=True, methods=["post"])
     def regenerar_tarde(self, request, pk=None):
         """Regenerate only the afternoon block of one day (PRD §02)."""
         semana = self.get_object()
         dia = int(request.data.get("dia"))
-        aviso = _pide_confirmar(semana, [dia], request)
+        aviso = _pide_confirmar(semana, [dia], request, [Turno.Bloque.TARDE])
         if aviso is not None:
             return aviso
-        report = regenerate_afternoon(semana, dia)
-        return Response(report)
+        return Response(_rehacer(semana, request, dias=[dia], bloques=[Turno.Bloque.TARDE]))
 
     @action(detail=True, methods=["post"])
     def deshacer(self, request, pk=None):
@@ -707,6 +742,18 @@ class AsignacionViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(manual=True)
+
+    @action(detail=True, methods=["post"])
+    def soltar(self, request, pk=None):
+        """Deja de estar fijado a mano: la próxima vez que se rehaga, el motor
+        vuelve a decidir sobre él (15/10/2026)."""
+        from .historial import registrar
+
+        a = self.get_object()
+        registrar(a.semana_id, f"Soltar a {a.jugador}", request.user)
+        a.manual = False
+        a.save(update_fields=["manual"])
+        return Response(AsignacionSerializer(a).data)
 
     def perform_destroy(self, instance):
         """Mandar al banquillo desde el cuadrante. Se apunta para que rehacer
