@@ -211,6 +211,12 @@ class PairingInput:
     # rompe. Primero se coloca a todos los posibles; entre esos repartos, el que
     # menos rompe; y nunca se fuerza solo por ahorrarse abrir una pista.
     forzar: bool = False
+    # Con quién se puede forzar: los que en el reparto normal se quedaron
+    # fuera o solos en una pista. Sin esto el motor rompía reglas con
+    # cualquiera y forzaba pistas de más. Vacío = con cualquiera.
+    forzar_con: set[int] = field(default_factory=set)
+    # El reparto normal, para empezar a buscar desde él: {(jugador, franja): pista}.
+    pista_previa: dict[tuple[int, int], int] = field(default_factory=dict)
 
 
 @dataclass
@@ -682,7 +688,9 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             if not juntos:
                 continue
             if (motivo == DURO and data.forzar
-                    and _normalise(a.id, b.id) not in data.vetoes):
+                    and _normalise(a.id, b.id) not in data.vetoes
+                    and (not data.forzar_con or a.id in data.forzar_con
+                         or b.id in data.forzar_con)):
                 forzada = model.NewBoolVar(f"forz_{a.id}_{b.id}")
                 for f, c in juntos:
                     model.Add(x[a.id, f, c.id] + x[b.id, f, c.id] <= 1 + forzada)
@@ -712,6 +720,11 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 if isinstance(va, int) and isinstance(vb, int):
                     continue
                 model.Add(va == vb)
+
+    # Se empieza a buscar desde el reparto normal.
+    if data.pista_previa:
+        for (pid, f, cid), var in x.items():
+            model.AddHint(var, 1 if data.pista_previa.get((pid, f)) == cid else 0)
 
     # --- Objective ---------------------------------------------------------
     terms = []

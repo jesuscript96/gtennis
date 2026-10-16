@@ -942,6 +942,18 @@ def _reglas_de_pista(yo, otros, span):
     return rotas
 
 
+def _dificiles(jugadores, fase, res):
+    """Los que en el reparto normal se quedaron fuera o solos en una pista:
+    con ellos (y solo con ellos) se puede forzar."""
+    dentro, solos = set(), set()
+    for t in fase:
+        for m in res.franjas.get(t.id, {}).values():
+            dentro.update(m)
+            if len(m) == 1:
+                solos.update(m)
+    return {p.id for p in jugadores if p.id not in dentro} | solos
+
+
 def _motivo_forzado(miembros, por_id, cfg, es_tarde, vetoes, declaradas):
     """Si en esta pista hay alguna pareja que las reglas no admiten (pista
     forzada por el motor), el aviso con lo que rompe; si no, ""."""
@@ -1481,7 +1493,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 if grupo[0].bloque == Turno.Bloque.TARDE
                 else courts
             )
-            def resolver(jugadores, fase, forzar=False):
+            def resolver(jugadores, fase, forzar=False, previo=None):
                 """Empareja a `jugadores` en las franjas de `fase` de una vez."""
                 ids = [t.id for t in fase]
                 opciones = {p.id: {f: pr for f, pr in franjas_de[p.id].items()
@@ -1570,6 +1582,10 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                         and p.division <= cfg.nivel_protegido},
                     w_cubrir_prioridad=PESO_ALTO_SIN_ENTRENADOR,
                     forzar=forzar,
+                    forzar_con=_dificiles(jugadores, fase, previo) if previo else set(),
+                    pista_previa=({(jid, f): c for f, pistas in previo.franjas.items()
+                                   for c, m in pistas.items() for jid in m}
+                                  if previo else {}),
                 ))
 
             # Por la tarde, T1 primero con todos y, quien no cabe, a T2 (si
@@ -1592,7 +1608,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     return {jid for t in fase for m in res.franjas.get(t.id, {}).values()
                             for jid in m}
                 if any(p.id not in colocados_en(r) for p in jugadores):
-                    r2 = resolver(jugadores, fase, forzar=True)
+                    r2 = resolver(jugadores, fase, forzar=True, previo=r)
                     if len(colocados_en(r2)) > len(colocados_en(r)):
                         r = r2
                         forzado_en.update(t.id for t in fase)
