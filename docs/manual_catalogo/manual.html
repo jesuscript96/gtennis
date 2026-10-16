@@ -94,8 +94,10 @@ jugadores van, sin botones de editar. Cada head coach responde de su gran grupo;
 torneos, Torneos por jugador y Nuevo torneo.</p>
 
 <h2 id="calendario" class="pb">2. El calendario por semanas</h2>
-<p>Es la pantalla de trabajo. Cada torneo está en la <b>semana en que empieza</b>, y cada semana tiene su color en
-el borde izquierdo. Por defecto se ve «Desde hoy» hasta final de año.</p>
+<p>Es la pantalla de trabajo. Cada semana tiene su color en el borde izquierdo y por defecto se ve «Desde hoy»
+hasta final de año. Un torneo sale en <b>todas las semanas que ocupa</b>, desde su previa si la tiene: un circuito
+de fines de semana de un mes aparece en las cuatro, marcado como «semana 1 de 4», «semana 2 de 4»… Lo que se
+cambie en una de esas filas vale para todas, porque es el mismo torneo.</p>
 <p>En cada semana salen <b>primero los torneos con jugadores</b>. Los demás quedan plegados debajo, en
 <b>«Ver los otros N torneos de la semana sin jugadores»</b>: pulsando se despliegan y pulsando otra vez se ocultan.
 La cabecera de la semana dice cuántos hay de cada tipo. Al escribir en el buscador se despliegan solos, para que un
@@ -103,7 +105,7 @@ torneo buscado por su nombre no quede escondido.</p>
 <figure><img src="img/c01-calendario.png" alt="Calendario por semanas"><figcaption>Cada semana con sus torneos con jugadores y, debajo, el desplegable con el resto.</figcaption></figure>
 <p>Qué hay en cada fila:</p>
 <ul>
-<li><b>Fechas</b> del torneo. Si se está jugando ahora, lleva <span class="pill">en juego</span>. Los ya pasados salen en gris.</li>
+<li><b>Fechas</b> del torneo y, debajo, las de la <b>previa</b> si tiene clasificación. Si dura varias semanas, «semana N de M»; si solo se juega en fin de semana, <span class="pill pend">fines de semana</span>. Si se está jugando ahora, lleva <span class="pill">en juego</span> (o «previa en juego»). Los ya pasados salen en gris.</li>
 <li><b>Torneo</b>: nombre, circuito, nivel y lugar. Pulsando el nombre se abre la ficha.</li>
 <li><b>Cierre insc.</b>: fecha de cierre de inscripción. Si quedan 7 días o menos, aparece <span class="pill pend">3 d</span>.</li>
 <li><b>Acompaña</b>: desplegable con los entrenadores que pueden viajar esas fechas (apartado 7).</li>
@@ -129,7 +131,9 @@ casilla «Solo con jugadores», que quita también el desplegable de los torneos
 <li>En la cabecera de la semana, pulsar <b>«+ añadir un torneo esta semana»</b> (o «+ Nuevo torneo» arriba a la derecha).</li>
 <li><b>Nombre</b> tal como se dice en el club. <b>Circuito</b>: al escribir se proponen los que ya existen; elegir uno de la lista evita tener el mismo circuito escrito de dos formas.</li>
 <li><b>Nivel</b> (J30, M25, Sub-16, Cadete…) y <b>lugar</b>.</li>
-<li><b>Fechas</b>: vienen puestas de lunes a domingo; ajustarlas si el torneo es más corto o más largo.</li>
+<li><b>Fechas</b>: vienen puestas de lunes a domingo; ajustarlas si el torneo es más corto o más largo. Son las del cuadro final.</li>
+<li><b>Previa</b>: si el torneo tiene días de clasificación antes del cuadro final, rellenar «Previa desde» y «Previa hasta». Si solo se pone el inicio, la previa llega hasta el día en que empieza el cuadro.</li>
+<li><b>Solo se juega en fin de semana</b>: marcarlo en circuitos de fines de semana que duran varias semanas. Entre semana se entrena.</li>
 <li><b>Cierre de inscripción</b>: imprescindible para que la app avise a tiempo.</li>
 <li><b>Coach que acompaña</b>: pulsar el nombre. Si va otra persona o van solos, escribirlo en la nota.</li>
 <li><b>Estado</b>: Validado si es seguro. <b>Propuesto</b> si quieres que dirección lo vea antes.</li>
@@ -265,7 +269,7 @@ los viajes a torneos ya cerrados.</p>
 <tr><td>«No es de tu grupo» al mover o quitar a un jugador</td><td>Lo gestiona otro head coach. Si debería ser tuyo, habla con él o con dirección para cambiarlo en Grupos.</td></tr>
 <tr><td>Un entrenador no sale en «Acompaña»</td><td>Tiene vacaciones registradas en esas fechas. Si es un error, corregirlo en Vacaciones.</td></tr>
 <tr><td>Un jugador no está en el desplegable para apuntarlo</td><td>Ya está apuntado a ese torneo, o no tiene ficha (dirección la crea), o está de baja.</td></tr>
-<tr><td>El torneo dura varias semanas y solo lo veo en una</td><td>Está en la semana en que empieza. Con el filtro de mes aparece en todos los meses que toca.</td></tr>
+<tr><td>Un torneo sale en varias semanas</td><td>Dura varias semanas (o tiene previa la semana anterior). Es el mismo torneo: lo que cambies en una fila vale para todas.</td></tr>
 <tr><td>Veo torneos profesionales (ATP, WTA, Challenger) que no son míos</td><td>Son del plan de los jugadores profesionales. Los que no tienen a nadie ya salen plegados; para el resto, usa el buscador.</td></tr>
 <tr><td>Me he equivocado (he movido, borrado o fusionado lo que no era)</td><td>Pulsa «↩︎ Deshacer» arriba del calendario (apartado 6).</td></tr>
 <tr><td>Quiero saber de dónde salió un dato</td><td>Abajo de la ficha, «Ver de dónde sale este dato»: hoja y celda del Excel y otras formas en que estaba escrito.</td></tr>

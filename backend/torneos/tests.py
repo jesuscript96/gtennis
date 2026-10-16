@@ -188,3 +188,46 @@ class DeshacerTests(TestCase):
         self.assertEqual(r.status_code, 409)
         self.assertIn("dir", r.data["detail"])
         self.assertEqual(Participante.objects.get(pk=self.p.id).torneo_id, self.silla.id)
+
+
+class PreviaTests(TestCase):
+    """Días de previa antes del cuadro final y torneos de fin de semana."""
+
+    def setUp(self):
+        self.u_dir = User.objects.create_user(username="dir", password="x", role=User.Role.SUPERADMIN)
+        self.c = APIClient()
+        self.c.force_authenticate(self.u_dir)
+
+    def alta(self, **extra):
+        return self.c.post("/api/torneos/", {"nombre": "ITF J60 La Nucía", "fecha_inicio": "2026-10-19",
+                                            "fecha_fin": "2026-10-25", **extra}, format="json")
+
+    def test_previa_valida(self):
+        r = self.alta(qualy_inicio="2026-10-17", qualy_fin="2026-10-18", solo_fines_semana=False)
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual((r.data["qualy_inicio"], r.data["qualy_fin"]), ("2026-10-17", "2026-10-18"))
+
+    def test_previa_sin_fin_acaba_al_empezar_el_cuadro(self):
+        r = self.alta(qualy_inicio="2026-10-17")
+        self.assertEqual(r.data["qualy_fin"], "2026-10-19")
+
+    def test_previa_despues_del_cuadro_no(self):
+        self.assertEqual(self.alta(qualy_inicio="2026-10-17", qualy_fin="2026-10-21").status_code, 400)
+        self.assertEqual(self.alta(qualy_inicio="2026-10-18", qualy_fin="2026-10-17").status_code, 400)
+        self.assertEqual(self.alta(qualy_fin="2026-10-18").status_code, 400)
+
+    def test_la_previa_cuenta_para_la_semana(self):
+        self.alta(qualy_inicio="2026-10-17", qualy_fin="2026-10-18")
+        # La semana del 12 al 18 no llega al cuadro final, pero sí a la previa.
+        r = self.c.get("/api/torneos/?desde=2026-10-12&hasta=2026-10-18")
+        self.assertEqual([t["nombre"] for t in r.data], ["ITF J60 La Nucía"])
+
+    def test_deshacer_y_fusionar_conservan_la_previa(self):
+        tid = self.alta(qualy_inicio="2026-10-17", qualy_fin="2026-10-18").data["id"]
+        self.c.patch(f"/api/torneos/{tid}/", {"qualy_inicio": None, "qualy_fin": None}, format="json")
+        self.c.post("/api/torneos-cambios/deshacer/", {}, format="json")
+        self.assertEqual(str(Torneo.objects.get(pk=tid).qualy_inicio), "2026-10-17")
+        otro = Torneo.objects.create(nombre="La Nucia J60", fecha_inicio="2026-10-19", fecha_fin="2026-10-25",
+                                     solo_fines_semana=True)
+        r = self.c.post(f"/api/torneos/{otro.id}/fusionar/", {"con": tid}, format="json")
+        self.assertEqual((r.data["qualy_inicio"], r.data["solo_fines_semana"]), ("2026-10-17", True))

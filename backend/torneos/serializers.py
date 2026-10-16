@@ -52,7 +52,7 @@ class TorneoSerializer(serializers.ModelSerializer):
         model = Torneo
         fields = [
             "id", "nombre", "circuito", "nivel", "lugar", "fecha_inicio", "fecha_fin",
-            "cierre_inscripcion", "estado", "estado_display", "acompanantes",
+            "cierre_inscripcion", "qualy_inicio", "qualy_fin", "solo_fines_semana", "estado", "estado_display", "acompanantes",
             "acompanantes_detalle", "acompanante_nota", "notas", "fuente", "alias",
             "participantes", "n_jugadores", "creado_por", "creado_por_nombre",
             "created_at", "updated_at",
@@ -73,6 +73,17 @@ class TorneoSerializer(serializers.ModelSerializer):
         fin = data.get("fecha_fin") or getattr(self.instance, "fecha_fin", None)
         if ini and fin and fin < ini:
             raise serializers.ValidationError({"fecha_fin": "El torneo no puede acabar antes de empezar."})
+        def campo(k):
+            return data[k] if k in data else getattr(self.instance, k, None)
+        q_ini, q_fin = campo("qualy_inicio"), campo("qualy_fin")
+        if q_ini and not q_fin:
+            q_fin = data["qualy_fin"] = ini
+        if q_fin and not q_ini:
+            raise serializers.ValidationError({"qualy_inicio": "Indica también cuándo empieza la previa."})
+        if q_ini and q_fin and q_fin < q_ini:
+            raise serializers.ValidationError({"qualy_fin": "La previa no puede acabar antes de empezar."})
+        if q_fin and ini and q_fin > ini:
+            raise serializers.ValidationError({"qualy_fin": "La previa tiene que acabar antes de que empiece el cuadro final (o ese mismo día)."})
         cierre = data.get("cierre_inscripcion")
         if cierre and ini and cierre > fin:
             raise serializers.ValidationError(

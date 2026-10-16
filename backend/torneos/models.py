@@ -25,6 +25,13 @@ class Torneo(models.Model):
     fecha_inicio = models.DateField()
     fecha_fin = models.DateField()
     cierre_inscripcion = models.DateField(null=True, blank=True)
+    # Previa (clasificación / pre-qualy): días antes del cuadro final. Ocupan
+    # semana igual que el torneo, así que cuentan para saber dónde sale.
+    qualy_inicio = models.DateField(null=True, blank=True, verbose_name="Previa desde")
+    qualy_fin = models.DateField(null=True, blank=True, verbose_name="Previa hasta")
+    # Torneos que se juegan solo en fin de semana y se alargan varias semanas
+    # (circuitos provinciales, Champions Cup…): entre semana se entrena.
+    solo_fines_semana = models.BooleanField(default=False, verbose_name="Solo fines de semana")
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.VALIDADO)
     # Quién viaja con los jugadores. Vacío = aún no decidido o van solos (ver nota).
     acompanantes = models.ManyToManyField(

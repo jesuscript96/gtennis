@@ -8,7 +8,7 @@ import {
 import { canWrite } from "../../../lib/perms";
 import DeshacerTorneos from "../../../components/DeshacerTorneos";
 import {
-  ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, lunesDe, solapa,
+  ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, semanasDe, solapa,
 } from "../../../lib/torneos";
 
 const ANIO = 2026;
@@ -18,15 +18,15 @@ const COLORES_SEMANA = 5;
 // Desplegable(s) de «acompaña»: uno por entrenador ya asignado y otro para
 // añadir. Solo ofrece a los que no están de vacaciones en las fechas del
 // torneo; si ya acompaña a otro torneo esa misma semana, lo dice.
-function AcompanaCell({ t, entrenadores, enSemana, onGuardar, puedeEditar }) {
+function AcompanaCell({ t, lunes, entrenadores, enSemana, onGuardar, puedeEditar }) {
   const disponibles = entrenadores.filter((e) =>
-    !e.vacaciones.some((v) => solapa(v.fecha_inicio, v.fecha_fin, t.fecha_inicio, t.fecha_fin)));
+    !e.vacaciones.some((v) => solapa(v.fecha_inicio, v.fecha_fin, inicioEfectivo(t), t.fecha_fin)));
   const ids = t.acompanantes || [];
   if (!puedeEditar) {
     return <>{t.acompanantes_detalle.map((e) => e.nombre).join(", ") || <span className="muted">—</span>}</>;
   }
   const opcion = (e) => {
-    const otro = enSemana(e.id, t);
+    const otro = enSemana(e.id, t, lunes);
     return <option key={e.id} value={e.id}>{e.nombre}{otro ? ` · ya en ${otro}` : ""}</option>;
   };
   function cambiar(i, valor) {
@@ -136,24 +136,31 @@ export default function TorneosPage() {
     getTorneosEntrenadores(rango.desde, rango.hasta).then(setEntrenadores).catch(() => {});
   }, [rango]);
 
-  // Semanas: cada torneo va en la semana en que empieza.
+  // Semanas: cada torneo sale en todas las que ocupa, desde la previa si la
+  // tiene (un circuito de fines de semana de un mes sale en las cuatro). Solo
+  // las semanas del tramo elegido.
   const semanas = useMemo(() => {
-    const out = [];
+    const primerLunes = lunesDe(rango.desde);
+    const porLunes = new Map();
     for (const t of items || []) {
-      const lunes = lunesDe(t.fecha_inicio);
-      let g = out[out.length - 1];
-      if (!g || g.lunes !== lunes) { g = { lunes, items: [], con: [], sin: [] }; out.push(g); }
-      g.items.push(t);
-      // Primero los torneos a los que va alguien; el resto, plegado debajo.
-      (t.jugadores.length ? g.con : g.sin).push(t);
+      const ss = semanasDe(t);
+      ss.forEach((lunes, i) => {
+        if (lunes < primerLunes || lunes > rango.hasta) return;
+        let g = porLunes.get(lunes);
+        if (!g) { g = { lunes, items: [], con: [], sin: [] }; porLunes.set(lunes, g); }
+        const fila = { t, lunes, n: i + 1, total: ss.length };
+        g.items.push(fila);
+        // Primero los torneos a los que va alguien; el resto, plegado debajo.
+        (t.jugadores.length ? g.con : g.sin).push(fila);
+      });
     }
-    return out;
-  }, [items]);
+    return [...porLunes.values()].sort((a, b) => (a.lunes < b.lunes ? -1 : 1));
+  }, [items, rango]);
 
-  // ¿Este entrenador ya acompaña a otro torneo de la misma semana?
-  const enSemana = useCallback((entId, t) => {
-    const lunes = lunesDe(t.fecha_inicio);
-    const otro = (items || []).find((x) => x.id !== t.id && lunesDe(x.fecha_inicio) === lunes && (x.acompanantes || []).includes(entId));
+  // ¿Este entrenador ya acompaña a otro torneo que también ocupa esta semana?
+  const enSemana = useCallback((entId, t, lunes) => {
+    const otro = (items || []).find((x) => x.id !== t.id && (x.acompanantes || []).includes(entId)
+      && semanasDe(x).includes(lunes));
     return otro ? otro.nombre.slice(0, 28) : "";
   }, [items]);
 
@@ -180,13 +187,25 @@ export default function TorneosPage() {
   }
 
   // Una fila de torneo del calendario.
-  function filaTorneo(t) {
+  function filaTorneo({ t, lunes, n, total }) {
     const pasado = t.fecha_fin < hoy;
-    const enCurso = t.fecha_inicio <= hoy && t.fecha_fin >= hoy;
+    const enCurso = inicioEfectivo(t) <= hoy && t.fecha_fin >= hoy;
+    const enPrevia = enCurso && hoy < t.fecha_inicio;
     const dCierre = diasHasta(t.cierre_inscripcion);
     return (
-      <tr key={t.id} className={pasado ? "pasado" : enCurso ? "en-curso" : ""}>
-        <td className="td-fechas" data-label="Fechas">{fmtRango(t.fecha_inicio, t.fecha_fin)}{enCurso && <span className="pill live">en juego</span>}</td>
+      <tr key={`${lunes}-${t.id}`} className={pasado ? "pasado" : enCurso ? "en-curso" : ""}>
+        <td className="td-fechas" data-label="Fechas">
+          <div className="fechas-bloque">
+            <div>{fmtRango(t.fecha_inicio, t.fecha_fin)}{enCurso && <span className="pill live">{enPrevia ? "previa en juego" : "en juego"}</span>}</div>
+            {t.qualy_inicio && <div className="previa">Previa {fmtRango(t.qualy_inicio, t.qualy_fin || t.qualy_inicio)}</div>}
+            {(total > 1 || t.solo_fines_semana) && (
+              <div className="torneo-sub">
+                {total > 1 && <span className="pill semana-n">semana {n} de {total}</span>}
+                {t.solo_fines_semana && <span className="pill finde">fines de semana</span>}
+              </div>
+            )}
+          </div>
+        </td>
         <td data-label="Torneo">
           <Link href={`/torneos/${t.id}`} className="torneo-link">{t.nombre}</Link>
           <div className="torneo-sub">
@@ -206,7 +225,7 @@ export default function TorneosPage() {
           ) : <span className="muted">—</span>}
         </td>
         <td className="td-coach" data-label="Acompaña">
-          <AcompanaCell t={t} entrenadores={entrenadores} enSemana={enSemana}
+          <AcompanaCell t={t} lunes={lunes} entrenadores={entrenadores} enSemana={enSemana}
             onGuardar={guardarCampo} puedeEditar={puedeEditar} />
         </td>
         <td className="td-jug" data-label="Jugadores">
@@ -231,14 +250,14 @@ export default function TorneosPage() {
       </div>
       {puedeEditar ? (
         <p className="help">
-          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo va en la semana en que empieza. En «Acompaña»
+          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, desde la previa si la tiene. En «Acompaña»
           solo se ofrecen entrenadores que no están de vacaciones esas fechas. Los jugadores se pueden
           <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
           Los nombres en <span className="jug-chip dudoso">naranja</span> vienen del Excel con dudas.
         </p>
       ) : (
         <p className="help">
-          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo va en la semana en que empieza, con quién
+          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, con quién
           acompaña y qué jugadores van. Es solo consulta: los cambios los hacen los head coaches y dirección.
           Los nombres en <span className="jug-chip dudoso">naranja</span> vienen del Excel con dudas.
         </p>

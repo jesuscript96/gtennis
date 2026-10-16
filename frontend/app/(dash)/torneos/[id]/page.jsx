@@ -110,7 +110,12 @@ export default function TorneoDetallePage() {
           guardando={guardando} error={error} />
       ) : (
         <div className="ficha-torneo">
-          <div className="dato"><span>Fechas</span><b>{fmtRango(t.fecha_inicio, t.fecha_fin)}</b><small>{fmtLarga(t.fecha_inicio)}{t.fecha_fin !== t.fecha_inicio ? ` → ${fmtLarga(t.fecha_fin)}` : ""}</small></div>
+          <div className="dato"><span>Fechas</span><b>{fmtRango(t.fecha_inicio, t.fecha_fin)}</b><small>{fmtLarga(t.fecha_inicio)}{t.fecha_fin !== t.fecha_inicio ? ` → ${fmtLarga(t.fecha_fin)}` : ""}</small>
+            {t.solo_fines_semana && <small>Solo fines de semana</small>}</div>
+          {t.qualy_inicio && (
+            <div className="dato"><span>Previa (clasificación)</span><b>{fmtRango(t.qualy_inicio, t.qualy_fin || t.qualy_inicio)}</b>
+              <small>{fmtLarga(t.qualy_inicio)}{t.qualy_fin && t.qualy_fin !== t.qualy_inicio ? ` → ${fmtLarga(t.qualy_fin)}` : ""}</small></div>
+          )}
           <div className="dato"><span>Cierre de inscripción</span>
             <b>{t.cierre_inscripcion ? fmtLarga(t.cierre_inscripcion) : "Sin fecha"}</b>
             {dCierre !== null && <small className={dCierre >= 0 && dCierre <= 7 ? "aviso" : ""}>

@@ -11,7 +11,7 @@ Versión del 14 de octubre de 2026, tras la demo con Sergio del día 13.
 ## Cinco reglas
 
 1. **Dueño**: cada head coach responde del calendario de su gran grupo: a qué torneos van sus jugadores y quién les acompaña. Dirección valida y arbitra. Son los únicos que la cambian; los entrenadores la consultan.
-2. **Unidad de trabajo: la semana.** Se revisa semana a semana, no torneo a torneo. Un torneo está en la semana en que empieza.
+2. **Unidad de trabajo: la semana.** Se revisa semana a semana, no torneo a torneo. Un torneo sale en todas las semanas que ocupa, desde su previa si la tiene.
 3. **Alcance: de hoy al 31 de diciembre de 2026.** Lo de enero a octubre se queda como histórico sin revisar.
 4. **Una sola fuente.** El Excel se congela hoy. Lo que no esté en la app no existe. Lo que un head coach añada o cambie en la app es la verdad.
 5. **Lo dudoso se arregla, no se borra.** Dos filas iguales se fusionan. Un jugador en naranja se confirma o se quita. Un torneo que no se juega se marca Cancelado.
@@ -53,7 +53,8 @@ Se da por cerrado el catálogo 2026. A partir de ahí la rutina es:
 
 ## Lo que ya está en la app para hacerlo
 
-- Calendario por semanas, cada semana con su color, el torneo en la semana en que empieza.
+- Calendario por semanas, cada semana con su color; un torneo sale en todas las semanas que ocupa («semana N de M»).
+- Previa (días de clasificación) y marca de «solo fines de semana» en cada torneo.
 - En cada semana, primero los torneos con jugadores; los que no tienen a nadie, plegados en un desplegable.
 - «Acompaña» con desplegable filtrado por vacaciones y aviso de solape.
 - Jugadores completos en cada fila, arrastrables entre torneos (y tocar-para-mover en el móvil).

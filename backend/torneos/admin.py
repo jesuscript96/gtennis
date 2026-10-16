@@ -11,7 +11,8 @@ class ParticipanteInline(admin.TabularInline):
 
 @admin.register(Torneo)
 class TorneoAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "circuito", "nivel", "fecha_inicio", "fecha_fin", "cierre_inscripcion", "estado")
+    list_display = ("nombre", "circuito", "nivel", "qualy_inicio", "fecha_inicio", "fecha_fin",
+                    "solo_fines_semana", "cierre_inscripcion", "estado")
     list_filter = ("circuito", "estado")
     search_fields = ("nombre", "lugar", "alias")
     filter_horizontal = ("acompanantes",)

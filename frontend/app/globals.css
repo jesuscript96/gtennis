@@ -1627,3 +1627,15 @@ td.cell.forzada { background: #fffaf0; }
   .eval-notas button { width: 52px; height: 52px; }
   .eval-pie .btn { flex: 1 1 auto; }
 }
+/* Torneos: previa y torneos de varias semanas */
+.fechas-bloque { display: grid; gap: 3px; }
+.fechas-bloque .previa { font-size: 12px; font-weight: 500; color: #7b54e0; }
+.pill.semana-n { background: #eef1f7; color: #3b5a8a; }
+.pill.finde { background: #f4ecd5; color: #8a6a1f; }
+label.field.check-campo { display: flex; align-items: center; gap: 8px; align-self: end; padding-bottom: 10px; margin-bottom: 12px; }
+.check-campo input { width: auto; }
+.check-campo span { margin: 0 !important; color: var(--text) !important; font-size: 13px !important; }
+@media (max-width: 640px) {
+  .tabla-torneos td.td-fechas { align-items: flex-start; }
+  .fechas-bloque { justify-items: end; text-align: right; }
+}

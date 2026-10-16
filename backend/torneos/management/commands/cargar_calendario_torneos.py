@@ -254,6 +254,7 @@ class Command(BaseCommand):
                         notas_coach.append(c)
                 t = Torneo.objects.create(
                     nombre=str(nombre).strip(), circuito=str(rs[0].get("Circuito") or "").strip(),
+                    solo_fines_semana=bool(re.search(r"fin(es)? de semana|\bfinde\b", str(nombre), re.I)),
                     fecha_inicio=ini, fecha_fin=fin, cierre_inscripcion=min(cierres) if cierres else None,
                     acompanante_nota=", ".join(dict.fromkeys(notas_coach))[:120],
                     notas=" · ".join(dict.fromkeys(notas)),

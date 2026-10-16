@@ -16,7 +16,10 @@ from .models import CambioTorneo, Participante, Torneo
 
 CAMPOS = ("nombre", "circuito", "nivel", "lugar", "fecha_inicio", "fecha_fin",
           "cierre_inscripcion", "estado", "acompanante_nota", "notas", "fuente",
-          "alias", "creado_por_id", "created_at")
+          "alias", "creado_por_id", "created_at", "qualy_inicio", "qualy_fin", "solo_fines_semana")
+# Añadidos el 16/10: una foto anterior no los trae y entonces se respetan
+# los que tenga ahora el torneo.
+CAMPOS_NUEVOS = ("qualy_inicio", "qualy_fin", "solo_fines_semana")
 CAMPOS_P = ("id", "jugador_id", "nombre", "certeza", "entrenador_ref", "detalle")
 
 
@@ -81,7 +84,8 @@ def deshacer(cambio):
         if e is None:
             Torneo.objects.filter(pk=tid).delete()
             continue
-        campos = {k: v for k, v in e.items() if k in CAMPOS and k != "created_at"}
+        actual = Torneo.objects.filter(pk=tid).values(*CAMPOS_NUEVOS).first() or {}
+        campos = {**actual, **{k: v for k, v in e.items() if k in CAMPOS and k != "created_at"}}
         creado = parse_datetime(e["created_at"]) if e.get("created_at") else timezone.now()
         # Con el pk puesto, save() actualiza si existe y crea si no; la fecha de
         # alta hay que darla, o el UPDATE la dejaría vacía.

@@ -53,3 +53,12 @@ export function fmtSemana(lunes) {
   return `del ${Number(d1)} de ${MESES[Number(m1) - 1]} al ${Number(d2)} de ${MESES[Number(m2) - 1]}`;
 }
 export const solapa = (a1, a2, b1, b2) => a1 <= b2 && b1 <= a2;
+// Primer día que el torneo ocupa: la previa si la tiene, si no el cuadro final.
+export const inicioEfectivo = (t) =>
+  (t.qualy_inicio && t.qualy_inicio < t.fecha_inicio ? t.qualy_inicio : t.fecha_inicio);
+// Lunes de todas las semanas que toca, de la previa al último día.
+export function semanasDe(t) {
+  const out = [];
+  for (let l = lunesDe(inicioEfectivo(t)); l <= t.fecha_fin; l = sumaDias(l, 7)) out.push(l);
+  return out;
+}

@@ -57,7 +57,8 @@ class TorneoViewSet(viewsets.ModelViewSet):
         if p.get("desde"):
             qs = qs.filter(fecha_fin__gte=p["desde"])
         if p.get("hasta"):
-            qs = qs.filter(fecha_inicio__lte=p["hasta"])
+            # La previa también cuenta: un torneo cuya previa cae en el tramo sale.
+            qs = qs.filter(Q(fecha_inicio__lte=p["hasta"]) | Q(qualy_inicio__lte=p["hasta"]))
         if p.get("circuito"):
             qs = qs.filter(circuito=p["circuito"])
         if p.get("jugador"):
@@ -103,7 +104,7 @@ class TorneoViewSet(viewsets.ModelViewSet):
         return Response({
             "total": base.count(),
             "con_jugadores": base.annotate(n=Count("participantes")).filter(n__gt=0).count(),
-            "en_curso": base.filter(fecha_inicio__lte=hoy, fecha_fin__gte=hoy).count(),
+            "en_curso": base.filter(Q(fecha_inicio__lte=hoy) | Q(qualy_inicio__lte=hoy), fecha_fin__gte=hoy).count(),
             "proximos_cierres": [
                 {"id": t.id, "nombre": t.nombre, "cierre_inscripcion": t.cierre_inscripcion,
                  "fecha_inicio": t.fecha_inicio, "n_jugadores": t.n}
@@ -166,6 +167,10 @@ class TorneoViewSet(viewsets.ModelViewSet):
             if otro.acompanante_nota and otro.acompanante_nota not in t.acompanante_nota:
                 t.acompanante_nota = ", ".join(x for x in (t.acompanante_nota, otro.acompanante_nota) if x)[:120]
             t.cierre_inscripcion = t.cierre_inscripcion or otro.cierre_inscripcion
+            if otro.qualy_inicio and (not t.qualy_inicio or otro.qualy_inicio < t.qualy_inicio):
+                t.qualy_inicio = otro.qualy_inicio
+            t.qualy_fin = t.qualy_fin or otro.qualy_fin
+            t.solo_fines_semana = t.solo_fines_semana or otro.solo_fines_semana
             t.lugar = t.lugar or otro.lugar
             t.nivel = t.nivel or otro.nivel
             t.circuito = t.circuito or otro.circuito

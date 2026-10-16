@@ -5,13 +5,16 @@ import { getTorneosEntrenadores } from "../lib/api";
 
 const VACIO = {
   nombre: "", circuito: "", nivel: "", lugar: "", fecha_inicio: "", fecha_fin: "",
-  cierre_inscripcion: "", estado: "VALIDADO", acompanantes: [], acompanante_nota: "", notas: "",
+  cierre_inscripcion: "", qualy_inicio: "", qualy_fin: "", solo_fines_semana: false, estado: "VALIDADO", acompanantes: [], acompanante_nota: "", notas: "",
 };
 
 // Alta y edición de un torneo. `inicial` = el torneo a editar (o nada para
 // crear). `circuitos` = los que ya existen, para la lista desplegable.
 export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCancelar, guardando, error }) {
-  const [f, setF] = useState(() => ({ ...VACIO, ...(inicial || {}), cierre_inscripcion: inicial?.cierre_inscripcion || "" }));
+  const [f, setF] = useState(() => ({
+    ...VACIO, ...(inicial || {}), cierre_inscripcion: inicial?.cierre_inscripcion || "",
+    qualy_inicio: inicial?.qualy_inicio || "", qualy_fin: inicial?.qualy_fin || "",
+  }));
   const [entrenadores, setEntrenadores] = useState([]);
   useEffect(() => {
     // La misma lista que el desplegable «Acompaña» del calendario: todos los
@@ -28,7 +31,10 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
   }
   function submit(e) {
     e.preventDefault();
-    const body = { ...f, cierre_inscripcion: f.cierre_inscripcion || null };
+    const body = {
+      ...f, cierre_inscripcion: f.cierre_inscripcion || null,
+      qualy_inicio: f.qualy_inicio || null, qualy_fin: f.qualy_fin || null,
+    };
     // Si no hay fecha fin, el torneo dura un día.
     if (!body.fecha_fin) body.fecha_fin = body.fecha_inicio;
     onGuardar(body);
@@ -65,6 +71,18 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
         </label>
         <label className="field"><span>Cierre de inscripción</span>
           <input type="date" value={f.cierre_inscripcion} onChange={set("cierre_inscripcion")} />
+        </label>
+        <label className="field"><span>Previa desde (si tiene clasificación)</span>
+          <input type="date" value={f.qualy_inicio} max={f.fecha_inicio || undefined} onChange={set("qualy_inicio")} />
+        </label>
+        <label className="field"><span>Previa hasta</span>
+          <input type="date" value={f.qualy_fin} min={f.qualy_inicio || undefined} max={f.fecha_inicio || undefined}
+            onChange={set("qualy_fin")} />
+        </label>
+        <label className="field check-campo">
+          <input type="checkbox" checked={!!f.solo_fines_semana}
+            onChange={(e) => setF((s) => ({ ...s, solo_fines_semana: e.target.checked }))} />
+          <span>Solo se juega en fin de semana</span>
         </label>
         <div className="field col-2"><span>Coach que acompaña</span>
           <div className="chips-acomp">
