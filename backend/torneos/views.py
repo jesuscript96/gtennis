@@ -14,7 +14,8 @@ from academy.models import Entrenador, VacacionesEntrenador
 from academy.permissions import es_coach, es_direccion
 from academy.scope import puede_ver_jugador
 
-from .models import Participante, Torneo
+from . import historial
+from .models import CambioTorneo, Participante, Torneo
 from .serializers import ParticipanteSerializer, TorneoListaSerializer, TorneoSerializer
 
 
@@ -70,7 +71,19 @@ class TorneoViewSet(viewsets.ModelViewSet):
         return qs.distinct().order_by("fecha_inicio", "nombre")
 
     def perform_create(self, serializer):
-        serializer.save(creado_por=self.request.user, fuente="Dado de alta en la app")
+        t = serializer.save(creado_por=self.request.user, fuente="Dado de alta en la app")
+        historial.registrar(self.request.user, f"Alta de «{t.nombre}»", foto_previa={str(t.id): None})
+
+    def perform_update(self, serializer):
+        t = serializer.instance
+        claves = set(self.request.data.keys())
+        que = "Acompañante de" if claves == {"acompanantes"} else "Cambios en"
+        historial.registrar(self.request.user, f"{que} «{t.nombre}»", t.id)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        historial.registrar(self.request.user, f"Borrar «{instance.nombre}»", instance.id)
+        instance.delete()
 
     @action(detail=False, methods=["get"])
     def resumen(self, request):
@@ -131,6 +144,7 @@ class TorneoViewSet(viewsets.ModelViewSet):
         if otro.pk == t.pk:
             raise ValidationError({"con": "Elige otro torneo."})
         with transaction.atomic():
+            historial.registrar(request.user, f"Fusionar «{otro.nombre}» en «{t.nombre}»", t.id, otro.id)
             nombres = set(t.participantes.values_list("nombre", flat=True))
             for p in otro.participantes.all():
                 if p.nombre in nombres:
@@ -198,13 +212,63 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         raise PermissionDenied(f"{jugador.nombre} no es de tu grupo: lo gestiona otro head coach.")
 
     def perform_create(self, serializer):
-        self._de_mi_grupo(serializer.validated_data.get("jugador"))
+        d = serializer.validated_data
+        self._de_mi_grupo(d.get("jugador"))
+        t = d["torneo"]
+        nombre = d.get("nombre") or (d["jugador"].nombre if d.get("jugador") else "")
+        historial.registrar(self.request.user, f"Apuntar a {nombre} en «{t.nombre}»", t.id)
         serializer.save()
 
     def perform_update(self, serializer):
-        self._de_mi_grupo(serializer.instance.jugador)
+        p = serializer.instance
+        self._de_mi_grupo(p.jugador)
+        destino = serializer.validated_data.get("torneo")
+        if destino is not None and destino.pk != p.torneo_id:
+            historial.registrar(self.request.user,
+                                f"Mover a {p.nombre} de «{p.torneo.nombre}» a «{destino.nombre}»",
+                                p.torneo_id, destino.pk)
+        else:
+            que = "Confirmar a" if serializer.validated_data.get("certeza") == "CONFIRMADO" else "Cambios en"
+            historial.registrar(self.request.user, f"{que} {p.nombre} en «{p.torneo.nombre}»", p.torneo_id)
         serializer.save()
 
     def perform_destroy(self, instance):
         self._de_mi_grupo(instance.jugador)
+        historial.registrar(self.request.user, f"Quitar a {instance.nombre} de «{instance.torneo.nombre}»",
+                            instance.torneo_id)
         instance.delete()
+
+
+class CambioTorneoViewSet(viewsets.ViewSet):
+    """Deshacer: cada uno, lo suyo, del último cambio hacia atrás."""
+
+    permission_classes = [SoloDireccionOCoach]
+
+    def list(self, request):
+        cambios = CambioTorneo.objects.filter(creado_por=request.user)[:10]
+        return Response([
+            {"id": c.id, "descripcion": c.descripcion, "creado_at": c.creado_at,
+             "torneos": [int(i) for i in c.foto]}
+            for c in cambios
+        ])
+
+    @action(detail=False, methods=["post"])
+    def deshacer(self, request):
+        cambio = historial.ultimo(request.user)
+        if cambio is None:
+            return Response({"detail": "No tienes cambios que deshacer."}, status=404)
+        otro = historial.bloqueo(cambio)
+        if otro is not None:
+            quien = otro.creado_por.get_full_name() or otro.creado_por.username if otro.creado_por else "otra persona"
+            return Response({"detail": (
+                f"No se puede deshacer «{cambio.descripcion}»: después, {quien} hizo "
+                f"«{otro.descripcion}» en el mismo torneo. Corrígelo a mano o habla con {quien}.")},
+                status=409)
+        torneos = [int(i) for i in cambio.foto]
+        descripcion = historial.deshacer(cambio)
+        siguiente = historial.ultimo(request.user)
+        return Response({
+            "deshecho": descripcion, "torneos": torneos,
+            "existen": list(Torneo.objects.filter(pk__in=torneos).values_list("id", flat=True)),
+            "siguiente": siguiente.descripcion if siguiente else None,
+        })

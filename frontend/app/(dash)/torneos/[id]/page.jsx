@@ -9,6 +9,7 @@ import {
   getTorneosResumen, guardarTorneo, resource, updParticipante,
 } from "../../../../lib/api";
 import { canWrite } from "../../../../lib/perms";
+import DeshacerTorneos from "../../../../components/DeshacerTorneos";
 import { CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, diasHasta, fmtLarga, fmtRango, sumaDias } from "../../../../lib/torneos";
 
 export default function TorneoDetallePage() {
@@ -24,6 +25,8 @@ export default function TorneoDetallePage() {
   const [verFuente, setVerFuente] = useState(false);
   const [vecinos, setVecinos] = useState([]);
   const [dup, setDup] = useState("");
+  const [tick, setTick] = useState(0);
+  const hecho = () => setTick((n) => n + 1);
   const puedeEditar = canWrite("torneos");
 
   const cargar = useCallback(() => getTorneo(id).then(setT).catch((e) => setError(e.message)), [id]);
@@ -41,7 +44,7 @@ export default function TorneoDetallePage() {
 
   async function guardar(body) {
     setGuardando(true); setError("");
-    try { setT(await guardarTorneo(id, body)); setEditando(false); }
+    try { setT(await guardarTorneo(id, body)); setEditando(false); hecho(); }
     catch (e) { setError(e.message); }
     finally { setGuardando(false); }
   }
@@ -56,18 +59,19 @@ export default function TorneoDetallePage() {
       await addParticipante({ torneo: Number(id), jugador: nuevo.jugador ? Number(nuevo.jugador) : null, nombre: nuevo.nombre.trim() });
       setNuevo({ jugador: "", nombre: "" });
       await cargar();
+      hecho();
     } catch (e) { setError(e.message); }
   }
   async function fusionar() {
     const otro = vecinos.find((x) => String(x.id) === dup);
     if (!otro) return;
     if (!window.confirm(`«${otro.nombre}» se fundirá en «${t.nombre}»: sus ${otro.n_jugadores} jugadores pasan aquí y esa fila desaparece. ¿Seguir?`)) return;
-    try { setT(await fusionarTorneo(id, otro.id)); setDup(""); }
+    try { setT(await fusionarTorneo(id, otro.id)); setDup(""); hecho(); }
     catch (e) { setError(e.message); }
   }
   async function accion(fn) {
     setError("");
-    try { await fn(); await cargar(); } catch (e) { setError(e.message); }
+    try { await fn(); await cargar(); hecho(); } catch (e) { setError(e.message); }
   }
 
   if (error && !t) return <p className="err">{error}</p>;
@@ -90,6 +94,11 @@ export default function TorneoDetallePage() {
         </div>
         {puedeEditar && !editando && (
           <div className="row-actions">
+            <DeshacerTorneos tick={tick} onDeshecho={(r) => {
+              // Si lo deshecho era el alta de este torneo, ya no existe.
+              if (r.torneos.includes(Number(id)) && !r.existen.includes(Number(id))) router.push("/torneos");
+              else cargar();
+            }} />
             <button className="btn ghost" onClick={() => setEditando(true)}>Editar</button>
             <button className="btn danger" onClick={borrar}>Borrar</button>
           </div>

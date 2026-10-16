@@ -312,3 +312,7 @@ export const getTorneosEntrenadores = (desde, hasta) =>
 // Dos filas que son el mismo torneo: `con` se vuelca en `id` y desaparece.
 export const fusionarTorneo = (id, con) =>
   req(`/torneos/${id}/fusionar/`, { method: "POST", body: JSON.stringify({ con }) });
+// Deshacer en torneos: los últimos cambios de quien pregunta y deshacer el último.
+export const getCambiosTorneos = () => req("/torneos-cambios/");
+export const deshacerTorneos = () =>
+  req("/torneos-cambios/deshacer/", { method: "POST", body: "{}" });

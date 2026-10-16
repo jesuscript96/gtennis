@@ -88,3 +88,90 @@ class TorneosTests(TestCase):
         r = self.api(self.u_dir).post("/api/torneos/", {
             "nombre": "X", "fecha_inicio": "2026-11-10", "fecha_fin": "2026-11-01"}, format="json")
         self.assertEqual(r.status_code, 400)
+
+
+class DeshacerTests(TestCase):
+    """Cada cambio se puede deshacer; cada uno deshace lo suyo y no pisa lo de otro."""
+
+    def setUp(self):
+        self.blas = Entrenador.objects.create(nombre="Blas")
+        self.ana = Jugador.objects.create(nombre="Ana", entrenador_responsable=self.blas)
+        ResponsableJugador.objects.create(jugador=self.ana, entrenador=self.blas, prioridad=1)
+        self.u_pablo = User.objects.create_user(username="pablo", password="x", role=User.Role.COACH)
+        Coach.objects.create(nombre="Pablo", user=self.u_pablo).entrenadores.set([self.blas])
+        self.u_dir = User.objects.create_user(username="dir", password="x", role=User.Role.SUPERADMIN)
+        self.villena = Torneo.objects.create(nombre="W15 Villena", fecha_inicio="2026-10-19",
+                                             fecha_fin="2026-10-25", cierre_inscripcion="2026-09-29")
+        self.silla = Torneo.objects.create(nombre="Pre. Qualy Silla", fecha_inicio="2026-10-19", fecha_fin="2026-10-25")
+        self.villena.acompanantes.add(self.blas)
+        self.p = Participante.objects.create(torneo=self.villena, jugador=self.ana, nombre="Ana", certeza="DEDUCIDO")
+
+    def api(self, u):
+        c = APIClient()
+        c.force_authenticate(u)
+        return c
+
+    def deshacer(self, u):
+        return self.api(u).post("/api/torneos-cambios/deshacer/", {}, format="json")
+
+    def test_deshacer_un_movimiento(self):
+        self.api(self.u_pablo).patch(f"/api/torneos-participantes/{self.p.id}/", {"torneo": self.silla.id}, format="json")
+        self.assertEqual(Participante.objects.get(pk=self.p.id).torneo_id, self.silla.id)
+        r = self.deshacer(self.u_pablo)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertIn("Mover a Ana", r.data["deshecho"])
+        p = Participante.objects.get(pk=self.p.id)
+        self.assertEqual((p.torneo_id, p.certeza, p.jugador_id), (self.villena.id, "DEDUCIDO", self.ana.id))
+        self.assertFalse(self.silla.participantes.exists())
+
+    def test_deshacer_un_borrado_lo_devuelve_entero(self):
+        creado = Torneo.objects.get(pk=self.villena.id).created_at
+        self.api(self.u_dir).delete(f"/api/torneos/{self.villena.id}/")
+        self.assertFalse(Torneo.objects.filter(pk=self.villena.id).exists())
+        r = self.deshacer(self.u_dir)
+        self.assertEqual(r.status_code, 200, r.data)
+        t = Torneo.objects.get(pk=self.villena.id)
+        self.assertEqual(str(t.cierre_inscripcion), "2026-09-29")
+        self.assertEqual(t.created_at, creado)
+        self.assertEqual(list(t.acompanantes.values_list("nombre", flat=True)), ["Blas"])
+        self.assertEqual(list(t.participantes.values_list("id", flat=True)), [self.p.id])
+
+    def test_deshacer_un_alta_la_borra(self):
+        r = self.api(self.u_dir).post("/api/torneos/", {"nombre": "Nuevo", "fecha_inicio": "2026-11-02",
+                                                       "fecha_fin": "2026-11-08"}, format="json")
+        tid = r.data["id"]
+        r = self.deshacer(self.u_dir)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertFalse(Torneo.objects.filter(pk=tid).exists())
+        self.assertEqual(r.data["existen"], [])
+
+    def test_deshacer_una_fusion(self):
+        Participante.objects.create(torneo=self.silla, nombre="Invitada")
+        self.api(self.u_dir).post(f"/api/torneos/{self.villena.id}/fusionar/", {"con": self.silla.id}, format="json")
+        self.assertFalse(Torneo.objects.filter(pk=self.silla.id).exists())
+        self.deshacer(self.u_dir)
+        self.assertEqual(list(Torneo.objects.get(pk=self.silla.id).participantes.values_list("nombre", flat=True)),
+                         ["Invitada"])
+        self.assertEqual(list(Torneo.objects.get(pk=self.villena.id).participantes.values_list("nombre", flat=True)),
+                         ["Ana"])
+        self.assertNotIn("Pre. Qualy Silla", Torneo.objects.get(pk=self.villena.id).alias)
+
+    def test_se_deshace_en_orden_y_cada_uno_lo_suyo(self):
+        c = self.api(self.u_dir)
+        c.patch(f"/api/torneos/{self.villena.id}/", {"acompanantes": []}, format="json")
+        c.patch(f"/api/torneos/{self.villena.id}/", {"lugar": "Villena"}, format="json")
+        self.assertEqual(self.deshacer(self.u_pablo).status_code, 404)  # Pablo no ha hecho nada
+        r = self.deshacer(self.u_dir)
+        self.assertIn("Cambios en", r.data["deshecho"])
+        self.assertIn("Acompañante de", r.data["siguiente"])
+        self.assertEqual(Torneo.objects.get(pk=self.villena.id).lugar, "")
+        self.deshacer(self.u_dir)
+        self.assertEqual(list(Torneo.objects.get(pk=self.villena.id).acompanantes.all()), [self.blas])
+
+    def test_no_pisa_lo_que_otro_hizo_despues(self):
+        self.api(self.u_pablo).patch(f"/api/torneos-participantes/{self.p.id}/", {"torneo": self.silla.id}, format="json")
+        self.api(self.u_dir).patch(f"/api/torneos/{self.silla.id}/", {"lugar": "Silla"}, format="json")
+        r = self.deshacer(self.u_pablo)
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("dir", r.data["detail"])
+        self.assertEqual(Participante.objects.get(pk=self.p.id).torneo_id, self.silla.id)

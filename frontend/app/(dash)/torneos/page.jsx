@@ -6,6 +6,7 @@ import {
   getTorneos, getTorneosEntrenadores, getTorneosResumen, guardarTorneo, updParticipante,
 } from "../../../lib/api";
 import { canWrite } from "../../../lib/perms";
+import DeshacerTorneos from "../../../components/DeshacerTorneos";
 import {
   ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, lunesDe, solapa,
 } from "../../../lib/torneos";
@@ -105,6 +106,8 @@ export default function TorneosPage() {
   const [mes, setMes] = useState("prox");
   const [soloConJug, setSoloConJug] = useState(false);
   const [sel, setSel] = useState(null);
+  // Sube con cada cambio, para que «Deshacer» sepa cuál es el último.
+  const [tick, setTick] = useState(0);
   // Semanas con el desplegable de «sin jugadores» abierto. Al buscar se
   // abren todas: si no, un torneo encontrado por su nombre quedaría oculto.
   const [abiertas, setAbiertas] = useState(() => new Set());
@@ -126,7 +129,8 @@ export default function TorneosPage() {
   const cargar = useCallback(() => getTorneos({ q, circuito, ...rango, con_jugadores: soloConJug ? 1 : "" })
     .then(setItems).catch((e) => setError(e.message)), [q, circuito, rango, soloConJug]);
 
-  useEffect(() => { getTorneosResumen().then(setResumen).catch(() => {}); }, []);
+  const cargarResumen = useCallback(() => getTorneosResumen().then(setResumen).catch(() => {}), []);
+  useEffect(() => { cargarResumen(); }, [cargarResumen]);
   useEffect(() => { setItems(null); cargar(); }, [cargar]);
   useEffect(() => {
     getTorneosEntrenadores(rango.desde, rango.hasta).then(setEntrenadores).catch(() => {});
@@ -158,6 +162,7 @@ export default function TorneosPage() {
     try {
       const nuevo = await guardarTorneo(id, body);
       setItems((xs) => xs.map((x) => (x.id === id ? { ...x, ...nuevo, jugadores: x.jugadores } : x)));
+      setTick((n) => n + 1);
     } catch (e) { setError(e.message); }
   }
 
@@ -170,7 +175,7 @@ export default function TorneosPage() {
       return x;
     }));
     setItems((xs) => xs.map((x) => (x.id === hasta && chip ? { ...x, jugadores: [...x.jugadores, chip].sort((a, b) => a.nombre.localeCompare(b.nombre)) } : x)));
-    try { await updParticipante(pid, { torneo: hasta }); }
+    try { await updParticipante(pid, { torneo: hasta }); setTick((n) => n + 1); }
     catch (e) { setError(e.message); cargar(); }
   }
 
@@ -217,7 +222,12 @@ export default function TorneosPage() {
     <div>
       <div className="page-head">
         <h1>Calendario de torneos</h1>
-        {puedeEditar && <Link href="/torneos/nuevo" className="btn">+ Nuevo torneo</Link>}
+        {puedeEditar && (
+          <div className="row-actions">
+            <DeshacerTorneos tick={tick} onDeshecho={() => { cargar(); cargarResumen(); }} />
+            <Link href="/torneos/nuevo" className="btn">+ Nuevo torneo</Link>
+          </div>
+        )}
       </div>
       <p className="help">
         Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo va en la semana en que empieza. En «Acompaña»

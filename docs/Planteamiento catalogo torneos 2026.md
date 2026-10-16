@@ -59,6 +59,7 @@ Se da por cerrado el catálogo 2026. A partir de ahí la rutina es:
 - Jugadores completos en cada fila, arrastrables entre torneos (y tocar-para-mover en el móvil).
 - «+ añadir un torneo esta semana» con las fechas ya puestas.
 - «¿Está repetido?» en la ficha para fusionar duplicados.
+- «↩︎ Deshacer» arriba del calendario y de cada ficha: cada uno deshace sus últimos cambios, sin pisar los de otro.
 - Acceso solo para head coaches y dirección. Un head coach solo mueve jugadores de su grupo de color, y puede cambiarlos de columna en Grupos.
 
 Todo esto está en producción desde el 14 de octubre, con los 765 torneos del Excel ya cargados.

@@ -5,6 +5,7 @@ entrenadores (tablas de `academy`) pero no toca faltas ni semanas. Un torneo
 es una fila con sus fechas, su cierre de inscripción, quién acompaña y quién
 va. La vinculación con las faltas del cuadrante queda para más adelante.
 """
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 
 
@@ -86,3 +87,31 @@ class Participante(models.Model):
 
     def __str__(self):
         return f"{self.nombre} → {self.torneo}"
+
+
+class CambioTorneo(models.Model):
+    """Foto de los torneos que toca un cambio, tomada justo antes, para
+    deshacerlo. Como en el cuadrante: no se guarda «qué se hizo» sino cómo
+    estaban; deshacer es devolverlos a la foto.
+
+    `foto` = {id de torneo: estado | None}. None quiere decir que ese torneo no
+    existía (un alta): deshacer lo borra.
+    """
+
+    MAXIMO = 50  # por usuario
+
+    descripcion = models.CharField(max_length=160)
+    foto = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
+    creado_at = models.DateTimeField(auto_now_add=True)
+    creado_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cambios_torneos",
+    )
+
+    class Meta:
+        verbose_name = "Cambio en torneos"
+        verbose_name_plural = "Cambios en torneos"
+        ordering = ["-creado_at", "-id"]
+
+    def __str__(self):
+        return self.descripcion

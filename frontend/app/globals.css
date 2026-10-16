@@ -1544,3 +1544,15 @@ td.cell.forzada { background: #fffaf0; }
   .tabla-torneos .fila-otros td::before { content: none; }
   tbody.semana tr.fila-otros { border-left: none; }
 }
+/* Deshacer en torneos */
+.deshacer-torneos { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.deshacer-torneos .btn { display: inline-flex; align-items: center; gap: 8px; max-width: 420px; }
+.deshacer-que { font-size: 12px; color: var(--muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+.deshacer-aviso { font-size: 12px; color: var(--muted); max-width: 360px; }
+@media (max-width: 640px) {
+  .deshacer-torneos .btn { max-width: 100%; }
+  .deshacer-que { max-width: 200px; }
+}
+.page-head .row-actions { align-items: center; flex-wrap: wrap; }
+.deshacer-torneos .btn { white-space: nowrap; }
+.deshacer-torneos .btn .deshacer-que { min-width: 0; flex: 1 1 auto; }

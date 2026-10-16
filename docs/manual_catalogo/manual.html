@@ -56,7 +56,7 @@ quién y, más adelante, rellenará sola las faltas por torneo en el cuadrante. 
 <li><a href="#revisar">Cómo revisar una semana</a></li>
 <li><a href="#anadir">Añadir un torneo que falta</a></li>
 <li><a href="#duplicados">Fusionar un torneo repetido</a></li>
-<li><a href="#editar">Editar, cancelar o borrar</a></li>
+<li><a href="#editar">Editar, cancelar, borrar y deshacer</a></li>
 <li><a href="#acompana">Quién acompaña</a></li>
 <li><a href="#jugadores">Gestionar a tus jugadores</a></li>
 <li><a href="#porjugador">La temporada de cada jugador</a></li>
@@ -147,13 +147,25 @@ casilla «Solo con jugadores», que quita también el desplegable de los torneos
 queda guardado como «también escrito como», y si esta ficha no tenía cierre o lugar se cogen de la otra. La fila sobrante desaparece.</p>
 <figure><img src="img/c05-fusionar.png" alt="Fusionar un torneo repetido"><figcaption>Ficha con la tarjeta «¿Está repetido?» y un candidato elegido.</figcaption></figure>
 
-<h2 id="editar" class="pb">6. Editar, cancelar o borrar</h2>
+<h2 id="editar" class="pb">6. Editar, cancelar, borrar y deshacer</h2>
 <p>En la ficha, <kbd>Editar</kbd> abre el formulario con todos los campos. <kbd>Guardar cambios</kbd> aplica; <kbd>Cancelar</kbd> deja todo como estaba.</p>
 <ul>
 <li>Un torneo que no se va a jugar: estado <b>Cancelado</b>. Se conserva, pero queda marcado.</li>
-<li><kbd>Borrar</kbd> solo para filas que no son un torneo real (una fila de prueba, un error). Pide confirmación y quita también a sus jugadores.</li>
+<li><kbd>Borrar</kbd> solo para filas que no son un torneo real (una fila de prueba, un error). Pide confirmación y quita también a sus jugadores. Si te equivocas, se puede deshacer.</li>
 </ul>
 <figure><img src="img/c06-editar.png" alt="Editar un torneo"><figcaption>El formulario de edición sobre la ficha.</figcaption></figure>
+<h3>Deshacer un cambio</h3>
+<p>Arriba del calendario y de cada ficha aparece <kbd>↩︎ Deshacer</kbd> con lo último que has hecho escrito al lado
+(«Mover a … de … a …», «Borrar …», «Acompañante de …», «Fusionar … en …»). Al pulsarlo, los torneos afectados vuelven
+a estar como antes de ese cambio, con sus jugadores, acompañantes, fechas y cierre. Pulsando otra vez se deshace el
+anterior, y así hacia atrás.</p>
+<ul>
+<li>Cada uno deshace <b>sus propios</b> cambios, no los de otra persona.</li>
+<li>Si alguien tocó después el mismo torneo, la app no deja deshacer y dice quién fue, para no pisar su trabajo.</li>
+<li>Cuenta lo que se hace en el calendario de torneos: altas, ediciones, acompañantes, borrados, fusiones y jugadores
+apuntados, movidos, confirmados o quitados.</li>
+</ul>
+<figure><img src="img/c10-deshacer.png" alt="Botón Deshacer"><figcaption>Tras mover a María Andrienko, el botón ofrece deshacerlo.</figcaption></figure>
 
 <h2 id="acompana">7. Quién acompaña</h2>
 <p>En la columna «Acompaña» del calendario hay un desplegable por cada entrenador asignado y otro para añadir. Se guarda al elegir, sin botón.</p>
@@ -254,7 +266,7 @@ los viajes a torneos ya cerrados.</p>
 <tr><td>Un jugador no está en el desplegable para apuntarlo</td><td>Ya está apuntado a ese torneo, o no tiene ficha (dirección la crea), o está de baja.</td></tr>
 <tr><td>El torneo dura varias semanas y solo lo veo en una</td><td>Está en la semana en que empieza. Con el filtro de mes aparece en todos los meses que toca.</td></tr>
 <tr><td>Veo torneos profesionales (ATP, WTA, Challenger) que no son míos</td><td>Son del plan de los jugadores profesionales. Los que no tienen a nadie ya salen plegados; para el resto, usa el buscador.</td></tr>
-<tr><td>He fusionado mal</td><td>No hay deshacer. Vuelve a dar de alta el torneo y mueve a los jugadores arrastrando.</td></tr>
+<tr><td>Me he equivocado (he movido, borrado o fusionado lo que no era)</td><td>Pulsa «↩︎ Deshacer» arriba del calendario (apartado 6).</td></tr>
 <tr><td>Quiero saber de dónde salió un dato</td><td>Abajo de la ficha, «Ver de dónde sale este dato»: hoja y celda del Excel y otras formas en que estaba escrito.</td></tr>
 </table>
 

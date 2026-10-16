@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Participante, Torneo
+from .models import CambioTorneo, Participante, Torneo
 
 
 class ParticipanteInline(admin.TabularInline):
@@ -16,3 +16,9 @@ class TorneoAdmin(admin.ModelAdmin):
     search_fields = ("nombre", "lugar", "alias")
     filter_horizontal = ("acompanantes",)
     inlines = [ParticipanteInline]
+
+
+@admin.register(CambioTorneo)
+class CambioTorneoAdmin(admin.ModelAdmin):
+    list_display = ("descripcion", "creado_por", "creado_at")
+    list_filter = ("creado_por",)
