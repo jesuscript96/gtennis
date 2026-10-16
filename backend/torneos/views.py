@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.response import Response
 
 from academy.models import Entrenador, VacacionesEntrenador
@@ -20,20 +20,25 @@ from .serializers import ParticipanteSerializer, TorneoListaSerializer, TorneoSe
 
 
 class SoloDireccionOCoach(BasePermission):
-    """El calendario de torneos lo llevan los head coaches y dirección: los
-    entrenadores no lo ven (decisión de Sergio, 13/10/2026)."""
+    """El calendario de torneos lo ve cualquiera con sesión, pero solo lo
+    cambian los head coaches y dirección (16/10/2026; del 13/10 al 16/10 los
+    entrenadores ni lo veían)."""
 
-    message = "El calendario de torneos es de los head coaches y de dirección."
+    message = "Solo los head coaches y dirección pueden cambiar el calendario de torneos."
 
     def has_permission(self, request, view):
         u = request.user
-        return bool(u and u.is_authenticated and (es_direccion(u) or es_coach(u)))
+        if not (u and u.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return es_direccion(u) or es_coach(u)
 
 
 class TorneoViewSet(viewsets.ModelViewSet):
     """Calendario de torneos.
 
-    Solo head coaches y dirección. Filtros: `?desde=&hasta=` (solapamiento),
+    Lo ve cualquiera con sesión; lo cambian head coaches y dirección. Filtros: `?desde=&hasta=` (solapamiento),
     `?q=` (nombre, lugar, circuito, jugador), `?circuito=`, `?jugador=<id>`,
     `?entrenador=<id>` (acompaña), `?con_jugadores=1`.
     """

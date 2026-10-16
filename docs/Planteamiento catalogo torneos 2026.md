@@ -10,7 +10,7 @@ Versión del 14 de octubre de 2026, tras la demo con Sergio del día 13.
 
 ## Cinco reglas
 
-1. **Dueño**: cada head coach responde del calendario de su gran grupo: a qué torneos van sus jugadores y quién les acompaña. Dirección valida y arbitra. Son los únicos que entran en esta parte de la app.
+1. **Dueño**: cada head coach responde del calendario de su gran grupo: a qué torneos van sus jugadores y quién les acompaña. Dirección valida y arbitra. Son los únicos que la cambian; los entrenadores la consultan.
 2. **Unidad de trabajo: la semana.** Se revisa semana a semana, no torneo a torneo. Un torneo está en la semana en que empieza.
 3. **Alcance: de hoy al 31 de diciembre de 2026.** Lo de enero a octubre se queda como histórico sin revisar.
 4. **Una sola fuente.** El Excel se congela hoy. Lo que no esté en la app no existe. Lo que un head coach añada o cambie en la app es la verdad.
@@ -60,7 +60,7 @@ Se da por cerrado el catálogo 2026. A partir de ahí la rutina es:
 - «+ añadir un torneo esta semana» con las fechas ya puestas.
 - «¿Está repetido?» en la ficha para fusionar duplicados.
 - «↩︎ Deshacer» arriba del calendario y de cada ficha: cada uno deshace sus últimos cambios, sin pisar los de otro.
-- Acceso solo para head coaches y dirección. Un head coach solo mueve jugadores de su grupo de color, y puede cambiarlos de columna en Grupos.
+- La ven todos; la cambian solo head coaches y dirección. Un head coach solo mueve jugadores de su grupo de color, y puede cambiarlos de columna en Grupos.
 
 Todo esto está en producción desde el 14 de octubre, con los 765 torneos del Excel ya cargados.
 

@@ -33,8 +33,8 @@ const SECTIONS = [
     ["/preferencias-superficie", "Pref. superficie"],
   ] },
   { title: "Torneos", items: [
-    ["/torneos", "Calendario de torneos", "coach"],
-    ["/torneos/jugadores", "Torneos por jugador", "coach"],
+    ["/torneos", "Calendario de torneos"],
+    ["/torneos/jugadores", "Torneos por jugador"],
     ["/torneos/nuevo", "Nuevo torneo", "coach"],
   ] },
   { title: "Gestión", items: [
@@ -62,6 +62,10 @@ const SECTIONS_ENTRENADOR = [
     ["/grupos", "Grupos"],
     ["/ausencias", "Ausencias de la semana"],
     ["/ausencias-fechas", "Bajas por fechas"],
+  ] },
+  { title: "Torneos", items: [
+    ["/torneos", "Calendario de torneos"],
+    ["/torneos/jugadores", "Torneos por jugador"],
   ] },
   { items: [
     ["/mi-cuenta", "Mi cuenta"],

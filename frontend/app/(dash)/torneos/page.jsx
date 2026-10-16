@@ -229,12 +229,20 @@ export default function TorneosPage() {
           </div>
         )}
       </div>
-      <p className="help">
-        Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo va en la semana en que empieza. En «Acompaña»
-        solo se ofrecen entrenadores que no están de vacaciones esas fechas. Los jugadores se pueden
-        <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
-        Los nombres en <span className="jug-chip dudoso">naranja</span> vienen del Excel con dudas.
-      </p>
+      {puedeEditar ? (
+        <p className="help">
+          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo va en la semana en que empieza. En «Acompaña»
+          solo se ofrecen entrenadores que no están de vacaciones esas fechas. Los jugadores se pueden
+          <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
+          Los nombres en <span className="jug-chip dudoso">naranja</span> vienen del Excel con dudas.
+        </p>
+      ) : (
+        <p className="help">
+          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo va en la semana en que empieza, con quién
+          acompaña y qué jugadores van. Es solo consulta: los cambios los hacen los head coaches y dirección.
+          Los nombres en <span className="jug-chip dudoso">naranja</span> vienen del Excel con dudas.
+        </p>
+      )}
 
       {resumen && (
         <div className="metrics">

@@ -45,8 +45,9 @@ const PATH_MIN = {
   "/mis-jugadores": "direccion",
   "/configuracion": "direccion",
   "/entrenadores": "coach",
-  // El calendario de torneos (y sus subrutas) es de los head coaches.
-  "/torneos": "coach",
+  // El calendario de torneos lo ve todo el mundo; dar de alta, solo los head
+  // coaches y dirección (las subrutas heredan de la más larga que encaje).
+  "/torneos/nuevo": "coach",
 };
 
 export function canVisit(path, user = getUser()) {

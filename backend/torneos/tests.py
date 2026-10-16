@@ -32,8 +32,21 @@ class TorneosTests(TestCase):
         c.force_authenticate(user)
         return c
 
-    def test_el_entrenador_no_entra(self):
-        self.assertEqual(self.api(self.u_blas).get("/api/torneos/").status_code, 403)
+    def test_el_entrenador_lo_ve_pero_no_lo_cambia(self):
+        c = self.api(self.u_blas)
+        self.assertEqual(c.get("/api/torneos/").status_code, 200)
+        self.assertEqual(c.get(f"/api/torneos/{self.t1.id}/").status_code, 200)
+        self.assertEqual(c.get("/api/torneos/por_jugador/").status_code, 200)
+        self.assertEqual(c.post("/api/torneos/", {"nombre": "X", "fecha_inicio": "2026-11-02",
+                                                 "fecha_fin": "2026-11-02"}, format="json").status_code, 403)
+        self.assertEqual(c.patch(f"/api/torneos/{self.t1.id}/", {"lugar": "Y"}, format="json").status_code, 403)
+        self.assertEqual(c.delete(f"/api/torneos/{self.t1.id}/").status_code, 403)
+        self.assertEqual(c.post("/api/torneos-participantes/", {"torneo": self.t1.id, "jugador": self.ana.id},
+                                format="json").status_code, 403)
+        self.assertEqual(c.post(f"/api/torneos/{self.t1.id}/fusionar/", {"con": self.t2.id},
+                                format="json").status_code, 403)
+        self.assertEqual(c.post("/api/torneos-cambios/deshacer/", {}, format="json").status_code, 403)
+        self.assertTrue(Torneo.objects.filter(pk=self.t1.id, lugar="").exists())
 
     def test_head_coach_y_direccion_entran(self):
         self.assertEqual(self.api(self.u_pablo).get("/api/torneos/").status_code, 200)
