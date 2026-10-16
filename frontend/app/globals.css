@@ -1533,3 +1533,14 @@ td.cell.forzada { background: #fffaf0; }
 .pregunta-caja p { margin: 0 0 .6rem; font-size: .88rem; color: var(--muted); }
 .pregunta-caja ul { margin: 0 0 .8rem; padding-left: 1.1rem; font-size: .82rem; max-height: 12rem; overflow: auto; }
 .pregunta-botones { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+/* Torneos sin jugadores de la semana: plegados bajo los que tienen */
+.fila-otros td { padding: 4px 16px 8px; background: var(--sem-bg); }
+.btn-otros { background: none; border: 1px dashed var(--border-strong); border-radius: 8px; color: var(--muted); cursor: pointer; font-size: 13px; padding: 6px 12px; width: 100%; text-align: left; }
+.btn-otros:hover { color: var(--text); border-color: var(--sem); background: var(--surface); }
+.btn-otros .flecha { display: inline-block; width: 14px; color: var(--sem); }
+@media (max-width: 640px) {
+  .tabla-torneos tr.fila-otros { border: none; background: transparent; padding: 0; margin-bottom: 12px; }
+  .tabla-torneos .fila-otros td { display: block; padding: 0; border: none; background: transparent; }
+  .tabla-torneos .fila-otros td::before { content: none; }
+  tbody.semana tr.fila-otros { border-left: none; }
+}

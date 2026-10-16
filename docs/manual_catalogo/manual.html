@@ -95,7 +95,11 @@ torneos, Torneos por jugador y Nuevo torneo.</p>
 <h2 id="calendario" class="pb">2. El calendario por semanas</h2>
 <p>Es la pantalla de trabajo. Cada torneo está en la <b>semana en que empieza</b>, y cada semana tiene su color en
 el borde izquierdo. Por defecto se ve «Desde hoy» hasta final de año.</p>
-<figure><img src="img/c01-calendario.png" alt="Calendario por semanas"><figcaption>Cabecera con cifras y próximos cierres; debajo, las semanas con sus torneos.</figcaption></figure>
+<p>En cada semana salen <b>primero los torneos con jugadores</b>. Los demás quedan plegados debajo, en
+<b>«Ver los otros N torneos de la semana sin jugadores»</b>: pulsando se despliegan y pulsando otra vez se ocultan.
+La cabecera de la semana dice cuántos hay de cada tipo. Al escribir en el buscador se despliegan solos, para que un
+torneo buscado por su nombre no quede escondido.</p>
+<figure><img src="img/c01-calendario.png" alt="Calendario por semanas"><figcaption>Cada semana con sus torneos con jugadores y, debajo, el desplegable con el resto.</figcaption></figure>
 <p>Qué hay en cada fila:</p>
 <ul>
 <li><b>Fechas</b> del torneo. Si se está jugando ahora, lleva <span class="pill">en juego</span>. Los ya pasados salen en gris.</li>
@@ -105,14 +109,14 @@ el borde izquierdo. Por defecto se ve «Desde hoy» hasta final de año.</p>
 <li><b>Jugadores</b>: todos los apuntados, sin recortes. Los que están en <span class="pill nar">naranja</span> vienen del Excel con dudas y hay que confirmarlos o quitarlos.</li>
 </ul>
 <p>Arriba están el buscador (nombre, ciudad, circuito, jugador o coach), el filtro de mes, el de circuito y la
-casilla «Solo con jugadores», que quita de en medio los torneos del calendario a los que no va nadie.</p>
+casilla «Solo con jugadores», que quita también el desplegable de los torneos a los que no va nadie.</p>
 <div class="card">La cabecera de cada semana tiene el enlace <b>«+ añadir un torneo esta semana»</b>: abre el alta con las fechas de esa semana ya puestas.</div>
 
 <h2 id="revisar">3. Cómo revisar una semana</h2>
 <p>Con el filtro «Desde hoy», bajar semana a semana y hacerse cinco preguntas. Entre 5 y 10 minutos por semana.</p>
 <table>
 <tr><th>Pregunta</th><th>Qué hacer en la app</th></tr>
-<tr><td>¿Falta algún torneo al que va alguien de mi grupo?</td><td>«+ añadir un torneo esta semana» (apartado 4).</td></tr>
+<tr><td>¿Falta algún torneo al que va alguien de mi grupo?</td><td>Mira antes en el desplegable de la semana: puede estar ya en el calendario sin jugadores. Si está, apunta a los tuyos en su ficha o arrástralos. Si no, «+ añadir un torneo esta semana» (apartado 4).</td></tr>
 <tr><td>¿Hay dos filas que son el mismo torneo?</td><td>Abrir la ficha de la buena → «¿Está repetido?» → fusionar (apartado 5).</td></tr>
 <tr><td>¿Mis jugadores están en el torneo correcto?</td><td>Arrastrar al que está mal, quitar al que no va, apuntar al que falta, confirmar los naranjas (apartado 8).</td></tr>
 <tr><td>¿Quién acompaña?</td><td>Elegirlo en el desplegable de la fila (apartado 7).</td></tr>
@@ -170,8 +174,9 @@ la app lo dice. Los nombres que no tienen ficha (están en gris con «sin ficha�
 <h3>Mover a un jugador a otro torneo</h3>
 <p>En el calendario, <b>arrastrar</b> la etiqueta del jugador y soltarla en la columna de jugadores del torneo de destino.
 También vale tocar al jugador (queda resaltado y aparece una barra «Moviendo a…») y luego tocar el torneo de destino.
-Los destinos posibles se marcan con línea de puntos.</p>
-<figure><img src="img/c02-mover.png" alt="Mover un jugador"><figcaption>María Andrienko seleccionada; cualquier otra fila se puede tocar como destino.</figcaption></figure>
+Los destinos posibles se marcan con línea de puntos. Para llevarlo a un torneo que aún no tiene a nadie, abre
+antes el desplegable de la semana. En cuanto ese torneo tiene un jugador, sube a la parte de arriba.</p>
+<figure><img src="img/c02-mover.png" alt="Mover un jugador"><figcaption>María Andrienko seleccionada y la semana desplegada: los torneos sin jugadores también sirven de destino.</figcaption></figure>
 <h3>Quitar y confirmar</h3>
 <ul>
 <li><kbd>Quitar</kbd> en la fila del jugador dentro de la ficha. No pide confirmación: se puede volver a apuntar.</li>
@@ -248,7 +253,7 @@ los viajes a torneos ya cerrados.</p>
 <tr><td>Un entrenador no sale en «Acompaña»</td><td>Tiene vacaciones registradas en esas fechas. Si es un error, corregirlo en Vacaciones.</td></tr>
 <tr><td>Un jugador no está en el desplegable para apuntarlo</td><td>Ya está apuntado a ese torneo, o no tiene ficha (dirección la crea), o está de baja.</td></tr>
 <tr><td>El torneo dura varias semanas y solo lo veo en una</td><td>Está en la semana en que empieza. Con el filtro de mes aparece en todos los meses que toca.</td></tr>
-<tr><td>Veo torneos profesionales (ATP, WTA, Challenger) que no son míos</td><td>Son del plan de los jugadores profesionales. Marca «Solo con jugadores» y usa el buscador para quedarte con lo tuyo.</td></tr>
+<tr><td>Veo torneos profesionales (ATP, WTA, Challenger) que no son míos</td><td>Son del plan de los jugadores profesionales. Los que no tienen a nadie ya salen plegados; para el resto, usa el buscador.</td></tr>
 <tr><td>He fusionado mal</td><td>No hay deshacer. Vuelve a dar de alta el torneo y mueve a los jugadores arrastrando.</td></tr>
 <tr><td>Quiero saber de dónde salió un dato</td><td>Abajo de la ficha, «Ver de dónde sale este dato»: hoja y celda del Excel y otras formas en que estaba escrito.</td></tr>
 </table>

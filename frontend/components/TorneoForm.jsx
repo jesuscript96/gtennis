@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { resource } from "../lib/api";
+import { getTorneosEntrenadores } from "../lib/api";
 
 const VACIO = {
   nombre: "", circuito: "", nivel: "", lugar: "", fecha_inicio: "", fecha_fin: "",
@@ -14,7 +14,9 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
   const [f, setF] = useState(() => ({ ...VACIO, ...(inicial || {}), cierre_inscripcion: inicial?.cierre_inscripcion || "" }));
   const [entrenadores, setEntrenadores] = useState([]);
   useEffect(() => {
-    resource("entrenadores").list().then((xs) => setEntrenadores(xs.filter((e) => e.activo !== false))).catch(() => {});
+    // La misma lista que el desplegable «Acompaña» del calendario: todos los
+    // entrenadores activos, no solo los del grupo de quien da el alta.
+    getTorneosEntrenadores().then(setEntrenadores).catch(() => {});
   }, []);
 
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));

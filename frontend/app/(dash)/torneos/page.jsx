@@ -105,6 +105,15 @@ export default function TorneosPage() {
   const [mes, setMes] = useState("prox");
   const [soloConJug, setSoloConJug] = useState(false);
   const [sel, setSel] = useState(null);
+  // Semanas con el desplegable de «sin jugadores» abierto. Al buscar se
+  // abren todas: si no, un torneo encontrado por su nombre quedaría oculto.
+  const [abiertas, setAbiertas] = useState(() => new Set());
+  const verSin = (lunes) => abiertas.has(lunes) || q.trim() !== "";
+  const alternar = (lunes) => setAbiertas((a) => {
+    const n = new Set(a);
+    if (n.has(lunes)) n.delete(lunes); else n.add(lunes);
+    return n;
+  });
   const puedeEditar = canWrite("torneos");
 
   const rango = useMemo(() => {
@@ -129,8 +138,10 @@ export default function TorneosPage() {
     for (const t of items || []) {
       const lunes = lunesDe(t.fecha_inicio);
       let g = out[out.length - 1];
-      if (!g || g.lunes !== lunes) { g = { lunes, items: [] }; out.push(g); }
+      if (!g || g.lunes !== lunes) { g = { lunes, items: [], con: [], sin: [] }; out.push(g); }
       g.items.push(t);
+      // Primero los torneos a los que va alguien; el resto, plegado debajo.
+      (t.jugadores.length ? g.con : g.sin).push(t);
     }
     return out;
   }, [items]);
@@ -163,6 +174,45 @@ export default function TorneosPage() {
     catch (e) { setError(e.message); cargar(); }
   }
 
+  // Una fila de torneo del calendario.
+  function filaTorneo(t) {
+    const pasado = t.fecha_fin < hoy;
+    const enCurso = t.fecha_inicio <= hoy && t.fecha_fin >= hoy;
+    const dCierre = diasHasta(t.cierre_inscripcion);
+    return (
+      <tr key={t.id} className={pasado ? "pasado" : enCurso ? "en-curso" : ""}>
+        <td className="td-fechas" data-label="Fechas">{fmtRango(t.fecha_inicio, t.fecha_fin)}{enCurso && <span className="pill live">en juego</span>}</td>
+        <td data-label="Torneo">
+          <Link href={`/torneos/${t.id}`} className="torneo-link">{t.nombre}</Link>
+          <div className="torneo-sub">
+            {t.circuito && <span className="pill circ">{t.circuito}</span>}
+            {t.nivel && <span className="muted">{t.nivel}</span>}
+            {t.lugar && <span className="muted">· {t.lugar}</span>}
+          </div>
+        </td>
+        <td className="td-cierre" data-label="Cierre insc.">
+          {t.cierre_inscripcion ? (
+            <>
+              {fmtCorta(t.cierre_inscripcion)}
+              {dCierre !== null && dCierre >= 0 && dCierre <= 7 && !pasado && (
+                <span className="pill pend">{dCierre === 0 ? "hoy" : `${dCierre} d`}</span>
+              )}
+            </>
+          ) : <span className="muted">—</span>}
+        </td>
+        <td className="td-coach" data-label="Acompaña">
+          <AcompanaCell t={t} entrenadores={entrenadores} enSemana={enSemana}
+            onGuardar={guardarCampo} puedeEditar={puedeEditar} />
+        </td>
+        <td className="td-jug" data-label="Jugadores">
+          <JugadoresCell t={t} sel={sel} setSel={setSel} onMover={mover} puedeEditar={puedeEditar} />
+        </td>
+        <td className="td-estado">
+          {t.estado !== "VALIDADO" && <span className={`pill ${ESTADO_CLASS[t.estado]}`}>{t.estado_display}</span>}
+        </td>
+      </tr>
+    );
+  }
   return (
     <div>
       <div className="page-head">
@@ -247,50 +297,26 @@ export default function TorneosPage() {
                     <td colSpan={6}>
                       <span className="sem-marca" />
                       <b>Semana {fmtSemana(s.lunes)}</b>
-                      <span className="muted"> · {s.items.length} torneo{s.items.length !== 1 ? "s" : ""}</span>
+                      <span className="muted"> · {s.con.length} con jugadores{s.sin.length ? ` · ${s.sin.length} sin jugadores` : ""}</span>
                       {puedeEditar && (
                         <Link className="link-mas" href={`/torneos/nuevo?desde=${s.lunes}`}>+ añadir un torneo esta semana</Link>
                       )}
                     </td>
                   </tr>
-                  {s.items.map((t) => {
-                    const pasado = t.fecha_fin < hoy;
-                    const enCurso = t.fecha_inicio <= hoy && t.fecha_fin >= hoy;
-                    const dCierre = diasHasta(t.cierre_inscripcion);
-                    return (
-                      <tr key={t.id} className={pasado ? "pasado" : enCurso ? "en-curso" : ""}>
-                        <td className="td-fechas" data-label="Fechas">{fmtRango(t.fecha_inicio, t.fecha_fin)}{enCurso && <span className="pill live">en juego</span>}</td>
-                        <td data-label="Torneo">
-                          <Link href={`/torneos/${t.id}`} className="torneo-link">{t.nombre}</Link>
-                          <div className="torneo-sub">
-                            {t.circuito && <span className="pill circ">{t.circuito}</span>}
-                            {t.nivel && <span className="muted">{t.nivel}</span>}
-                            {t.lugar && <span className="muted">· {t.lugar}</span>}
-                          </div>
-                        </td>
-                        <td className="td-cierre" data-label="Cierre insc.">
-                          {t.cierre_inscripcion ? (
-                            <>
-                              {fmtCorta(t.cierre_inscripcion)}
-                              {dCierre !== null && dCierre >= 0 && dCierre <= 7 && !pasado && (
-                                <span className="pill pend">{dCierre === 0 ? "hoy" : `${dCierre} d`}</span>
-                              )}
-                            </>
-                          ) : <span className="muted">—</span>}
-                        </td>
-                        <td className="td-coach" data-label="Acompaña">
-                          <AcompanaCell t={t} entrenadores={entrenadores} enSemana={enSemana}
-                            onGuardar={guardarCampo} puedeEditar={puedeEditar} />
-                        </td>
-                        <td className="td-jug" data-label="Jugadores">
-                          <JugadoresCell t={t} sel={sel} setSel={setSel} onMover={mover} puedeEditar={puedeEditar} />
-                        </td>
-                        <td className="td-estado">
-                          {t.estado !== "VALIDADO" && <span className={`pill ${ESTADO_CLASS[t.estado]}`}>{t.estado_display}</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {s.con.map(filaTorneo)}
+                  {s.sin.length > 0 && (
+                    <tr className="fila-otros">
+                      <td colSpan={6}>
+                        <button type="button" className="btn-otros" aria-expanded={verSin(s.lunes)}
+                          onClick={() => alternar(s.lunes)}>
+                          <span className="flecha">{verSin(s.lunes) ? "▾" : "▸"}</span>
+                          {verSin(s.lunes) ? "Ocultar" : "Ver"} {s.con.length ? "los otros " : "los "}
+                          {s.sin.length} torneo{s.sin.length !== 1 ? "s" : ""} de la semana sin jugadores
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {verSin(s.lunes) && s.sin.map(filaTorneo)}
                 </tbody>
               );
             })}

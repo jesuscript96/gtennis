@@ -54,6 +54,7 @@ Se da por cerrado el catálogo 2026. A partir de ahí la rutina es:
 ## Lo que ya está en la app para hacerlo
 
 - Calendario por semanas, cada semana con su color, el torneo en la semana en que empieza.
+- En cada semana, primero los torneos con jugadores; los que no tienen a nadie, plegados en un desplegable.
 - «Acompaña» con desplegable filtrado por vacaciones y aviso de solape.
 - Jugadores completos en cada fila, arrastrables entre torneos (y tocar-para-mover en el móvil).
 - «+ añadir un torneo esta semana» con las fechas ya puestas.
