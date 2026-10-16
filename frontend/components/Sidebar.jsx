@@ -37,6 +37,9 @@ const SECTIONS = [
     ["/torneos/jugadores", "Torneos por jugador"],
     ["/torneos/nuevo", "Nuevo torneo", "coach"],
   ] },
+  { title: "Rendimiento", items: [
+    ["/evaluaciones", "Evaluaciones"],
+  ] },
   { title: "Gestión", items: [
     ["/invitados", "Invitados"],
     ["/mantenimiento", "Mantenimiento"],
@@ -66,6 +69,9 @@ const SECTIONS_ENTRENADOR = [
   { title: "Torneos", items: [
     ["/torneos", "Calendario de torneos"],
     ["/torneos/jugadores", "Torneos por jugador"],
+  ] },
+  { title: "Rendimiento", items: [
+    ["/evaluaciones", "Evaluaciones"],
   ] },
   { items: [
     ["/mi-cuenta", "Mi cuenta"],
@@ -99,7 +105,7 @@ export default function Sidebar({ onNavigate }) {
             {section.items
               .filter(([, , role]) => !role || roleRank(user) >= NEED[role])
               .map(([href, label]) => (
-                <Link key={href} href={href} className={pathname === href || (href === "/torneos" && /^\/torneos\/\d+/.test(pathname)) ? "active" : ""} onClick={onNavigate}>
+                <Link key={href} href={href} className={pathname === href || (href === "/torneos" && /^\/torneos\/\d+/.test(pathname)) || (href === "/evaluaciones" && pathname.startsWith("/evaluaciones/")) ? "active" : ""} onClick={onNavigate}>
                   {label}
                   {href === "/avisos" && sinLeer > 0 && <span className="nav-badge">{sinLeer}</span>}
                 </Link>

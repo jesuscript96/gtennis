@@ -316,3 +316,21 @@ export const fusionarTorneo = (id, con) =>
 export const getCambiosTorneos = () => req("/torneos-cambios/");
 export const deshacerTorneos = () =>
   req("/torneos-cambios/deshacer/", { method: "POST", body: "{}" });
+
+// --- Evaluaciones (Informe de Rendimiento) ---------------------------------
+export const getCatalogoEvaluacion = () => req("/evaluaciones/catalogo/");
+export const getEvaluaciones = async (params = {}) => {
+  const s = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+  return rows(await req(`/evaluaciones/${s ? `?${s}` : ""}`));
+};
+export const getEvaluacion = (id) => req(`/evaluaciones/${id}/`);
+export const crearEvaluacion = (body) => req("/evaluaciones/", { method: "POST", body: JSON.stringify(body) });
+export const guardarEvaluacion = (id, body) =>
+  req(`/evaluaciones/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
+export const borrarEvaluacion = (id) => req(`/evaluaciones/${id}/`, { method: "DELETE" });
+// Claude pule el comentario del bloque y lo deja guardado ({comentario, aviso}).
+export const pulirComentario = (id, bloque, texto) =>
+  req(`/evaluaciones/${id}/pulir/`, { method: "POST", body: JSON.stringify({ bloque, texto }) });
+export const terminarEvaluacion = (id, rehacerResumen = false) =>
+  req(`/evaluaciones/${id}/terminar/`, { method: "POST", body: JSON.stringify({ rehacer_resumen: rehacerResumen }) });
+export const getFicheroEvaluacion = (id) => req(`/evaluaciones/${id}/fichero/`);
