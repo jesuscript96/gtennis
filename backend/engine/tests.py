@@ -1122,3 +1122,45 @@ class PatronVigiladasYResinaTests(SimpleTestCase):
         entrenador_de = {1: 99}
         _con_la_de_menos(entrenador_de, pistas, {2: 1}, por_id, {}, {12: {99}}, set())
         self.assertEqual(entrenador_de, {1: 99})
+
+
+class AltosConEntrenadorYColorTests(SimpleTestCase):
+    """16/10/2026: las pistas con D1-D2 son las últimas en quedarse sin
+    entrenador (aunque eso rompa el patrón 1-3-4-6), y cada entrenador va
+    preferentemente con los alumnos de su color, por encima de los
+    porcentajes."""
+
+    def test_la_pista_de_los_d1_lleva_el_entrenador_aunque_sea_la_2(self):
+        # Dos pistas y un entrenador; la 2 es la que el patrón deja vigilada.
+        # Los D1 solo caben en la 2 (en la 1 juega quien la pide en resina).
+        pistas = [Court(id=1, venue_id=1, capacity=2, number=1, surface="RESINA"),
+                  Court(id=2, venue_id=1, capacity=2, number=2, surface="TIERRA")]
+        jugadores = ([Player(id=i, division=6, surface_pref="RESINA") for i in (1, 2)]
+                     + [Player(id=i, division=1, surface_pref="TIERRA") for i in (3, 4)])
+        datos = dict(players=jugadores, courts=pistas, franjas=[1], capacidad_max=2,
+                     time_limit_s=5, entrenadores_reparto={1: 1},
+                     vigiladas_preferidas=frozenset({2}), w_vigilada_fuera=300)
+        sin = solve_pairing(PairingInput(**datos))
+        con = solve_pairing(PairingInput(**datos, prioridad_cubrir={3, 4},
+                                         w_cubrir_prioridad=800))
+        self.assertEqual(sin.cubiertas[1], {1})
+        self.assertEqual(con.cubiertas[1], {2})
+
+    def test_el_color_gana_a_los_porcentajes(self):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        javi, mario = _Ent(1), _Ent(2)
+        # El alumno 100 es de Blas (amarillo, como Javi), pero sus porcentajes
+        # tiran hacia Mario (turquesa).
+        asig, _ = _emparejar_entrenadores(
+            {10: [100]}, {}, [javi, mario], Counter(),
+            pesos={100: {2: 0.9, 1: 0.1}},
+            responsable_de={100: 3}, color_de={1: "amarillo", 2: "turquesa", 3: "amarillo"},
+        )
+        self.assertEqual(asig, {10: 1})
+        # Sin colores, mandan los porcentajes.
+        asig, _ = _emparejar_entrenadores(
+            {10: [100]}, {}, [javi, mario], Counter(), pesos={100: {2: 0.9, 1: 0.1}})
+        self.assertEqual(asig, {10: 2})

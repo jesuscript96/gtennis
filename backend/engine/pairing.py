@@ -201,6 +201,10 @@ class PairingInput:
     # En resina siempre hay algún entrenador: si una sede abre pistas de
     # resina, al menos una de ellas lo lleva (y vigila a la otra).
     resina_con_entrenador: bool = False
+    # Jugadores cuya pista se prefiere con entrenador (16/10/2026: D1 y D2):
+    # cada pista suya que se queda sin él, vigilada, cuesta esto.
+    prioridad_cubrir: set[int] = field(default_factory=set)
+    w_cubrir_prioridad: int = 0
 
 
 @dataclass
@@ -489,6 +493,7 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     cub = {}
     vig = {}
     fuera_de_patron = []
+    sin_entrenador_alto = []
     if data.entrenadores_reparto is not None:
         por_sede = defaultdict(dict)
         for c in courts:
@@ -550,6 +555,16 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 for c in courts:
                     if (pid, f, c.id) in x:
                         model.Add(cub[f, c.id] >= x[pid, f, c.id])
+            if data.prioridad_cubrir and data.w_cubrir_prioridad:
+                for c in courts:
+                    altos = [x[pid, f, c.id] for pid in data.prioridad_cubrir
+                             if (pid, f, c.id) in x]
+                    if not altos:
+                        continue
+                    z = model.NewBoolVar(f"alto_sin_{f}_{c.id}")
+                    for v in altos:
+                        model.Add(z >= v - cub[f, c.id])
+                    sin_entrenador_alto.append(z)
             if data.resina_con_entrenador:
                 resinas = defaultdict(list)
                 for c in courts:
@@ -717,6 +732,9 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     # 5a) Pistas de tierra vigiladas que no son la 2 ni la 5.
     for e in fuera_de_patron:
         terms.append(-data.w_vigilada_fuera * e)
+    # 5a') Pistas de D1-D2 sin entrenador: las últimas en quedarse sin él.
+    for z in sin_entrenador_alto:
+        terms.append(-data.w_cubrir_prioridad * z)
 
     # 5b) Los de la lista de un dedicado, juntos en su pista.
     if data.w_dedicado:

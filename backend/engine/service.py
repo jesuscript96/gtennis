@@ -194,6 +194,20 @@ PESO_JUNTOS_DEDICADO = 500
 VIGILADAS_PREFERIDAS = frozenset({2, 5})
 PESO_VIGILADA_FUERA = 300
 
+# Una pista con D1 o D2 (`nivel_protegido`) que se queda sin entrenador, vigilada
+# desde la de al lado (16/10/2026). Más que saltarse el patrón 1-3-4-6 (300),
+# menos que dejar a alguien sin pista (1000): nadie se queda fuera por esto.
+PESO_ALTO_SIN_ENTRENADOR = 800
+
+# El color del grupo (pestaña Grupos) al elegir entrenador para una pista
+# (16/10/2026): por cada alumno de su color, y algo más si es su propio
+# entrenador de gestión. Pesa más que los porcentajes (`_afinidad`, en unidades
+# de ESCALA_AFINIDAD), que deciden dentro del color: la afinidad de un alumno
+# es su porcentaje por las sesiones de la semana menos las hechas, así que
+# para el viernes llega a valer varias unidades; con 3 no ganaba el color.
+BONUS_MISMO_COLOR = 20
+BONUS_SU_RESPONSABLE = 5
+
 
 def hay_entrenamiento(dia, bloque):
     """¿Se entrena ese día en ese bloque? El miércoles por la tarde, no."""
@@ -515,6 +529,25 @@ def pesos_de_entrenamiento():
     return pesos
 
 
+def _puntos_color(miembros, cid, responsable_de, color_de):
+    """Lo que tira el color del grupo hacia este entrenador en esta pista: por
+    cada alumno de su color, y más si es su entrenador de gestión. Los alumnos
+    sin color (sin grupo, o de un bloque sin color) no cuentan."""
+    if not responsable_de or not color_de:
+        return 0
+    mio = color_de.get(cid)
+    puntos = 0
+    for jid in miembros:
+        suyo = responsable_de.get(jid)
+        if suyo is None:
+            continue
+        if suyo == cid:
+            puntos += BONUS_MISMO_COLOR + BONUS_SU_RESPONSABLE
+        elif mio and color_de.get(suyo) == mio:
+            puntos += BONUS_MISMO_COLOR
+    return puntos
+
+
 def _afinidad(miembros, cid, pesos, con_quien, sesiones):
     """Cuánto le toca a este entrenador llevar esta pista ahora.
 
@@ -593,7 +626,7 @@ def _emparejar_entrenadores(
     sesiones=None, blandos=None, info_pistas=None, divisiones=None,
     peso_division=0, vetos=None, solo_si_atado=frozenset(),
     nivel_protegido=0, tolerancia_division=None, cubrir=None,
-    sin_rescate=frozenset(),
+    sin_rescate=frozenset(), responsable_de=None, color_de=None,
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
@@ -634,6 +667,11 @@ def _emparejar_entrenadores(
     que cada una sin él tenga una vecina con él (`reparto_pistas`), y el reparto
     trabaja sobre esas. A las que vigila el de al lado no se les repite a nadie;
     solo a las que se quedan sin vecina que las cubra.
+
+    `responsable_de` ({jugador: entrenador de gestión}) y `color_de`
+    ({entrenador: color de su grupo}) dan preferencia al entrenador del color
+    de los alumnos de la pista, y más aún a su propio entrenador de gestión
+    (16/10/2026). Decide entre los que valen; los porcentajes, dentro del color.
 
     `sin_rescate` son los de `solo_si_atado` que nunca salen a rescatar una
     pista del grupo 1-2: quien solo entra con su lista (Dani Gimeno).
@@ -704,6 +742,7 @@ def _emparejar_entrenadores(
         if cid in solo_si_atado and cid not in contratados(courts[pista], sponsors):
             return -VALOR_PROHIBIDO
         return (round(ESCALA_AFINIDAD * afin[(pista, cid)]) - load[cid]
+                + ESCALA_AFINIDAD * _puntos_color(courts[pista], cid, responsable_de, color_de)
                 - _penalizacion_division(courts[pista], por_id[cid], divisiones, peso_division))
 
     # Candidatos por pista: todos los disponibles, primero el del contrato duro
@@ -1224,6 +1263,17 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
         for h in HorarioJugador.objects.all()
     }
     invitados = _dias_de_invitados()
+    # Grupos de color (pestaña Grupos): de quién es cada alumno y de qué color
+    # es cada entrenador.
+    from academy.models import Coach
+
+    responsable_de = dict(_JD.objects.filter(
+        activo=True, entrenador_responsable__isnull=False,
+    ).values_list("id", "entrenador_responsable_id"))
+    color_de = {}
+    for coach in Coach.objects.filter(activo=True).exclude(color="").prefetch_related("entrenadores"):
+        for e in coach.entrenadores.all():
+            color_de.setdefault(e.id, coach.color)
     turno_por_codigo = dict(Turno.objects.values_list("codigo", "id"))
     # Jornada semanal de cada entrenador: (entrenador, día) -> (mañana, tarde).
     from academy.models import HorarioEntrenador
@@ -1489,6 +1539,11 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     vigiladas_preferidas=VIGILADAS_PREFERIDAS,
                     w_vigilada_fuera=PESO_VIGILADA_FUERA,
                     resina_con_entrenador=True,
+                    prioridad_cubrir={
+                        p.id for p in jugadores
+                        if cfg.nivel_protegido and p.division is not None
+                        and p.division <= cfg.nivel_protegido},
+                    w_cubrir_prioridad=PESO_ALTO_SIN_ENTRENADOR,
                 ))
 
             # Por la tarde, T1 primero con todos y, quien no cabe, a T2 (si
@@ -1545,6 +1600,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     tolerancia_division=cfg.tolerancia_division,
                     cubrir=cubiertas_res.get(turno.id),
                     sin_rescate=set(solo_con),
+                    responsable_de=responsable_de, color_de=color_de,
                 )
                 _con_la_de_menos(entrenador_de, pistas, vigilancia_res.get(turno.id, {}),
                                  courts_by_id, atados, vetos_coach, solo_atado)
