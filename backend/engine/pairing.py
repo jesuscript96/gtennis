@@ -205,6 +205,12 @@ class PairingInput:
     # cada pista suya que se queda sin él, vigilada, cuesta esto.
     prioridad_cubrir: set[int] = field(default_factory=set)
     w_cubrir_prioridad: int = 0
+    # Último recurso (16/10/2026): si sin romper reglas alguien se queda
+    # fuera, se repite permitiendo juntar a quien rompe reglas base (división,
+    # chico/chica, edad; nunca una rencilla), cobrando cada pareja según lo que
+    # rompe. Primero se coloca a todos los posibles; entre esos repartos, el que
+    # menos rompe; y nunca se fuerza solo por ahorrarse abrir una pista.
+    forzar: bool = False
 
 
 @dataclass
@@ -360,6 +366,35 @@ def reglas_rotas(p: Player, q: Player, span: int = 1) -> list[str]:
             menor, mayor = sorted((edad_p, edad_q))
             rotas.append(f"edad ({menor} y {mayor} años)")
     return rotas
+
+
+def gravedad(p: Player, q: Player, span: int = 1, span_extra: int = 0,
+             edad_extra: int = 0) -> int:
+    """Cuánto rompe juntar a `p` y `q`: divisiones de más, años de más y 3 por
+    chico/chica. 0 si no rompen nada."""
+    total = 0
+    if p.division is not None and q.division is not None:
+        salto = q.division - p.division
+        p_arriba, p_abajo = _horquilla(p, span)
+        q_arriba, q_abajo = _horquilla(q, span)
+        if salto > 0:
+            total += max(0, salto - min(p_abajo, q_arriba) - span_extra)
+        elif salto < 0:
+            total += max(0, -salto - min(p_arriba, q_abajo) - span_extra)
+        if p.sexo and q.sexo and p.sexo != q.sexo:
+            chico, chica = (p, q) if p.sexo == "CHICO" else (q, p)
+            if chica.division > chico.division:
+                total += 3
+    edad_p, edad_q = _edad_creible(p.edad), _edad_creible(q.edad)
+    if edad_p is not None and edad_q is not None:
+        topes = [t for t in (_tope_edad(edad_p), _tope_edad(edad_q)) if t is not None]
+        if topes:
+            total += max(0, abs(edad_p - edad_q) - min(topes) - edad_extra)
+    return total
+
+
+# Lo que cuesta cada unidad de `gravedad` en una pareja forzada.
+W_GRAVEDAD = 500
 
 
 def solve_pairing(data: PairingInput) -> PairingResult:
@@ -606,6 +641,26 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                 else:
                     model.Add(sum(bajos) == 0)
 
+    # Suelo de colocar a alguien (16/10/2026): vale más que todo lo que cuesta
+    # abrirle pista —abrirla, que sea de resina, que esté lejos, que haya más
+    # pistas que entrenadores, que vaya solo…—. Así ningún peso de pista deja a
+    # nadie fuera; entre repartos que colocan a los mismos, deciden los pesos.
+    # La densidad (tres en pista por la mañana) queda fuera a propósito.
+    max_num = max((c.number or 0 for c in courts), default=0)
+    max_rango = max((c.fill_rank for c in courts if c.is_satellite), default=0)
+    piso = (data.w_court + data.w_resina + data.w_orden_pista * max_num
+            + data.w_exceso_pistas + data.w_individual
+            + data.w_satellite * max(1, max_rango)
+            + data.w_pista_division * max_num
+            + max(data.coste_franja.values(), default=0) + data.w_balance
+            + data.w_vigilada_fuera + data.w_cubrir_prioridad + data.w_relajar
+            + data.w_repeat * max(data.recent_partners.values(), default=0)
+            + data.w_div_pref + 1)
+    # Una pareja forzada cuesta más que todo lo que se ahorra juntando a dos
+    # (una pista y dos individuales), y más cuanto más rompe.
+    base_forzada = piso + data.w_individual + 1
+    forzadas = []
+
     # Parejas incompatibles. Las duras no comparten pista jamás; las
     # relajables (una división o un año de más) se permiten pagando
     # `w_relajar`, que sale a cuenta frente a dos pistas individuales.
@@ -625,6 +680,14 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             juntos = [(f, c) for f in franjas for c in courts
                       if (a.id, f, c.id) in x and (b.id, f, c.id) in x]
             if not juntos:
+                continue
+            if (motivo == DURO and data.forzar
+                    and _normalise(a.id, b.id) not in data.vetoes):
+                forzada = model.NewBoolVar(f"forz_{a.id}_{b.id}")
+                for f, c in juntos:
+                    model.Add(x[a.id, f, c.id] + x[b.id, f, c.id] <= 1 + forzada)
+                g = gravedad(a, b, data.neighbor_span, data.span_extra, data.edad_extra)
+                forzadas.append((forzada, base_forzada + W_GRAVEDAD * max(1, g)))
                 continue
             if motivo == DURO or not data.w_relajar:
                 for f, c in juntos:
@@ -659,6 +722,14 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         max(0, data.w_assign + data.w_central - data.w_court - 1),
     )
     court_by_id = {c.id: c for c in courts}
+    # Forzando, colocar a uno vale más que las parejas forzadas que haga falta
+    # para meterle (como mucho una por cada compañero de pista).
+    extra = 0
+    if forzadas:
+        cap = max((c.capacity for c in courts), default=2)
+        extra = cap * max(coste for _v, coste in forzadas)
+    for v, coste in forzadas:
+        terms.append(-coste * v)
     # 1) Maximise assigned players, weighted by division/state priority.
     #    Bonus per player on central (non-satellite) courts ensures the
     #    GTennis academy courts fill first.
@@ -678,7 +749,7 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         # T1 antes que T2: estar en la franja cara solo compensa cuando en la
         # barata ya no se cabe.
         bonus -= data.coste_franja.get(f, 0)
-        terms.append((data.w_assign * prioridad(pidx[pid], f) + bonus) * var)
+        terms.append((data.w_assign * prioridad(pidx[pid], f) + bonus + piso + extra) * var)
     for f in franjas:
         for c in courts:
             # 2) Prefer the base venue, and among satellites respect the

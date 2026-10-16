@@ -942,6 +942,31 @@ def _reglas_de_pista(yo, otros, span):
     return rotas
 
 
+def _motivo_forzado(miembros, por_id, cfg, es_tarde, vetoes, declaradas):
+    """Si en esta pista hay alguna pareja que las reglas no admiten (pista
+    forzada por el motor), el aviso con lo que rompe; si no, ""."""
+    from .pairing import DURO, _motivo
+
+    gente = [por_id[j] for j in miembros if j in por_id]
+    rota = False
+    for i, a in enumerate(gente):
+        for b in gente[i + 1:]:
+            if frozenset((a.id, b.id)) in declaradas:
+                continue
+            if _motivo(a, b, vetoes, cfg.aplicar_vecindad, cfg.vecindad_max,
+                       cfg.estiron_division if es_tarde else 0,
+                       cfg.estiron_edad if es_tarde else 0) == DURO:
+                rota = True
+    if not rota:
+        return ""
+    reglas = _reglas_de_pista(gente[0], gente[1:], cfg.vecindad_max)
+    for k in range(1, len(gente)):
+        for r in _reglas_de_pista(gente[k], gente[k + 1:], cfg.vecindad_max):
+            if r.split(" ")[0] not in {x.split(" ")[0] for x in reglas}:
+                reglas.append(r)
+    return ("Forzada para que entrene: " + ", ".join(reglas))[:200] if reglas else ""
+
+
 def _rellenar_huecos(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
                      vetos_coach, solo_con, es_tarde, overrides, courts_by_id,
                      report):
@@ -1456,7 +1481,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 if grupo[0].bloque == Turno.Bloque.TARDE
                 else courts
             )
-            def resolver(jugadores, fase):
+            def resolver(jugadores, fase, forzar=False):
                 """Empareja a `jugadores` en las franjas de `fase` de una vez."""
                 ids = [t.id for t in fase]
                 opciones = {p.id: {f: pr for f, pr in franjas_de[p.id].items()
@@ -1544,12 +1569,14 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                         if cfg.nivel_protegido and p.division is not None
                         and p.division <= cfg.nivel_protegido},
                     w_cubrir_prioridad=PESO_ALTO_SIN_ENTRENADOR,
+                    forzar=forzar,
                 ))
 
             # Por la tarde, T1 primero con todos y, quien no cabe, a T2 (si
             # hace falta T2, se usa: 13/10/2026). La mañana se decide entera.
             fases = [[t] for t in orden] if es_tarde else [grupo]
             franjas_res, cubiertas_res, estados = {}, {}, {}
+            forzado_en = set()
             dedicadas_res, vigilancia_res = {}, {}
             pendientes = list(players)
             for fase in fases:
@@ -1558,6 +1585,17 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 if not jugadores:
                     continue
                 r = resolver(jugadores, fase)
+                # Si sin romper reglas alguien se queda fuera, se repite
+                # permitiendo pistas forzadas (16/10/2026), y se queda la
+                # repetición si coloca a más.
+                def colocados_en(res):
+                    return {jid for t in fase for m in res.franjas.get(t.id, {}).values()
+                            for jid in m}
+                if any(p.id not in colocados_en(r) for p in jugadores):
+                    r2 = resolver(jugadores, fase, forzar=True)
+                    if len(colocados_en(r2)) > len(colocados_en(r)):
+                        r = r2
+                        forzado_en.update(t.id for t in fase)
                 for t in fase:
                     franjas_res[t.id] = r.franjas.get(t.id, {})
                     cubiertas_res[t.id] = r.cubiertas.get(t.id)
@@ -1611,6 +1649,14 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     )
                 for court_id, member_ids in pistas.items():
                     coach_id = entrenador_de.get(court_id)
+                    motivo_forzado = (
+                        _motivo_forzado(member_ids, por_id_bloque, cfg, es_tarde,
+                                        vetoes_dia, pairs_declaradas_dia)
+                        if turno.id in forzado_en else "")
+                    if motivo_forzado:
+                        report.setdefault("forzadas", []).append(
+                            {"dia": dia, "turno": turno.codigo, "pista": court_id,
+                             "jugadores": list(member_ids), "reglas": motivo_forzado})
                     for jid in member_ids:
                         Asignacion.objects.create(
                             semana=semana,
@@ -1620,6 +1666,8 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                             jugador_id=jid,
                             entrenador_id=coach_id,
                             estado=_effective_state(overrides, jid, turno),
+                            forzada=bool(motivo_forzado),
+                            motivo_forzado=motivo_forzado,
                         )
                         # Historial para acercarse a los % objetivo (#12) y
                         # para los topes del día y del bloque (#18).

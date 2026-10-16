@@ -1164,3 +1164,47 @@ class AltosConEntrenadorYColorTests(SimpleTestCase):
         asig, _ = _emparejar_entrenadores(
             {10: [100]}, {}, [javi, mario], Counter(), pesos={100: {2: 0.9, 1: 0.1}})
         self.assertEqual(asig, {10: 2})
+
+
+class ColocarAntesQueCostesYForzarTests(SimpleTestCase):
+    """16/10/2026: colocar a alguien vale más que todo lo que cuesta abrirle
+    pista (Nik se quedaba fuera por no abrir una de resina); y si sin romper
+    reglas alguien se queda fuera, se fuerza con el reparto que menos rompe
+    (una pista D2-D4 en vez de dos D9 metidas con un D2 y un D4)."""
+
+    PESOS = dict(w_assign=1000, w_central=100, w_court=900, w_resina=1200,
+                 w_orden_pista=60, w_individual=1200, w_exceso_pistas=600,
+                 w_density=15000, capacidad_max=2, time_limit_s=5, franjas=[1])
+
+    def test_abre_la_de_resina_antes_que_dejar_a_alguien_fuera(self):
+        pistas = [Court(id=1, venue_id=1, capacity=2, number=1, surface="TIERRA"),
+                  Court(id=8, venue_id=1, capacity=2, number=8, surface="RESINA")]
+        jugadores = [Player(id=1, division=5), Player(id=2, division=5),
+                     Player(id=3, division=9)]
+        r = solve_pairing(PairingInput(players=jugadores, courts=pistas,
+                                       min_occupancy=1, pistas_objetivo={1: 1},
+                                       **self.PESOS))
+        self.assertEqual(r.unassigned, [])
+
+    def test_forzar_elige_el_reparto_que_menos_rompe(self):
+        pistas = [Court(id=i, venue_id=1, capacity=2, number=i, surface="TIERRA")
+                  for i in (1, 2)]
+        jugadores = [Player(id=1, division=2, edad=24), Player(id=2, division=4, edad=22),
+                     Player(id=3, division=9, edad=16), Player(id=4, division=9, edad=13)]
+        normal = solve_pairing(PairingInput(players=jugadores, courts=pistas,
+                                            min_occupancy=1, **self.PESOS))
+        self.assertTrue(normal.unassigned)
+        forzado = solve_pairing(PairingInput(players=jugadores, courts=pistas,
+                                             min_occupancy=1, forzar=True, **self.PESOS))
+        self.assertEqual(forzado.unassigned, [])
+        juntos = {frozenset(m) for m in forzado.franjas[1].values()}
+        self.assertEqual(juntos, {frozenset({1, 2}), frozenset({3, 4})})
+
+    def test_no_fuerza_solo_por_ahorrarse_una_pista(self):
+        # Hay pistas para todos: un D2 y un D9 van cada uno a la suya.
+        pistas = [Court(id=i, venue_id=1, capacity=2, number=i, surface="TIERRA")
+                  for i in (1, 2)]
+        r = solve_pairing(PairingInput(
+            players=[Player(id=1, division=2), Player(id=2, division=9)],
+            courts=pistas, min_occupancy=1, forzar=True, **self.PESOS))
+        self.assertEqual(len(r.franjas[1]), 2)

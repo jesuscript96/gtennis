@@ -1420,6 +1420,16 @@ class RellenoForzadoTests(TestCase):
         aviso = AvisoBanquillo.objects.get(jugador=self.nik)
         self.assertIn("rencilla", aviso.motivo)
 
+    def test_sin_nada_a_mano_el_motor_fuerza_y_lo_marca(self):
+        # Una sola pista para los dos: sin forzar, uno se queda fuera.
+        Asignacion.objects.filter(jugador=self.chimo).delete()
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        filas = Asignacion.objects.filter(semana=self.semana, dia=0)
+        self.assertEqual(set(filas.values_list("jugador", flat=True)), {self.chimo.id, self.nik.id})
+        self.assertTrue(all(a.forzada for a in filas))
+        self.assertIn("división D3–D9", filas[0].motivo_forzado)
+        self.assertTrue(rep["forzadas"])
+
     def test_moverla_a_mano_quita_la_marca(self):
         generate(self.semana, dias=[0], bloques=["MANANA"])
         a = Asignacion.objects.get(jugador=self.nik)
