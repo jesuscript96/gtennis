@@ -267,6 +267,11 @@ class PdfTests(TestCase):
         self.assertEqual(d["ordenados"][-1]["ancho"], "40.0")  # CSS: punto decimal siempre
         self.assertEqual(d["fecha"], "20 de octubre de 2026")
         self.assertIn('\\"Anita\\"', d["pie"])
+        self.assertEqual(d["mejor"]["corto"], "Saque")
+        self.assertEqual(d["peor"]["corto"], "Volea")
+        self.assertEqual(d["peor"]["arco"], "65.35")  # 2/5 del anillo, con punto decimal
+        self.assertEqual(d["iniciales"], "AA")  # solo letras, aunque el nombre lleve comillas
+        self.assertEqual(d["foto"], "")  # sin foto_url: la plantilla pone las iniciales
         self.ev.idioma = "EN"
         d = pdf.datos(self.ev)
         self.assertEqual(d["ordenados"][-1]["media"], "2.0")

@@ -16,160 +16,273 @@
   --gris: #6f6b64;
   --suave: #9a958c;
   --linea: #e7e2d9;
-  --pista: #efebe4;
-  --fondo: #faf8f4;
+  --pista: #efe9e1;
+  --fondo: #faf7f2;
   --arcilla: #c96442;
-  --arcilla-osc: #a44e31;
+  --arcilla-osc: #9f4a2e;
+  --arcilla-clara: #f6e6de;
+  --noche: #24201d;
 }
 
+/* Las fotos van a sangre: la página no tiene márgenes y cada bloque pone el suyo. */
 @page {
   size: A4;
-  margin: 16mm 16mm 20mm;
+  margin: 0 0 13mm 0;
   @bottom-left {
     content: "{{ pie|safe }}";
-    font: 400 7.5pt "Inter"; color: #9a958c;
+    font: 400 7pt "Inter"; color: #9a958c; padding-left: 15mm;
   }
   @bottom-right {
     content: counter(page) " / " counter(pages);
-    font: 400 7.5pt "Inter"; color: #9a958c;
+    font: 400 7pt "Inter"; color: #9a958c; padding-right: 15mm;
   }
 }
 
 * { box-sizing: border-box; }
 body { font: 400 9.5pt/1.45 "Inter"; color: var(--tinta); margin: 0; }
 h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.ancho { padding: 0 15mm; }
+.etq { font: 600 7pt "Inter"; letter-spacing: 0.13em; text-transform: uppercase; }
 
-/* Cabecera */
-.marca { display: flex; justify-content: space-between; align-items: center;
-  border-top: 3pt solid var(--arcilla); padding-top: 7pt;
-  font: 600 7.5pt "Inter"; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gris); }
-.marca b { color: var(--arcilla); font-weight: 600; }
-.jugador { font-size: 32pt; line-height: 1.05; margin: 22pt 0 6pt; }
-.meta { color: var(--gris); font-size: 9.5pt; }
-.meta b { color: var(--tinta); font-weight: 500; }
+/* ---------- Portada ---------- */
+.portada {
+  height: 84mm; position: relative; color: #fff;
+  background:
+    linear-gradient(to bottom, rgba(26,18,14,0.35) 0%, rgba(26,18,14,0.15) 38%, rgba(26,18,14,0.82) 100%),
+    url("img/pista-aerea.jpg") center 40% / cover no-repeat;
+}
+.portada .barra-sup { position: absolute; top: 11mm; left: 15mm; right: 15mm; }
+.portada .barra-sup table { width: 100%; border-collapse: collapse; }
+.portada .barra-sup td { padding: 0; color: rgba(255,255,255,0.88); }
+.portada .barra-sup .der { text-align: right; }
+.portada .barra-sup b { color: #fff; font-weight: 600; }
+.portada .titulo { position: absolute; left: 15mm; right: 68mm; bottom: 11mm; }
+.portada h1 { font-size: 34pt; line-height: 1.02; color: #fff; }
+/* Bajo la portada, a la izquierda de la foto: cuándo y quién. */
+.bajo-portada { height: 20mm; padding-top: 4.5mm; padding-right: 66mm; }
+.bajo-portada .meta { font-size: 9.5pt; color: var(--gris); }
+.bajo-portada .meta b { color: var(--tinta); font-weight: 600; }
+.bajo-portada .escala { margin-top: 3pt; font-size: 8pt; color: var(--suave); }
 
-/* Visión general */
-.general { display: flex; gap: 22pt; margin-top: 22pt; padding: 18pt 20pt;
-  background: var(--fondo); border: 0.75pt solid var(--linea); border-radius: 8pt; }
-.media { width: 118pt; flex: none; border-right: 0.75pt solid var(--linea); padding-right: 18pt; }
-.media .etq { font: 600 7.5pt "Inter"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gris); }
-.media .num { font: 600 46pt/1 "Fraunces"; color: var(--tinta); margin-top: 8pt; }
-.media .de { font-size: 9pt; color: var(--gris); margin-top: 4pt; }
-.media .nota { font-size: 7.5pt; color: var(--suave); margin-top: 14pt; line-height: 1.4; }
+.foto { position: absolute; right: 15mm; bottom: -17mm; width: 44mm; height: 44mm; border-radius: 50%;
+  border: 3.5pt solid #fff; background: var(--arcilla-clara); overflow: hidden; }
+.foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto .iniciales { width: 100%; padding-top: 12.5mm; text-align: center;
+  font: 600 30pt/1 "Fraunces"; color: var(--arcilla-osc); }
 
-.barras { flex: 1; }
-.barras h2 { font: 600 7.5pt "Inter"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gris); margin-bottom: 8pt; }
-.barras table { width: 100%; border-collapse: collapse; }
-.barras td { padding: 3.2pt 0; vertical-align: middle; }
-.barras .nombre { width: 92pt; font-size: 9pt; padding-right: 10pt; }
-.barras .pista { height: 9pt; background: var(--pista); border-radius: 0 3pt 3pt 0; }
-.barras .relleno { height: 9pt; background: var(--arcilla); border-radius: 0 3pt 3pt 0; }
-.barras .valor { width: 26pt; text-align: right; font-weight: 600; font-size: 9pt; }
+/* ---------- Cifras clave ---------- */
+.cifras { width: calc(100% + 10pt); margin: 0 -5pt; border-collapse: separate; border-spacing: 5pt 0; table-layout: fixed; }
+.cifras td { vertical-align: top; padding: 0; }
+.cifra { border-radius: 9pt; padding: 12pt 14pt; height: 74pt; }
+.cifra.principal { background: var(--arcilla); color: #fff; }
+.cifra.principal .etq { color: rgba(255,255,255,0.85); }
+.cifra.principal .num { font: 600 38pt/1 "Fraunces"; margin-top: 6pt; }
+.cifra.principal .num small { font: 500 12pt "Fraunces"; color: rgba(255,255,255,0.8); }
+.cifra.clara { background: var(--fondo); border: 0.75pt solid var(--linea); }
+.cifra.clara .etq { color: var(--gris); }
+.cifra .etq { white-space: nowrap; }
+.cifra .que { font: 600 17pt/1.1 "Fraunces"; margin-top: 8pt; }
+.cifra .cuanto { margin-top: 4pt; font-size: 9pt; color: var(--gris); }
+.cifra .cuanto b { color: var(--arcilla-osc); font-weight: 600; font-size: 11pt; }
+.cifra .icono { float: right; margin-top: -1pt; }
 
-/* Fortalezas y mejoras */
-.dos { display: flex; gap: 14pt; margin-top: 16pt; }
-.caja { flex: 1; border: 0.75pt solid var(--linea); border-radius: 8pt; padding: 14pt 16pt; }
-.caja h2 { font-size: 13pt; margin-bottom: 8pt; }
-.caja ul { list-style: none; margin: 0; padding: 0; }
-.caja li { position: relative; padding-left: 15pt; margin: 6pt 0; font-size: 9.5pt; }
-.caja li::before { content: ""; position: absolute; left: 0; top: 4pt; width: 6pt; height: 6pt; border-radius: 50%; }
-.fuertes li::before { background: var(--arcilla); }
-.mejoras li::before { border: 1.2pt solid var(--arcilla); }
+/* ---------- Anillos por bloque ---------- */
+.seccion { margin-top: 6.5mm; }
+.seccion > .etq { color: var(--gris); display: block; margin-bottom: 8pt; }
+.anillos { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.anillos td { text-align: center; vertical-align: top; padding: 0 2pt 7pt; }
+.anillo { position: relative; width: 62pt; height: 62pt; margin: 0 auto; }
+.anillo svg { position: absolute; left: 0; top: 0; }
+.anillo .valor { position: absolute; left: 0; right: 0; top: 19pt; text-align: center; font: 600 17pt/1 "Fraunces"; }
+.anillo .valor small { display: block; font: 400 6.5pt "Inter"; color: var(--suave); margin-top: 3pt; letter-spacing: 0.04em; }
+.anillos .nombre { margin-top: 5pt; font-size: 8.5pt; font-weight: 500; }
+
+/* ---------- Fortalezas y mejoras ---------- */
+.dos { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; margin-top: 2mm; }
+.dos > tbody > tr > td { vertical-align: top; }
+.dos > tbody > tr > td:first-child { padding-right: 6pt; }
+.dos > tbody > tr > td:last-child { padding-left: 6pt; }
+.caja { border-radius: 9pt; padding: 12pt 14pt 10pt; height: 100%; }
+.caja.fuertes { background: var(--fondo); border: 0.75pt solid var(--linea); }
+.caja.mejoras { background: var(--noche); color: #f3eee8; }
+.caja .cab { width: 100%; border-collapse: collapse; margin-bottom: 7pt; }
+.caja .cab td { padding: 0; vertical-align: middle; }
+.caja .cab td.ico { width: 26pt; }
+.caja h2 { font-size: 13pt; }
+.caja ol { margin: 0; padding: 0; list-style: none; counter-reset: item; }
+.caja li { counter-increment: item; position: relative; padding-left: 20pt; margin: 0 0 7pt; font-size: 9.2pt; line-height: 1.38; }
+.caja li::before { content: counter(item); position: absolute; left: 0; top: 0.5pt; width: 13pt; height: 13pt; border-radius: 50%;
+  font: 600 7.5pt/13pt "Inter"; text-align: center; }
+.caja.fuertes li::before { background: var(--arcilla); color: #fff; }
+.caja.mejoras li::before { background: transparent; border: 1pt solid var(--arcilla); color: #f0b49c; line-height: 11pt; }
 .vacio { color: var(--suave); font-style: italic; }
 
-.competicion { margin-top: 14pt; padding: 12pt 16pt; border-left: 2.5pt solid var(--arcilla); background: var(--fondo); }
-.competicion h2 { font: 600 7.5pt "Inter"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gris); margin-bottom: 4pt; }
+.competicion { margin-top: 9pt; border-radius: 9pt; background: var(--arcilla-clara); padding: 10pt 14pt; }
+.competicion table { width: 100%; border-collapse: collapse; }
+.competicion td { padding: 0; vertical-align: middle; }
+.competicion td.ico { width: 30pt; }
+.competicion .etq { color: var(--arcilla-osc); display: block; margin-bottom: 2pt; }
 
-/* Detalle por bloque */
+/* ---------- Detalle ---------- */
 .detalle { break-before: page; }
-.detalle > h2 { font-size: 18pt; margin-bottom: 4pt; }
-.detalle > p { color: var(--gris); margin: 0 0 14pt; font-size: 8.5pt; }
-.rejilla { width: 100%; border-collapse: separate; border-spacing: 9pt 9pt; margin: -9pt; width: calc(100% + 18pt); table-layout: fixed; }
-.rejilla td { width: 50%; vertical-align: top; border: 0.75pt solid var(--linea); border-radius: 8pt; padding: 9pt 12pt 10pt; }
-.rejilla tr { break-inside: avoid; }
-.cab { width: 100%; border-collapse: collapse; margin-bottom: 5pt; }
-.cab td { border: 0; padding: 0; vertical-align: baseline; }
-.bloque-tit { font: 600 11.5pt "Fraunces"; }
-.prom { text-align: right; white-space: nowrap; font: 600 11pt "Fraunces"; color: var(--arcilla-osc); width: 44pt; }
-.prom small { font: 400 7.5pt "Inter"; color: var(--suave); }
+.banda {
+  height: 36mm; position: relative; color: #fff;
+  background:
+    linear-gradient(to right, rgba(26,18,14,0.86) 0%, rgba(26,18,14,0.55) 55%, rgba(26,18,14,0.15) 100%),
+    url("img/pista-atardecer.jpg") center 62% / cover no-repeat;
+}
+.banda .txt { position: absolute; left: 15mm; bottom: 9mm; }
+.banda h2 { font-size: 21pt; color: #fff; }
+.banda p { margin: 4pt 0 0; font-size: 8.5pt; color: rgba(255,255,255,0.85); }
+.banda .leyenda { position: absolute; right: 15mm; bottom: 9mm; font-size: 7.5pt; color: rgba(255,255,255,0.85); }
+.banda .leyenda i { display: inline-block; width: 10pt; height: 5pt; border-radius: 1.5pt; background: var(--arcilla); margin-left: 2pt; }
+.banda .leyenda i.off { background: rgba(255,255,255,0.35); }
+
+.rejilla { width: calc(100% + 16pt); margin: 4mm -8pt 0; border-collapse: separate; border-spacing: 8pt 8pt; table-layout: fixed; }
+.rejilla > tbody > tr { break-inside: avoid; }
+.rejilla > tbody > tr > td { width: 50%; vertical-align: top; border: 0.75pt solid var(--linea); border-radius: 9pt;
+  padding: 0; background: #fff; overflow: hidden; }
+.bloque-cab { width: 100%; border-collapse: collapse; background: var(--fondo); border-bottom: 0.75pt solid var(--linea); }
+.bloque-cab td { padding: 7pt 11pt; vertical-align: middle; }
+.bloque-cab td.num { width: 30pt; padding-right: 0; }
+.bloque-cab .chapa { width: 19pt; height: 19pt; border-radius: 50%; background: var(--arcilla); color: #fff;
+  font: 600 8pt/19pt "Inter"; text-align: center; }
+.bloque-cab .tit { font: 600 11pt/1.15 "Fraunces"; }
+.bloque-cab .prom { text-align: right; white-space: nowrap; width: 54pt; font: 600 13pt "Fraunces"; color: var(--arcilla-osc); }
+.bloque-cab .prom small { font: 400 7pt "Inter"; color: var(--suave); }
+.bloque-cuerpo { padding: 6pt 11pt 9pt; }
 .crits { width: 100%; border-collapse: collapse; }
-.crits td { border: 0; padding: 1.6pt 0; font-size: 8.5pt; vertical-align: middle; }
-.crits .seg { width: 66pt; white-space: nowrap; font-size: 0; }
+.crits td { padding: 1.5pt 0; font-size: 8.3pt; vertical-align: middle; }
+.crits .seg { width: 66pt; white-space: nowrap; font-size: 0; text-align: right; }
 .crits .seg i { display: inline-block; width: 11pt; height: 5.5pt; border-radius: 1.5pt; background: var(--pista); margin-left: 2pt; }
 .crits .seg i.on { background: var(--arcilla); }
 .crits .n { width: 14pt; text-align: right; font-weight: 600; }
-.comentario { margin: 7pt 0 0; padding-top: 6pt; border-top: 0.75pt solid var(--linea);
-  font: italic 400 8.6pt/1.42 "Fraunces"; color: #3a3835; }
-.comentario.vacio { font: 400 8pt "Inter"; color: var(--suave); }
+.comentario { margin: 6pt 0 0; padding: 6pt 0 0 9pt; border-left: 2pt solid var(--arcilla);
+  font: italic 400 8.5pt/1.4 "Fraunces"; color: #3a3835; }
+.comentario.vacio { border-left-color: var(--linea); font: 400 7.8pt "Inter"; color: var(--suave); }
 </style>
 </head>
 <body>
 
-<div class="marca"><span><b>G Tenis</b> · {{ t.academia }}</span><span>{{ t.informe }}</span></div>
-
-<h1 class="jugador">{{ jugador }}</h1>
-<div class="meta">{{ fecha }} · {{ t.evaluado }} <b>{{ entrenador }}</b></div>
-
-<section class="general">
-  <div class="media">
-    <div class="etq">{{ t.media }}</div>
-    <div class="num">{{ media }}</div>
-    <div class="de">{{ t.sobre }}</div>
-    <div class="nota">{{ t.nota_media }}</div>
+<!-- ===== Página 1 ===== -->
+<section class="portada">
+  <div class="barra-sup etq"><table><tr>
+    <td><b>G Tenis</b> · {{ t.academia }}</td><td class="der">{{ t.informe }}</td>
+  </tr></table></div>
+  <div class="titulo">
+    <h1>{{ jugador }}</h1>
   </div>
-  <div class="barras">
-    <h2>{{ t.por_bloque }}</h2>
-    <table>
-      {% for b in ordenados %}
+  <div class="foto">
+    {% if foto %}<img src="{{ foto }}" alt="">{% else %}<div class="iniciales">{{ iniciales }}</div>{% endif %}
+  </div>
+</section>
+
+<div class="ancho">
+  <div class="bajo-portada">
+    <div class="meta">{{ fecha }} · {{ t.evaluado }} <b>{{ entrenador }}</b></div>
+    <div class="escala">{{ t.escala_corta }}</div>
+  </div>
+  <table class="cifras"><tr>
+    <td><div class="cifra principal">
+      <span class="etq">{{ t.media }}</span>
+      <div class="num">{{ media }}<small> / 5</small></div>
+    </div></td>
+    <td><div class="cifra clara">
+      <span class="icono"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#c96442"/><path d="M9 4.5 L13 9.5 H10.3 V13.5 H7.7 V9.5 H5 Z" fill="#fff"/></svg></span>
+      <span class="etq">{{ t.punto_fuerte }}</span>
+      <div class="que">{{ mejor.titulo }}</div>
+      <div class="cuanto"><b>{{ mejor.media }}</b> / 5</div>
+    </div></td>
+    <td><div class="cifra clara">
+      <span class="icono"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8.2" fill="none" stroke="#c96442" stroke-width="1.6"/><circle cx="9" cy="9" r="4.6" fill="none" stroke="#c96442" stroke-width="1.6"/><circle cx="9" cy="9" r="1.6" fill="#c96442"/></svg></span>
+      <span class="etq">{{ t.a_trabajar }}</span>
+      <div class="que">{{ peor.titulo }}</div>
+      <div class="cuanto"><b>{{ peor.media }}</b> / 5</div>
+    </div></td>
+  </tr></table>
+
+  <section class="seccion">
+    <span class="etq">{{ t.por_bloque }}</span>
+    <table class="anillos">
+      {% for fila in filas_anillos %}
       <tr>
-        <td class="nombre">{{ b.corto }}</td>
-        <td><div class="pista"><div class="relleno" style="width: {{ b.ancho }}%"></div></div></td>
-        <td class="valor">{{ b.media }}</td>
+        {% for b in fila %}
+        <td>
+          <div class="anillo">
+            <svg width="62pt" height="62pt" viewBox="0 0 62 62">
+              <circle cx="31" cy="31" r="26" fill="none" stroke="#efe9e1" stroke-width="6"/>
+              <circle cx="31" cy="31" r="26" fill="none" stroke="#c96442" stroke-width="6" stroke-linecap="round"
+                stroke-dasharray="{{ b.arco }} 200" transform="rotate(-90 31 31)"/>
+            </svg>
+            <div class="valor">{{ b.media }}<small>/ 5</small></div>
+          </div>
+          <div class="nombre">{{ b.corto }}</div>
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <table class="dos"><tr>
+    <td><div class="caja fuertes">
+      <table class="cab"><tr>
+        <td class="ico"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="#c96442"/><path d="M5.5 10.5 L8.6 13.4 L14.5 7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+        <td><h2>{{ t.fortalezas }}</h2></td>
+      </tr></table>
+      {% if fortalezas %}<ol>{% for f in fortalezas %}<li>{{ f }}</li>{% endfor %}</ol>
+      {% else %}<p class="vacio">—</p>{% endif %}
+    </div></td>
+    <td><div class="caja mejoras">
+      <table class="cab"><tr>
+        <td class="ico"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9.2" fill="none" stroke="#c96442" stroke-width="1.6"/><path d="M6 13.5 L10 6.5 L14 13.5" fill="none" stroke="#f0b49c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></td>
+        <td><h2 style="color:#fff">{{ t.mejoras }}</h2></td>
+      </tr></table>
+      {% if mejoras %}<ol>{% for m in mejoras %}<li>{{ m }}</li>{% endfor %}</ol>
+      {% else %}<p class="vacio">—</p>{% endif %}
+    </div></td>
+  </tr></table>
+
+  <div class="competicion"><table><tr>
+    <td class="ico"><svg width="22" height="22" viewBox="0 0 22 22"><path d="M6 3 H16 V8 A5 5 0 0 1 6 8 Z" fill="#c96442"/><path d="M6 4.5 H3 V6.5 A3 3 0 0 0 6.5 9.5 M16 4.5 H19 V6.5 A3 3 0 0 1 15.5 9.5" fill="none" stroke="#c96442" stroke-width="1.4"/><rect x="10" y="12.5" width="2" height="4" fill="#c96442"/><rect x="7" y="16.5" width="8" height="2.5" rx="1" fill="#9f4a2e"/></svg></td>
+    <td><span class="etq">{{ t.competicion }}</span>
+      <div{% if not competicion %} class="vacio"{% endif %}>{{ competicion|default:t.sin_resultados }}</div></td>
+  </tr></table></div>
+</div>
+
+<!-- ===== Página 2 ===== -->
+<section class="detalle">
+  <div class="banda">
+    <div class="txt"><h2>{{ t.detalle }}</h2><p>{{ t.escala }}</p></div>
+    <div class="leyenda">1 – 5 <i></i><i></i><i></i><i class="off"></i><i class="off"></i></div>
+  </div>
+
+  <div class="ancho">
+    <table class="rejilla">
+      {% for par in pares %}
+      <tr>
+        {% for b in par %}
+        <td>
+          <table class="bloque-cab"><tr>
+            <td class="num"><div class="chapa">{{ b.n }}</div></td>
+            <td class="tit">{{ b.titulo }}</td>
+            <td class="prom">{{ b.media }} <small>/ 5</small></td>
+          </tr></table>
+          <div class="bloque-cuerpo">
+            <table class="crits">
+              {% for c in b.criterios %}
+              <tr><td>{{ c.etiqueta }}</td><td class="seg">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
+              {% endfor %}
+            </table>
+            {% if b.comentario %}<p class="comentario">{{ b.comentario }}</p>
+            {% else %}<p class="comentario vacio">{{ t.sin_observaciones }}</p>{% endif %}
+          </div>
+        </td>
+        {% endfor %}
       </tr>
       {% endfor %}
     </table>
   </div>
-</section>
-
-<div class="dos">
-  <section class="caja fuertes">
-    <h2>{{ t.fortalezas }}</h2>
-    {% if fortalezas %}<ul>{% for f in fortalezas %}<li>{{ f }}</li>{% endfor %}</ul>
-    {% else %}<p class="vacio">—</p>{% endif %}
-  </section>
-  <section class="caja mejoras">
-    <h2>{{ t.mejoras }}</h2>
-    {% if mejoras %}<ul>{% for m in mejoras %}<li>{{ m }}</li>{% endfor %}</ul>
-    {% else %}<p class="vacio">—</p>{% endif %}
-  </section>
-</div>
-
-<section class="competicion">
-  <h2>{{ t.competicion }}</h2>
-  <div{% if not competicion %} class="vacio"{% endif %}>{{ competicion|default:t.sin_resultados }}</div>
-</section>
-
-<section class="detalle">
-  <h2>{{ t.detalle }}</h2>
-  <p>{{ t.escala }}</p>
-  <table class="rejilla">
-    {% for par in pares %}
-    <tr>
-      {% for b in par %}
-      <td>
-        <table class="cab"><tr><td class="bloque-tit">{{ b.titulo }}</td><td class="prom">{{ b.media }} <small>/ 5</small></td></tr></table>
-        <table class="crits">
-          {% for c in b.criterios %}
-          <tr><td>{{ c.etiqueta }}</td><td class="seg">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
-          {% endfor %}
-        </table>
-        {% if b.comentario %}<p class="comentario">{{ b.comentario }}</p>
-        {% else %}<p class="comentario vacio">{{ t.sin_observaciones }}</p>{% endif %}
-      </td>
-      {% endfor %}
-    </tr>
-    {% endfor %}
-  </table>
 </section>
 
 </body>

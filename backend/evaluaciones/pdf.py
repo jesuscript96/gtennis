@@ -4,6 +4,9 @@ Se maqueta en HTML (`informe/informe.html`) y WeasyPrint lo pasa a PDF. Los
 textos fijos van en el idioma del informe; los nombres de bloque y criterio
 salen del catálogo.
 """
+import base64
+import logging
+import math
 import re
 from pathlib import Path
 
@@ -11,14 +14,19 @@ from django.template import Context, Template
 
 from . import catalogo
 
+log = logging.getLogger(__name__)
+
 CARPETA = Path(__file__).parent / "informe"
+# Perímetro del anillo de cada bloque en la portada (r = 26 en la plantilla).
+PERIMETRO = 2 * math.pi * 26
 
 TEXTOS = {
     "ES": {
         "lang": "es", "informe": "Informe de rendimiento", "academia": "Alto rendimiento",
         "evaluado": "Evaluado por", "media": "Media global", "sobre": "sobre 5",
         "nota_media": "Media de las 34 notas, del 1 al 5, que ha puesto el entrenador.",
-        "por_bloque": "Media por bloque", "fortalezas": "Fortalezas", "mejoras": "Áreas de mejora",
+        "por_bloque": "Rendimiento por bloque", "punto_fuerte": "Punto fuerte", "a_trabajar": "A trabajar",
+        "escala_corta": "34 aspectos puntuados del 1 al 5 por su entrenador.", "fortalezas": "Fortalezas", "mejoras": "Áreas de mejora",
         "competicion": "Competición", "detalle": "Detalle por bloque",
         "escala": "Cada aspecto se puntúa del 1 al 5. Debajo, el comentario del entrenador.",
         "sin_observaciones": "Sin observaciones", "sin_resultados": "Sin resultados registrados",
@@ -29,7 +37,8 @@ TEXTOS = {
         "lang": "en", "informe": "Performance report", "academia": "High performance",
         "evaluado": "Assessed by", "media": "Overall average", "sobre": "out of 5",
         "nota_media": "Average of the 34 scores, from 1 to 5, given by the coach.",
-        "por_bloque": "Average by area", "fortalezas": "Strengths", "mejoras": "Areas to improve",
+        "por_bloque": "Performance by area", "punto_fuerte": "Strongest area", "a_trabajar": "Focus area",
+        "escala_corta": "34 aspects scored from 1 to 5 by the coach.", "fortalezas": "Strengths", "mejoras": "Areas to improve",
         "competicion": "Competition", "detalle": "Detail by area",
         "escala": "Each aspect is scored from 1 to 5. Below, the coach's comment.",
         "sin_observaciones": "No observations", "sin_resultados": "No results recorded",
@@ -57,21 +66,48 @@ def nombre(ev):
     return f"{jugador}-{ev.fecha:%d-%m-%Y}-{ev.idioma}.pdf"
 
 
+def _iniciales(nombre):
+    """Las dos primeras letras de nombre y apellido, sin comillas ni signos."""
+    palabras = [p for p in nombre.split() if any(c.isalpha() for c in p)]
+    return "".join(next(c for c in p if c.isalpha()) for p in palabras[:2]).upper()
+
+
+def _foto(jugador):
+    """La foto del jugador incrustada (data URI). Si no tiene o no se puede
+    bajar, la plantilla pone sus iniciales en el mismo hueco."""
+    url = getattr(jugador, "foto_url", "")
+    if not url:
+        return ""
+    try:
+        import requests
+
+        r = requests.get(url, timeout=6)
+        tipo = r.headers.get("Content-Type", "").split(";")[0]
+        if r.ok and tipo.startswith("image/") and len(r.content) < 8_000_000:
+            return f"data:{tipo};base64,{base64.b64encode(r.content).decode()}"
+    except Exception:
+        log.warning("No se ha podido bajar la foto de %s", jugador, exc_info=True)
+    return ""
+
+
 def datos(ev):
     """Todo lo que pinta la plantilla, ya calculado y formateado."""
     t = TEXTOS[ev.idioma]
     en = ev.idioma == "EN"
     bloques = []
-    for b in catalogo.BLOQUES:
+    for i, b in enumerate(catalogo.BLOQUES, 1):
         notas = [ev.puntuaciones.get(k) for k, _, _ in b["criterios"]]
         puestas = [n for n in notas if n]
         media = sum(puestas) / len(puestas) if puestas else None
         bloques.append({
+            "n": i,
             "titulo": b["titulo_en"] if en else b["titulo"],
             "corto": b["corto_en"] if en else b["corto"],
             "media_num": media,
             "media": _num(media, ev.idioma),
-            "ancho": f"{(media or 0) / 5 * 100:.1f}",  # texto: el filtro de Django pondría coma decimal
+            # Como texto: Django pintaría los decimales con coma y el SVG/CSS no lo entiende.
+            "ancho": f"{(media or 0) / 5 * 100:.1f}",
+            "arco": f"{(media or 0) / 5 * PERIMETRO:.2f}",
             "comentario": (ev.comentarios.get(b["clave"]) or {}).get("pulido", ""),
             "criterios": [{
                 "etiqueta": en_ if en else es,
@@ -80,6 +116,7 @@ def datos(ev):
             } for (_, es, en_), n in zip(b["criterios"], notas)],
         })
     todas = [n for n in ev.puntuaciones.values() if n]
+    ordenados = sorted(bloques, key=lambda b: -(b["media_num"] or 0))
     # El pie va dentro de una regla CSS: se escapa como CSS, no como HTML.
     pie = f"G Tenis · {t['informe']} · {ev.jugador.nombre}"
     pie = re.sub(r"[<>]", "", pie).replace("\\", "\\\\").replace('"', '\\"')
@@ -92,8 +129,12 @@ def datos(ev):
         "media": _num(sum(todas) / len(todas) if todas else None, ev.idioma),
         "bloques": bloques,
         "pares": [bloques[i:i + 2] for i in range(0, len(bloques), 2)],
-        # De más fuerte a más flojo: lo que destaca arriba, lo que hay que trabajar abajo.
-        "ordenados": sorted(bloques, key=lambda b: -(b["media_num"] or 0)),
+        "filas_anillos": [bloques[:4], bloques[4:]],
+        "mejor": ordenados[0],
+        "peor": ordenados[-1],
+        "ordenados": ordenados,
+        "iniciales": _iniciales(ev.jugador.nombre),
+        "foto": _foto(ev.jugador),
         "fortalezas": [f for f in ev.fortalezas if f.strip()],
         "mejoras": [m for m in ev.mejoras if m.strip()],
         "competicion": (ev.comentarios.get(catalogo.COMPETICION) or {}).get("pulido", ""),
