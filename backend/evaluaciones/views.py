@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from academy.models import Jugador
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
-from . import catalogo, fichero, ia
+from . import catalogo, drive, fichero, ia
 from .models import Evaluacion
 from .serializers import EvaluacionSerializer
 
@@ -63,7 +63,8 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False)
     def catalogo(self, request):
-        return Response({"bloques": catalogo.para_api(), "ia": bool(settings.ANTHROPIC_API_KEY)})
+        return Response({"bloques": catalogo.para_api(), "ia": bool(settings.ANTHROPIC_API_KEY),
+                         "drive": drive.configurado()})
 
     def _pulir(self, ev, bloque, texto):
         """Guarda el comentario de `bloque` pulido por Claude. Devuelve el aviso si
@@ -120,6 +121,20 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         ev.save()
         datos = self.get_serializer(ev).data
         return Response({**datos, "avisos": list(dict.fromkeys(avisos))})
+
+    @action(detail=True, methods=["post"])
+    def drive(self, request, pk=None):
+        """Guarda (o reescribe) el informe terminado en la carpeta del jugador en Drive."""
+        ev = self._editable(self.get_object())
+        if ev.estado != Evaluacion.Estado.TERMINADA:
+            raise ValidationError({"estado": "Solo se guardan en Drive los informes terminados."})
+        aviso = None
+        try:
+            ev.drive_file_id, ev.drive_url = drive.subir(ev)
+            ev.save(update_fields=["drive_file_id", "drive_url", "actualizada"])
+        except drive.DriveNoDisponible as e:
+            aviso = f"{e} El informe está guardado en la app; puedes reintentarlo desde su ficha."
+        return Response({**self.get_serializer(ev).data, "aviso": aviso})
 
     @action(detail=True)
     def fichero(self, request, pk=None):

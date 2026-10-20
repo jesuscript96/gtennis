@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Evaluacion
+from .models import CarpetaJugador, Evaluacion
 
 
 @admin.register(Evaluacion)
@@ -10,3 +10,9 @@ class EvaluacionAdmin(admin.ModelAdmin):
     search_fields = ("jugador__nombre", "nombre_evaluador")
     autocomplete_fields = ["jugador"]
     readonly_fields = ("creada", "actualizada", "terminada_en")
+
+
+@admin.register(CarpetaJugador)
+class CarpetaJugadorAdmin(admin.ModelAdmin):
+    list_display = ("jugador", "folder_id")
+    search_fields = ("jugador__nombre", "folder_id")

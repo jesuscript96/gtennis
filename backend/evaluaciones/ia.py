@@ -16,8 +16,6 @@ from . import catalogo
 
 log = logging.getLogger(__name__)
 
-MODELO = "claude-sonnet-5-5"
-
 IDIOMA = {"ES": "español", "EN": "inglés"}
 
 
@@ -44,7 +42,7 @@ def _llamar(output_config=None, **kwargs):
     # Esfuerzo bajo: es pulir un párrafo o resumir una ficha, no hace falta pensar más.
     config = {"effort": "low", **(output_config or {})}
     try:
-        return _cliente().messages.create(model=MODELO, output_config=config, **kwargs)
+        return _cliente().messages.create(model=settings.ANTHROPIC_MODEL, output_config=config, **kwargs)
     except anthropic.AuthenticationError as e:
         log.error("Clave de la API de Claude rechazada: %s", e)
         raise IANoDisponible("La clave de la API de Claude no es válida. Se guarda el texto tal cual.") from e

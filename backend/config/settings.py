@@ -149,3 +149,11 @@ SESAME_API_TOKEN = os.environ.get("SESAME_API_TOKEN", "")
 # las evaluaciones funcionan igual, pero los comentarios se guardan tal cual y
 # las fortalezas y mejoras las escribe el entrenador.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# Modelo de Claude para las evaluaciones. Se cambia con un secreto en Fly, sin desplegar.
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+
+# Google Drive (Workspace del club): cuenta de servicio con acceso de «Gestor de
+# contenido» a la unidad compartida de informes. La clave va en JSON, tal cual o
+# en base64. Sin ella los informes se descargan pero no se suben.
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+DRIVE_INFORMES_ID = os.environ.get("DRIVE_INFORMES_ID", "")

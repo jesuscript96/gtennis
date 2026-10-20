@@ -57,3 +57,17 @@ class Evaluacion(models.Model):
 
     def puede_editar(self, user):
         return bool(user.is_superadmin or (self.evaluador_id and self.evaluador_id == user.id))
+
+
+class CarpetaJugador(models.Model):
+    """La carpeta de un jugador en la unidad compartida de informes de Drive."""
+
+    jugador = models.OneToOneField("academy.Jugador", on_delete=models.CASCADE, related_name="carpeta_drive")
+    folder_id = models.CharField(max_length=120)
+
+    class Meta:
+        verbose_name = "carpeta de Drive"
+        verbose_name_plural = "carpetas de Drive"
+
+    def __str__(self):
+        return f"{self.jugador} → {self.folder_id}"

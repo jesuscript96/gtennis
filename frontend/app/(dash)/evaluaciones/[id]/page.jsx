@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import AsistenteEvaluacion from "../../../../components/AsistenteEvaluacion";
 import {
-  borrarEvaluacion, getCatalogoEvaluacion, getEvaluacion, getFicheroEvaluacion,
+  borrarEvaluacion, getCatalogoEvaluacion, getEvaluacion, getFicheroEvaluacion, guardarEvaluacionEnDrive,
 } from "../../../../lib/api";
 import { fmtLarga } from "../../../../lib/torneos";
 
@@ -51,6 +51,8 @@ export default function EvaluacionPage() {
   const [catalogo, setCatalogo] = useState(null);
   const [editando, setEditando] = useState(false);
   const [error, setError] = useState("");
+  // null · "subiendo" · {aviso}: estado de la copia en la carpeta del jugador.
+  const [drive, setDrive] = useState(null);
 
   useEffect(() => {
     Promise.all([getEvaluacion(id), getCatalogoEvaluacion()])
@@ -71,6 +73,15 @@ export default function EvaluacionPage() {
     } catch (e) { setError(e.message); }
   }
 
+  async function subirADrive() {
+    setDrive("subiendo");
+    try {
+      const { aviso, ...nuevo } = await guardarEvaluacionEnDrive(id);
+      setEv(nuevo);
+      setDrive(aviso ? { aviso } : null);
+    } catch (e) { setDrive({ aviso: e.message }); }
+  }
+
   async function borrar() {
     if (!window.confirm(`¿Borrar la evaluación de ${ev.jugador_nombre} del ${fmtLarga(ev.fecha)}?`)) return;
     try { await borrarEvaluacion(id); router.push("/evaluaciones"); } catch (e) { setError(e.message); }
@@ -89,7 +100,7 @@ export default function EvaluacionPage() {
       {editando ? (
         <AsistenteEvaluacion evaluacion={ev} bloques={catalogo.bloques} ia={catalogo.ia}
           pasoInicio={ev.estado === "TERMINADA" ? 1 : undefined}
-          onCambio={setEv} onTerminada={(e) => { setEv(e); setEditando(false); }} />
+          onCambio={setEv} onTerminada={(e) => { setEv(e); setEditando(false); if (catalogo.drive) subirADrive(); }} />
       ) : (
         <>
           <p className="eval-cabecera">
@@ -99,9 +110,15 @@ export default function EvaluacionPage() {
           <div className="eval-acciones">
             {ev.puede_editar && <button type="button" className="btn" onClick={() => setEditando(true)}>
               {ev.estado === "BORRADOR" ? "Seguir" : "Editar"}</button>}
+            {ev.drive_url && <a className="btn ghost" href={ev.drive_url} target="_blank" rel="noreferrer">Abrir en Drive</a>}
+            {ev.estado === "TERMINADA" && catalogo.drive && ev.puede_editar && !ev.drive_url && (
+              <button type="button" className="btn ghost" disabled={drive === "subiendo"} onClick={subirADrive}>Guardar en Drive</button>
+            )}
             {ev.estado === "TERMINADA" && <button type="button" className="btn ghost" onClick={descargar}>Descargar .txt</button>}
             {ev.puede_editar && <button type="button" className="btn danger" onClick={borrar}>Borrar</button>}
           </div>
+          {drive === "subiendo" && <p className="eval-nota" role="status">Guardando en la carpeta del jugador en Drive…</p>}
+          {drive?.aviso && <p className="err" role="alert">{drive.aviso}</p>}
           {error && <p className="err">{error}</p>}
           <Informe ev={ev} bloques={catalogo.bloques} />
         </>

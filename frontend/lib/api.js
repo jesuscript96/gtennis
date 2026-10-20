@@ -334,3 +334,6 @@ export const pulirComentario = (id, bloque, texto) =>
 export const terminarEvaluacion = (id, rehacerResumen = false) =>
   req(`/evaluaciones/${id}/terminar/`, { method: "POST", body: JSON.stringify({ rehacer_resumen: rehacerResumen }) });
 export const getFicheroEvaluacion = (id) => req(`/evaluaciones/${id}/fichero/`);
+// Sube (o reescribe) el informe terminado en la carpeta del jugador en Drive ({…evaluación, aviso}).
+export const guardarEvaluacionEnDrive = (id) =>
+  req(`/evaluaciones/${id}/drive/`, { method: "POST", body: "{}" });

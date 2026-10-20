@@ -167,3 +167,73 @@ class EvaluacionesTests(TestCase):
         self.assertEqual([b["clave"] for b in r.data["bloques"]],
                          ["drive", "backhand", "serve", "volley", "smash", "tactic", "fitness", "psych"])
         self.assertEqual(sum(len(b["criterios"]) for b in r.data["bloques"]), 34)
+
+
+class FakeResp:
+    def __init__(self, data, status=200):
+        self._data, self.status_code = data, status
+        self.ok = status < 400
+        self.text = str(data)
+
+    def json(self):
+        return self._data
+
+
+class FakeDrive:
+    """Lo mínimo de la API de Drive para seguir qué se crea y dónde."""
+
+    def __init__(self):
+        self.creados = []
+
+    def get(self, url, params=None):
+        if "q" in (params or {}):
+            return FakeResp({"files": []})
+        return FakeResp({"id": url.rsplit("/", 1)[-1], "trashed": False})
+
+    def post(self, url, params=None, json=None, data=None, headers=None):
+        self.creados.append(url)
+        return FakeResp({"id": f"id{len(self.creados)}", "webViewLink": f"https://drive/{len(self.creados)}"})
+
+    def patch(self, url, params=None, data=None, headers=None, json=None):
+        return FakeResp({"id": url.rsplit("/", 1)[-1], "webViewLink": "https://drive/actualizado"})
+
+
+@override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="{}", DRIVE_INFORMES_ID="raiz")
+class DriveTests(TestCase):
+    def setUp(self):
+        self.blas = Entrenador.objects.create(nombre="Blas")
+        self.ana = Jugador.objects.create(nombre="Ana López", entrenador_responsable=self.blas)
+        self.u = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
+        self.blas.user = self.u
+        self.blas.save(update_fields=["user"])
+        self.ev = Evaluacion.objects.create(jugador=self.ana, evaluador=self.u, nombre_evaluador="Blas",
+                                            estado="TERMINADA", puntuaciones=TODAS)
+        self.c = APIClient()
+        self.c.force_authenticate(self.u)
+
+    def test_carpeta_una_vez_y_el_mismo_fichero_al_reguardar(self):
+        from . import drive
+        fake = FakeDrive()
+        with mock.patch.object(drive, "_sesion", return_value=fake):
+            r = self.c.post(f"/api/evaluaciones/{self.ev.id}/drive/", {}, format="json")
+            self.assertEqual(r.status_code, 200, r.data)
+            self.assertIsNone(r.data["aviso"])
+            self.assertEqual(r.data["drive_url"], "https://drive/2")
+            # 1 carpeta + 1 fichero; la carpeta queda recordada
+            self.assertEqual(len(fake.creados), 2)
+            self.assertEqual(self.ana.carpeta_drive.folder_id, "id1")
+            r = self.c.post(f"/api/evaluaciones/{self.ev.id}/drive/", {}, format="json")
+        self.assertEqual(len(fake.creados), 2)  # reescribe, no crea otro
+        self.assertEqual(r.data["drive_url"], "https://drive/actualizado")
+
+    @override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")
+    def test_sin_drive_avisa_y_no_falla(self):
+        r = self.c.post(f"/api/evaluaciones/{self.ev.id}/drive/", {}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Drive no está conectado", r.data["aviso"])
+        self.assertFalse(self.c.get("/api/evaluaciones/catalogo/").data["drive"])
+
+    def test_un_borrador_no_va_a_drive(self):
+        self.ev.estado = "BORRADOR"
+        self.ev.save()
+        self.assertEqual(self.c.post(f"/api/evaluaciones/{self.ev.id}/drive/", {}, format="json").status_code, 400)
