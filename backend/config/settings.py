@@ -145,6 +145,9 @@ CELERY_TIMEZONE = TIME_ZONE
 SESAME_API_BASE = os.environ.get("SESAME_API_BASE", "")
 SESAME_API_TOKEN = os.environ.get("SESAME_API_TOKEN", "")
 
+# El front lee el nombre del PDF descargado de esta cabecera (viene de otro dominio).
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+
 # Clave de la API de Claude (cuenta del club en console.anthropic.com). Sin ella
 # las evaluaciones funcionan igual, pero los comentarios se guardan tal cual y
 # las fortalezas y mejoras las escribe el entrenador.

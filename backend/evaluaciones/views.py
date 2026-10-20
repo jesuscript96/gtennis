@@ -1,4 +1,6 @@
 from django.conf import settings
+from django.http import HttpResponse
+from django.utils.http import content_disposition_header
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -9,7 +11,7 @@ from rest_framework.response import Response
 from academy.models import Jugador
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
-from . import catalogo, drive, fichero, ia
+from . import catalogo, drive, fichero, ia, pdf
 from .models import Evaluacion
 from .serializers import EvaluacionSerializer
 
@@ -135,6 +137,14 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         except drive.DriveNoDisponible as e:
             aviso = f"{e} El informe está guardado en la app; puedes reintentarlo desde su ficha."
         return Response({**self.get_serializer(ev).data, "aviso": aviso})
+
+    @action(detail=True, url_path="pdf")
+    def informe_pdf(self, request, pk=None):
+        """El informe maquetado, para descargarlo."""
+        ev = self.get_object()
+        respuesta = HttpResponse(pdf.generar(ev), content_type="application/pdf")
+        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre(ev))
+        return respuesta
 
     @action(detail=True)
     def fichero(self, request, pk=None):

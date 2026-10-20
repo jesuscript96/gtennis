@@ -11,3 +11,4 @@ gunicorn>=22.0
 anthropic>=1.15
 google-auth>=2.30
 requests>=2.32
+weasyprint>=66

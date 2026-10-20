@@ -2,7 +2,7 @@
 
 La app entra con una cuenta de servicio del Workspace del club que es «Gestor de
 contenido» de la unidad `DRIVE_INFORMES_ID`. Dentro, una carpeta por jugador
-(se crea la primera vez y se recuerda en `CarpetaJugador`) y en ella el `.txt`
+(se crea la primera vez y se recuerda en `CarpetaJugador`) y en ella el PDF
 de cada evaluación. Si el informe se vuelve a guardar, se reescribe el mismo
 fichero en vez de duplicarlo.
 """
@@ -13,7 +13,7 @@ import uuid
 
 from django.conf import settings
 
-from . import fichero
+from . import pdf
 from .models import CarpetaJugador
 
 log = logging.getLogger(__name__)
@@ -87,22 +87,21 @@ def _carpeta_jugador(s, jugador):
     return folder_id
 
 
-def _multipart(metadatos, contenido):
+def _multipart(metadatos, contenido, tipo="application/pdf"):
     frontera = uuid.uuid4().hex
     cuerpo = (
         f"--{frontera}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{json.dumps(metadatos)}\r\n"
-        f"--{frontera}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{contenido}\r\n"
-        f"--{frontera}--"
-    ).encode("utf-8")
+        f"--{frontera}\r\nContent-Type: {tipo}\r\n\r\n"
+    ).encode("utf-8") + contenido + f"\r\n--{frontera}--".encode("utf-8")
     return cuerpo, {"Content-Type": f"multipart/related; boundary={frontera}"}
 
 
 def subir(ev):
-    """Sube (o reescribe) el `.txt` del informe en la carpeta del jugador.
+    """Sube (o reescribe) el PDF del informe en la carpeta del jugador.
     Devuelve `(file_id, url)`."""
     try:
         s = _sesion()
-        nombre, contenido = fichero.nombre(ev), fichero.contenido(ev)
+        nombre, contenido = pdf.nombre(ev), pdf.generar(ev)
         params = {**COMUN, "uploadType": "multipart", "fields": "id,webViewLink"}
         if ev.drive_file_id and _sigue_ahi(s, ev.drive_file_id):
             cuerpo, cab = _multipart({"name": nombre}, contenido)
@@ -110,8 +109,7 @@ def subir(ev):
                         "actualizar el informe")
         else:
             carpeta = _carpeta_jugador(s, ev.jugador)
-            # text/plain y sin convertir: que Drive no lo pase a documento de Google.
-            cuerpo, cab = _multipart({"name": nombre, "parents": [carpeta], "mimeType": "text/plain"}, contenido)
+            cuerpo, cab = _multipart({"name": nombre, "parents": [carpeta], "mimeType": "application/pdf"}, contenido)
             datos = _ok(s.post(SUBIDA, params=params, data=cuerpo, headers=cab), "guardar el informe")
         return datos["id"], datos.get("webViewLink", "")
     except DriveNoDisponible:

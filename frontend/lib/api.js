@@ -337,3 +337,13 @@ export const getFicheroEvaluacion = (id) => req(`/evaluaciones/${id}/fichero/`);
 // Sube (o reescribe) el informe terminado en la carpeta del jugador en Drive ({…evaluación, aviso}).
 export const guardarEvaluacionEnDrive = (id) =>
   req(`/evaluaciones/${id}/drive/`, { method: "POST", body: "{}" });
+// El informe en PDF como fichero (no es JSON: va aparte de req()).
+export async function descargarPdfEvaluacion(id) {
+  const res = await fetch(`${BASE}/evaluaciones/${id}/pdf/`, {
+    headers: { Authorization: `Token ${getToken()}` }, cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`No se ha podido generar el PDF (${res.status}).`);
+  const disp = res.headers.get("Content-Disposition") || "";
+  const m = disp.match(/filename\*=utf-8''([^;]+)/i) || disp.match(/filename="?([^";]+)"?/i);
+  return { blob: await res.blob(), nombre: m ? decodeURIComponent(m[1]) : `informe-${id}.pdf` };
+}

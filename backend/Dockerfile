@@ -5,10 +5,13 @@ FROM python:${PYTHON_VERSION}
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
-# install psycopg2 dependencies.
+# install psycopg2 dependencies, and pango/harfbuzz for WeasyPrint (informes en PDF).
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz-subset0 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /code

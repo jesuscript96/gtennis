@@ -8,7 +8,7 @@ van siempre en inglés y en minúsculas, sea cual sea el idioma del informe.
 
 BLOQUES = [
     {
-        "clave": "drive", "titulo": "Drive (Derecha)", "titulo_en": "Forehand",
+        "clave": "drive", "corto": "Drive", "corto_en": "Forehand", "titulo": "Drive (Derecha)", "titulo_en": "Forehand",
         "habilidad": "el Drive", "confirmacion": "Drive guardado.",
         "criterios": [
             ("drive_preparation", "Preparación", "Preparation"),
@@ -18,7 +18,7 @@ BLOQUES = [
         ],
     },
     {
-        "clave": "backhand", "titulo": "Revés", "titulo_en": "Backhand",
+        "clave": "backhand", "corto": "Revés", "corto_en": "Backhand", "titulo": "Revés", "titulo_en": "Backhand",
         "habilidad": "el Revés", "confirmacion": "Revés guardado.",
         "criterios": [
             ("backhand_preparation", "Preparación", "Preparation"),
@@ -28,7 +28,7 @@ BLOQUES = [
         ],
     },
     {
-        "clave": "serve", "titulo": "Saque", "titulo_en": "Serve",
+        "clave": "serve", "corto": "Saque", "corto_en": "Serve", "titulo": "Saque", "titulo_en": "Serve",
         "habilidad": "el Saque", "confirmacion": "Saque guardado.",
         "criterios": [
             ("serve_posture", "Postura", "Posture"),
@@ -39,7 +39,7 @@ BLOQUES = [
         ],
     },
     {
-        "clave": "volley", "titulo": "Volea", "titulo_en": "Volley",
+        "clave": "volley", "corto": "Volea", "corto_en": "Volley", "titulo": "Volea", "titulo_en": "Volley",
         "habilidad": "la Volea", "confirmacion": "Volea guardada.",
         "criterios": [
             ("volley_technique", "Técnica", "Technique"),
@@ -49,7 +49,7 @@ BLOQUES = [
         ],
     },
     {
-        "clave": "smash", "titulo": "Smash", "titulo_en": "Smash",
+        "clave": "smash", "corto": "Smash", "corto_en": "Smash", "titulo": "Smash", "titulo_en": "Smash",
         "habilidad": "el Smash", "confirmacion": "Smash guardado.",
         "criterios": [
             ("smash_technique", "Técnica", "Technique"),
@@ -59,7 +59,7 @@ BLOQUES = [
         ],
     },
     {
-        "clave": "tactic", "titulo": "Táctica", "titulo_en": "Tactics",
+        "clave": "tactic", "corto": "Táctica", "corto_en": "Tactics", "titulo": "Táctica", "titulo_en": "Tactics",
         "habilidad": "la Táctica", "confirmacion": "Táctica guardada.",
         "criterios": [
             ("tactic_decisions", "Toma de Decisiones", "Decision Making"),
@@ -69,7 +69,7 @@ BLOQUES = [
         ],
     },
     {
-        "clave": "fitness", "titulo": "Condición Física", "titulo_en": "Fitness",
+        "clave": "fitness", "corto": "Condición física", "corto_en": "Fitness", "titulo": "Condición Física", "titulo_en": "Fitness",
         "habilidad": "la Condición Física", "confirmacion": "Condición física guardada.",
         "criterios": [
             ("fitness_speed", "Velocidad", "Speed"),
@@ -79,7 +79,7 @@ BLOQUES = [
         ],
     },
     {
-        "clave": "psych", "titulo": "Aspecto Psicológico y Actitudinal",
+        "clave": "psych", "corto": "Psicológico", "corto_en": "Mental", "titulo": "Aspecto Psicológico y Actitudinal",
         "titulo_en": "Mental and Attitude",
         "habilidad": "el Aspecto Psicológico", "confirmacion": "Aspecto psicológico guardado.",
         "criterios": [

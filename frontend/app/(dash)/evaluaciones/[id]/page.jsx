@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import AsistenteEvaluacion from "../../../../components/AsistenteEvaluacion";
 import {
-  borrarEvaluacion, getCatalogoEvaluacion, getEvaluacion, getFicheroEvaluacion, guardarEvaluacionEnDrive,
+  borrarEvaluacion, descargarPdfEvaluacion, getCatalogoEvaluacion, getEvaluacion, guardarEvaluacionEnDrive,
 } from "../../../../lib/api";
 import { fmtLarga } from "../../../../lib/torneos";
 
@@ -65,8 +65,8 @@ export default function EvaluacionPage() {
 
   async function descargar() {
     try {
-      const f = await getFicheroEvaluacion(id);
-      const url = URL.createObjectURL(new Blob([f.contenido], { type: "text/plain;charset=utf-8" }));
+      const f = await descargarPdfEvaluacion(id);
+      const url = URL.createObjectURL(f.blob);
       const a = Object.assign(document.createElement("a"), { href: url, download: f.nombre });
       a.click();
       URL.revokeObjectURL(url);
@@ -114,7 +114,7 @@ export default function EvaluacionPage() {
             {ev.estado === "TERMINADA" && catalogo.drive && ev.puede_editar && !ev.drive_url && (
               <button type="button" className="btn ghost" disabled={drive === "subiendo"} onClick={subirADrive}>Guardar en Drive</button>
             )}
-            {ev.estado === "TERMINADA" && <button type="button" className="btn ghost" onClick={descargar}>Descargar .txt</button>}
+            {ev.estado === "TERMINADA" && <button type="button" className="btn ghost" onClick={descargar}>Descargar PDF</button>}
             {ev.puede_editar && <button type="button" className="btn danger" onClick={borrar}>Borrar</button>}
           </div>
           {drive === "subiendo" && <p className="eval-nota" role="status">Guardando en la carpeta del jugador en Drive…</p>}

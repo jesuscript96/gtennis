@@ -198,6 +198,13 @@ class FakeDrive:
         return FakeResp({"id": url.rsplit("/", 1)[-1], "webViewLink": "https://drive/actualizado"})
 
 
+# El cliente de test de Django 5.1 copia el contexto de cada plantilla que se
+# pinta y en Python 3.14 esa copia revienta. En producción no existe ese
+# enganche: se anula solo aquí, donde las vistas pintan el PDF.
+SIN_CAPTURA_DE_PLANTILLAS = mock.patch("django.test.client.store_rendered_templates", lambda *a, **k: None)
+
+
+@SIN_CAPTURA_DE_PLANTILLAS
 @override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="{}", DRIVE_INFORMES_ID="raiz")
 class DriveTests(TestCase):
     def setUp(self):
@@ -237,3 +244,39 @@ class DriveTests(TestCase):
         self.ev.estado = "BORRADOR"
         self.ev.save()
         self.assertEqual(self.c.post(f"/api/evaluaciones/{self.ev.id}/drive/", {}, format="json").status_code, 400)
+
+
+@SIN_CAPTURA_DE_PLANTILLAS
+class PdfTests(TestCase):
+    def setUp(self):
+        self.blas = Entrenador.objects.create(nombre="Blas")
+        self.ana = Jugador.objects.create(nombre='Ana "Anita" López', entrenador_responsable=self.blas)
+        self.u = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
+        self.blas.user = self.u
+        self.blas.save(update_fields=["user"])
+        notas = {**TODAS, **{k: 5 for k in TODAS if k.startswith("serve")}, **{k: 2 for k in TODAS if k.startswith("volley")}}
+        self.ev = Evaluacion.objects.create(jugador=self.ana, evaluador=self.u, nombre_evaluador="Blas",
+                                            fecha=date(2026, 10, 20), estado="TERMINADA", puntuaciones=notas)
+
+    def test_datos_ordenados_y_con_coma(self):
+        from . import pdf
+        d = pdf.datos(self.ev)
+        self.assertEqual([b["corto"] for b in d["ordenados"]][0], "Saque")
+        self.assertEqual(d["ordenados"][-1]["corto"], "Volea")
+        self.assertEqual(d["ordenados"][-1]["media"], "2,0")
+        self.assertEqual(d["ordenados"][-1]["ancho"], "40.0")  # CSS: punto decimal siempre
+        self.assertEqual(d["fecha"], "20 de octubre de 2026")
+        self.assertIn('\\"Anita\\"', d["pie"])
+        self.ev.idioma = "EN"
+        d = pdf.datos(self.ev)
+        self.assertEqual(d["ordenados"][-1]["media"], "2.0")
+        self.assertEqual(d["ordenados"][0]["corto"], "Serve")
+
+    def test_descarga_el_pdf(self):
+        c = APIClient()
+        c.force_authenticate(self.u)
+        r = c.get(f"/api/evaluaciones/{self.ev.id}/pdf/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertTrue(r.content.startswith(b"%PDF"))
+        self.assertIn("20-10-2026-ES.pdf", r["Content-Disposition"])

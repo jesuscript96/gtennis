@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="{{ t.lang }}">
+<head>
+<meta charset="utf-8">
+<title>{{ t.informe }} · {{ jugador }}</title>
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("fuentes/inter-latin-400-normal.woff"); }
+@font-face { font-family: "Inter"; font-weight: 500; src: url("fuentes/inter-latin-500-normal.woff"); }
+@font-face { font-family: "Inter"; font-weight: 600; src: url("fuentes/inter-latin-600-normal.woff"); }
+@font-face { font-family: "Fraunces"; font-weight: 500; src: url("fuentes/fraunces-latin-500-normal.woff"); }
+@font-face { font-family: "Fraunces"; font-weight: 600; src: url("fuentes/fraunces-latin-600-normal.woff"); }
+@font-face { font-family: "Fraunces"; font-weight: 400; font-style: italic; src: url("fuentes/fraunces-latin-400-italic.woff"); }
+
+:root {
+  --tinta: #1f1e1d;
+  --gris: #6f6b64;
+  --suave: #9a958c;
+  --linea: #e7e2d9;
+  --pista: #efebe4;
+  --fondo: #faf8f4;
+  --arcilla: #c96442;
+  --arcilla-osc: #a44e31;
+}
+
+@page {
+  size: A4;
+  margin: 16mm 16mm 20mm;
+  @bottom-left {
+    content: "{{ pie|safe }}";
+    font: 400 7.5pt "Inter"; color: #9a958c;
+  }
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font: 400 7.5pt "Inter"; color: #9a958c;
+  }
+}
+
+* { box-sizing: border-box; }
+body { font: 400 9.5pt/1.45 "Inter"; color: var(--tinta); margin: 0; }
+h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+
+/* Cabecera */
+.marca { display: flex; justify-content: space-between; align-items: center;
+  border-top: 3pt solid var(--arcilla); padding-top: 7pt;
+  font: 600 7.5pt "Inter"; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gris); }
+.marca b { color: var(--arcilla); font-weight: 600; }
+.jugador { font-size: 32pt; line-height: 1.05; margin: 22pt 0 6pt; }
+.meta { color: var(--gris); font-size: 9.5pt; }
+.meta b { color: var(--tinta); font-weight: 500; }
+
+/* Visión general */
+.general { display: flex; gap: 22pt; margin-top: 22pt; padding: 18pt 20pt;
+  background: var(--fondo); border: 0.75pt solid var(--linea); border-radius: 8pt; }
+.media { width: 118pt; flex: none; border-right: 0.75pt solid var(--linea); padding-right: 18pt; }
+.media .etq { font: 600 7.5pt "Inter"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gris); }
+.media .num { font: 600 46pt/1 "Fraunces"; color: var(--tinta); margin-top: 8pt; }
+.media .de { font-size: 9pt; color: var(--gris); margin-top: 4pt; }
+.media .nota { font-size: 7.5pt; color: var(--suave); margin-top: 14pt; line-height: 1.4; }
+
+.barras { flex: 1; }
+.barras h2 { font: 600 7.5pt "Inter"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gris); margin-bottom: 8pt; }
+.barras table { width: 100%; border-collapse: collapse; }
+.barras td { padding: 3.2pt 0; vertical-align: middle; }
+.barras .nombre { width: 92pt; font-size: 9pt; padding-right: 10pt; }
+.barras .pista { height: 9pt; background: var(--pista); border-radius: 0 3pt 3pt 0; }
+.barras .relleno { height: 9pt; background: var(--arcilla); border-radius: 0 3pt 3pt 0; }
+.barras .valor { width: 26pt; text-align: right; font-weight: 600; font-size: 9pt; }
+
+/* Fortalezas y mejoras */
+.dos { display: flex; gap: 14pt; margin-top: 16pt; }
+.caja { flex: 1; border: 0.75pt solid var(--linea); border-radius: 8pt; padding: 14pt 16pt; }
+.caja h2 { font-size: 13pt; margin-bottom: 8pt; }
+.caja ul { list-style: none; margin: 0; padding: 0; }
+.caja li { position: relative; padding-left: 15pt; margin: 6pt 0; font-size: 9.5pt; }
+.caja li::before { content: ""; position: absolute; left: 0; top: 4pt; width: 6pt; height: 6pt; border-radius: 50%; }
+.fuertes li::before { background: var(--arcilla); }
+.mejoras li::before { border: 1.2pt solid var(--arcilla); }
+.vacio { color: var(--suave); font-style: italic; }
+
+.competicion { margin-top: 14pt; padding: 12pt 16pt; border-left: 2.5pt solid var(--arcilla); background: var(--fondo); }
+.competicion h2 { font: 600 7.5pt "Inter"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gris); margin-bottom: 4pt; }
+
+/* Detalle por bloque */
+.detalle { break-before: page; }
+.detalle > h2 { font-size: 18pt; margin-bottom: 4pt; }
+.detalle > p { color: var(--gris); margin: 0 0 14pt; font-size: 8.5pt; }
+.rejilla { width: 100%; border-collapse: separate; border-spacing: 9pt 9pt; margin: -9pt; width: calc(100% + 18pt); table-layout: fixed; }
+.rejilla td { width: 50%; vertical-align: top; border: 0.75pt solid var(--linea); border-radius: 8pt; padding: 9pt 12pt 10pt; }
+.rejilla tr { break-inside: avoid; }
+.cab { width: 100%; border-collapse: collapse; margin-bottom: 5pt; }
+.cab td { border: 0; padding: 0; vertical-align: baseline; }
+.bloque-tit { font: 600 11.5pt "Fraunces"; }
+.prom { text-align: right; white-space: nowrap; font: 600 11pt "Fraunces"; color: var(--arcilla-osc); width: 44pt; }
+.prom small { font: 400 7.5pt "Inter"; color: var(--suave); }
+.crits { width: 100%; border-collapse: collapse; }
+.crits td { border: 0; padding: 1.6pt 0; font-size: 8.5pt; vertical-align: middle; }
+.crits .seg { width: 66pt; white-space: nowrap; font-size: 0; }
+.crits .seg i { display: inline-block; width: 11pt; height: 5.5pt; border-radius: 1.5pt; background: var(--pista); margin-left: 2pt; }
+.crits .seg i.on { background: var(--arcilla); }
+.crits .n { width: 14pt; text-align: right; font-weight: 600; }
+.comentario { margin: 7pt 0 0; padding-top: 6pt; border-top: 0.75pt solid var(--linea);
+  font: italic 400 8.6pt/1.42 "Fraunces"; color: #3a3835; }
+.comentario.vacio { font: 400 8pt "Inter"; color: var(--suave); }
+</style>
+</head>
+<body>
+
+<div class="marca"><span><b>G Tenis</b> · {{ t.academia }}</span><span>{{ t.informe }}</span></div>
+
+<h1 class="jugador">{{ jugador }}</h1>
+<div class="meta">{{ fecha }} · {{ t.evaluado }} <b>{{ entrenador }}</b></div>
+
+<section class="general">
+  <div class="media">
+    <div class="etq">{{ t.media }}</div>
+    <div class="num">{{ media }}</div>
+    <div class="de">{{ t.sobre }}</div>
+    <div class="nota">{{ t.nota_media }}</div>
+  </div>
+  <div class="barras">
+    <h2>{{ t.por_bloque }}</h2>
+    <table>
+      {% for b in ordenados %}
+      <tr>
+        <td class="nombre">{{ b.corto }}</td>
+        <td><div class="pista"><div class="relleno" style="width: {{ b.ancho }}%"></div></div></td>
+        <td class="valor">{{ b.media }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+<div class="dos">
+  <section class="caja fuertes">
+    <h2>{{ t.fortalezas }}</h2>
+    {% if fortalezas %}<ul>{% for f in fortalezas %}<li>{{ f }}</li>{% endfor %}</ul>
+    {% else %}<p class="vacio">—</p>{% endif %}
+  </section>
+  <section class="caja mejoras">
+    <h2>{{ t.mejoras }}</h2>
+    {% if mejoras %}<ul>{% for m in mejoras %}<li>{{ m }}</li>{% endfor %}</ul>
+    {% else %}<p class="vacio">—</p>{% endif %}
+  </section>
+</div>
+
+<section class="competicion">
+  <h2>{{ t.competicion }}</h2>
+  <div{% if not competicion %} class="vacio"{% endif %}>{{ competicion|default:t.sin_resultados }}</div>
+</section>
+
+<section class="detalle">
+  <h2>{{ t.detalle }}</h2>
+  <p>{{ t.escala }}</p>
+  <table class="rejilla">
+    {% for par in pares %}
+    <tr>
+      {% for b in par %}
+      <td>
+        <table class="cab"><tr><td class="bloque-tit">{{ b.titulo }}</td><td class="prom">{{ b.media }} <small>/ 5</small></td></tr></table>
+        <table class="crits">
+          {% for c in b.criterios %}
+          <tr><td>{{ c.etiqueta }}</td><td class="seg">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
+          {% endfor %}
+        </table>
+        {% if b.comentario %}<p class="comentario">{{ b.comentario }}</p>
+        {% else %}<p class="comentario vacio">{{ t.sin_observaciones }}</p>{% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+</body>
+</html>
