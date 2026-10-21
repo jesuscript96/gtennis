@@ -369,3 +369,16 @@ export async function descargarPdfEvaluacion(id) {
   const m = disp.match(/filename\*=utf-8''([^;]+)/i) || disp.match(/filename="?([^";]+)"?/i);
   return { blob: await res.blob(), nombre: m ? decodeURIComponent(m[1]) : `informe-${id}.pdf` };
 }
+
+// --- Evaluaciones físicas (preparador físico y gestión deportiva) ----------
+export const getCatalogoFisico = () => req("/evaluaciones-fisicas/catalogo/");
+export const getJugadoresFisico = () => req("/evaluaciones-fisicas/jugadores/");
+export const getEvaluacionesFisicas = async () => rows(await req("/evaluaciones-fisicas/"));
+export const getEvaluacionFisica = (id) => req(`/evaluaciones-fisicas/${id}/`);
+export const crearEvaluacionFisica = (body) =>
+  req("/evaluaciones-fisicas/", { method: "POST", body: JSON.stringify(body) });
+export const guardarEvaluacionFisica = (id, body) =>
+  req(`/evaluaciones-fisicas/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
+export const borrarEvaluacionFisica = (id) => req(`/evaluaciones-fisicas/${id}/`, { method: "DELETE" });
+export const terminarEvaluacionFisica = (id) =>
+  req(`/evaluaciones-fisicas/${id}/terminar/`, { method: "POST", body: "{}" });

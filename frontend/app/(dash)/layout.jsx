@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getToken, getUser } from "../../lib/api";
-import { canVisit, roleRank } from "../../lib/perms";
+import { canVisit, inicio } from "../../lib/perms";
 import Sidebar from "../../components/Sidebar";
 import SettingsMenu from "../../components/SettingsMenu";
 
@@ -20,8 +20,9 @@ export default function DashLayout({ children }) {
     }
     // Guard por rol: si la ruta exige más nivel del que tiene, al inicio.
     if (!canVisit(pathname)) {
-      // El entrenador no tiene panel general: su inicio es su agenda.
-      router.replace(roleRank(getUser()) === 1 ? "/mi-agenda" : "/");
+      // El entrenador no tiene panel general (su inicio es su agenda) y el
+      // preparador físico solo tiene Evaluaciones.
+      router.replace(inicio(getUser()));
       return;
     }
     setOk(true);

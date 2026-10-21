@@ -71,3 +71,42 @@ class CarpetaJugador(models.Model):
 
     def __str__(self):
         return f"{self.jugador} → {self.folder_id}"
+
+
+class EvaluacionFisica(models.Model):
+    """La parte física del informe de un jugador, hecha por el preparador
+    físico (o gestión deportiva): 11 notas del 1 al 5 y tres textos. Irá en el
+    mismo PDF que la evaluación de tenis cuando se monte la validación."""
+
+    class Estado(models.TextChoices):
+        BORRADOR = "BORRADOR", "Borrador"
+        TERMINADA = "TERMINADA", "Terminada"
+
+    jugador = models.ForeignKey("academy.Jugador", on_delete=models.CASCADE, related_name="evaluaciones_fisicas")
+    evaluador = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="evaluaciones_fisicas_hechas",
+    )
+    nombre_evaluador = models.CharField(max_length=120)
+    fecha = models.DateField(default=timezone.localdate)
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.BORRADOR)
+    # {"fis_aceleracion": 4, …}: las 11 claves de `catalogo.CRITERIOS_FISICO`, del 1 al 5.
+    puntuaciones = models.JSONField(default=dict, blank=True)
+    # {"puntos_fuertes": "…", "a_mejorar": "…", "notas_fisio": "…"}
+    textos = models.JSONField(default=dict, blank=True)
+
+    creada = models.DateTimeField(auto_now_add=True)
+    actualizada = models.DateTimeField(auto_now=True)
+    terminada_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-fecha", "-creada"]
+        verbose_name = "evaluación física"
+        verbose_name_plural = "evaluaciones físicas"
+
+    def __str__(self):
+        return f"{self.jugador} · físico · {self.fecha:%d-%m-%Y}"
+
+    def puede_editar(self, user):
+        from academy.permissions import gestion_deportiva
+        return bool(gestion_deportiva(user) or (self.evaluador_id and self.evaluador_id == user.id))

@@ -10,7 +10,17 @@ export function roleRank(user) {
 }
 
 export function navRole(user = getUser()) {
+  if (user?.is_preparador) return "preparador";
   return user?.is_superadmin ? "direccion" : user?.is_coach ? "coach" : "entrenador";
+}
+
+// El preparador físico (21/10/2026) solo entra en Evaluaciones y en su cuenta.
+const RUTAS_PREPARADOR = ["/evaluaciones", "/mi-cuenta"];
+
+/** A dónde va cada uno al entrar o si pide una ruta que no le toca. */
+export function inicio(user = getUser()) {
+  if (user?.is_preparador) return "/evaluaciones";
+  return roleRank(user) === 1 ? "/mi-agenda" : "/";
 }
 
 const NEED = { direccion: 3, coach: 2, entrenador: 1 };
@@ -52,6 +62,9 @@ const PATH_MIN = {
 };
 
 export function canVisit(path, user = getUser()) {
+  if (user?.is_preparador) {
+    return RUTAS_PREPARADOR.some((r) => path === r || path.startsWith(r + "/"));
+  }
   // La ruta exacta o la más larga de la que cuelga (/torneos/123 → /torneos).
   const clave = Object.keys(PATH_MIN)
     .filter((k) => path === k || (k !== "/" && path.startsWith(k + "/")))

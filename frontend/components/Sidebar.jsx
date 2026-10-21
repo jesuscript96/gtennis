@@ -80,11 +80,22 @@ const SECTIONS_ENTRENADOR = [
   ] },
 ];
 
+// El preparador físico (21/10/2026): solo la parte física de los informes.
+const SECTIONS_PREPARADOR = [
+  { title: "Rendimiento", items: [
+    ["/evaluaciones", "Evaluaciones físicas"],
+  ] },
+  { items: [
+    ["/mi-cuenta", "Mi cuenta"],
+  ] },
+];
+
 export default function Sidebar({ onNavigate }) {
   const pathname = usePathname();
   const router = useRouter();
   const user = getUser();
-  const secciones = roleRank(user) === 1 ? SECTIONS_ENTRENADOR : SECTIONS;
+  const secciones = user?.is_preparador ? SECTIONS_PREPARADOR
+    : roleRank(user) === 1 ? SECTIONS_ENTRENADOR : SECTIONS;
   // Avisos sin leer (faltas tras el corte, generación del día…): se miran al
   // cambiar de página, sin sondear.
   const [sinLeer, setSinLeer] = useState(0);
@@ -119,7 +130,7 @@ export default function Sidebar({ onNavigate }) {
         <div className="user-row">
           <div className="user-id">
             <div className="name">{user?.nombre || user?.username || "—"}</div>
-            <div className="role">{user?.is_superadmin ? "Super Admin" : user?.is_coach ? "Coach" : "Entrenador"}</div>
+            <div className="role">{user?.is_superadmin ? "Super Admin" : user?.is_coach ? "Coach" : user?.is_preparador ? "Preparador físico" : "Entrenador"}</div>
           </div>
           <SettingsMenu align="left" up />
         </div>

@@ -919,6 +919,10 @@ class Escuela(models.Model):
     )
     # #6: sus jugadores solo se ubican en el Resort (nunca en clubs satélite).
     solo_central = models.BooleanField(default=False)
+    # 21/10/2026: escuela cuyos alumnos solo existen para los informes de
+    # rendimiento (Competición de tardes). Sus fichas siguen inactivas: no
+    # entran al cuadrante, ni a faltas ni a grupos.
+    solo_informes = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Escuela"

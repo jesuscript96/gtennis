@@ -119,3 +119,73 @@ def para_api():
         }
         for b in BLOQUES
     ]
+
+
+# --- Preparación física (21/10/2026) ---------------------------------------
+# «Informe trimestral de preparación física y cuidado corporal» del club: 11
+# criterios del 1 al 5 en tres bloques y tres textos del preparador. Lo
+# rellena el preparador físico (o gestión deportiva) y va en el mismo PDF que
+# el de tenis.
+
+ESCALA_FISICO = {
+    1: "Muy deficiente", 2: "Insuficiente", 3: "Aceptable / En desarrollo", 4: "Bueno", 5: "Excelente",
+}
+
+BLOQUES_FISICO = [
+    {
+        "clave": "desplazamiento", "titulo": "Desplazamiento y rendimiento físico específico",
+        "criterios": [
+            ("fis_aceleracion", "Aceleración y frenado (footwork específico)",
+             "¿Muestra explosividad en los primeros 2-3 pasos de arranque y un control eficiente al frenar y transferir el peso antes de golpear?"),
+            ("fis_apoyos", "Resistencia a la fuerza en apoyos",
+             "¿Mantiene la profundidad y estabilidad en las piernas en apoyos abiertos y flexión durante series largas o partidos?"),
+            ("fis_agilidad", "Agilidad reactiva y cambios de dirección",
+             "¿Responde con rapidez visual y motora ante cambios de trayectoria inesperados sin perder el equilibrio?"),
+            ("fis_resistencia", "Resistencia específica y recuperación entre puntos",
+             "¿Mantiene la intensidad en intercambios largos y se recupera bien en los 25 segundos de descanso entre puntos?"),
+            ("fis_potencia", "Potencia en la cadena cinética",
+             "¿Transfiere eficientemente la fuerza desde los pies hasta la raqueta en saques y golpes de ataque?"),
+        ],
+    },
+    {
+        "clave": "prevencion", "titulo": "Prevención, fisioterapia y cuidado físico",
+        "criterios": [
+            ("fis_fisioterapia", "Fisioterapia preventiva semanal",
+             "¿Cumple con la sesión semanal de fisioterapia descargativa o preventiva y aplica las pautas del fisioterapeuta en su día a día?"),
+            ("fis_rutinas", "Rutinas autónomas de prevención y movilidad",
+             "¿Hace con rigor los ejercicios de fortalecimiento y movilidad (manguito rotador, cadera, tobillos) fuera de la pista?"),
+            ("fis_dolor", "Comunicación y conciencia corporal ante el dolor",
+             "¿Comunica con honestidad y antelación cualquier molestia física antes de que derive en una lesión, con responsabilidad sobre su salud?"),
+        ],
+    },
+    {
+        "clave": "actitud", "titulo": "Actitud, compromiso y hábitos de trabajo",
+        "criterios": [
+            ("fis_intensidad", "Intensidad, foco y cultura de esfuerzo",
+             "¿Muestra una actitud proactiva, máxima concentración y máxima entrega durante las sesiones físicas?"),
+            ("fis_autonomia", "Autonomía y hábitos (calentamiento y vuelta a la calma)",
+             "¿Hace por su cuenta el calentamiento previo y la rutina de descarga y estiramiento al terminar, sin necesidad de supervisión constante?"),
+            ("fis_fatiga", "Rendimiento y actitud bajo fatiga",
+             "¿Mantiene el nivel de exigencia física y una mentalidad positiva al final de la sesión o cuando el cansancio es alto?"),
+        ],
+    },
+]
+CRITERIOS_FISICO = [c[0] for b in BLOQUES_FISICO for c in b["criterios"]]  # las 11 claves
+
+TEXTOS_FISICO = [
+    ("puntos_fuertes", "Puntos fuertes del trimestre"),
+    ("a_mejorar", "Aspectos físicos prioritarios a mejorar en el siguiente ciclo"),
+    ("notas_fisio", "Notas de prevención y fisioterapia"),
+]
+
+
+def fisico_para_api():
+    return {
+        "escala": [{"valor": k, "etiqueta": v} for k, v in ESCALA_FISICO.items()],
+        "bloques": [
+            {"clave": b["clave"], "titulo": b["titulo"],
+             "criterios": [{"clave": k, "etiqueta": e, "pregunta": p} for k, e, p in b["criterios"]]}
+            for b in BLOQUES_FISICO
+        ],
+        "textos": [{"clave": k, "etiqueta": e} for k, e in TEXTOS_FISICO],
+    }

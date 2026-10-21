@@ -1676,3 +1676,22 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .divisiones-vista.movible ul.miembros > li:active { cursor: grabbing; }
 .divisiones-vista.movible .nombre-alumno { cursor: pointer; }
 .divisiones-vista .deshacer-div { margin-left: .6rem; vertical-align: middle; }
+
+/* --- Evaluación física (21/10/2026) --------------------------------------- */
+.eval-pestanas { margin-bottom: 1rem; }
+.fis-escala { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 4px; }
+.fis-escala b { color: var(--text); font-weight: 600; margin-right: 3px; }
+.fis-criterio { align-items: flex-start; border-top: 1px solid var(--border); padding-top: 12px; }
+.fis-criterio:first-child { border-top: 0; padding-top: 0; }
+.fis-texto { flex: 1 1 260px; min-width: 0; display: grid; gap: 3px; }
+.fis-pregunta { font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+.fis-respuesta { display: grid; gap: 4px; justify-items: end; }
+.fis-elegida { font-size: 12.5px; color: var(--muted); min-height: 1.2em; }
+.fis-media { font: 500 13px var(--font-sans); color: var(--muted); margin-left: 6px; }
+.fis-obs + .fis-obs { margin-top: 14px; }
+.fis-confirmar { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .fis-texto { flex: none; }  /* en columna, la base de 260px se volvía altura */
+  .fis-respuesta { justify-items: stretch; width: 100%; }
+  .fis-elegida { text-align: center; }
+}

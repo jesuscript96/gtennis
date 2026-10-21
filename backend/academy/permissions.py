@@ -60,11 +60,24 @@ class DireccionOrCoachWrite(BasePermission):
         return es_direccion(request.user) or es_coach(request.user)
 
 
-# Mueven alumnos de una división a otra desde la vista de Divisiones
-# (21/10/2026): dirección y, además, Dani Gimeno aunque su rol sea de coach.
-MUEVEN_DIVISIONES = {"daniel.gimeno"}
+# Gestión deportiva (21/10/2026): dirección y, además, Dani Gimeno aunque su
+# rol sea de coach. Mueven alumnos de una división a otra desde Divisiones y
+# ven y hacen la parte física de los informes.
+GESTION_DEPORTIVA = {"daniel.gimeno"}
 
 
-def mueve_divisiones(user):
+def gestion_deportiva(user):
     return es_direccion(user) or bool(
-        user and user.is_authenticated and user.username in MUEVEN_DIVISIONES)
+        user and user.is_authenticated and user.username in GESTION_DEPORTIVA)
+
+
+mueve_divisiones = gestion_deportiva
+
+
+def es_preparador(user):
+    return bool(user and user.is_authenticated and getattr(user, "is_preparador", False))
+
+
+def evalua_fisico(user):
+    """Ve y hace evaluaciones físicas: el preparador físico y gestión deportiva."""
+    return es_preparador(user) or gestion_deportiva(user)

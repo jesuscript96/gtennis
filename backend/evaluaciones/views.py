@@ -9,11 +9,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from academy.models import Jugador
+from academy.permissions import evalua_fisico
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
 from . import catalogo, drive, fichero, ia, pdf
-from .models import Evaluacion
-from .serializers import EvaluacionSerializer
+from .models import Evaluacion, EvaluacionFisica
+from .serializers import EvaluacionFisicaSerializer, EvaluacionSerializer
 
 
 def _nombre_evaluador(user):
@@ -151,3 +152,80 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         """El `.txt` `clave=valor` del informe, para descargarlo."""
         ev = self.get_object()
         return Response({"nombre": fichero.nombre(ev), "contenido": fichero.contenido(ev)})
+
+
+def jugadores_evaluables_fisico():
+    """Los alumnos de las escuelas «solo informes» (hoy, Competición de tardes)."""
+    from django.db.models import Q
+
+    hoy = timezone.localdate()
+    return (Jugador.objects.filter(escuela__solo_informes=True)
+            .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy))
+            .select_related("escuela").order_by("nombre"))
+
+
+class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
+    """Parte física de los informes. Solo para el preparador físico y gestión
+    deportiva (dirección y Dani Gimeno); ven todas, y cambia o borra cada una
+    quien la hizo o gestión deportiva. Filtro: `?jugador=`."""
+
+    serializer_class = EvaluacionFisicaSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if not evalua_fisico(request.user):
+            raise PermissionDenied("La parte física es del preparador físico y de gestión deportiva.")
+
+    def get_queryset(self):
+        qs = EvaluacionFisica.objects.select_related("jugador")
+        if self.request.query_params.get("jugador"):
+            qs = qs.filter(jugador_id=self.request.query_params["jugador"])
+        return qs
+
+    def perform_create(self, serializer):
+        jugador = serializer.validated_data["jugador"]
+        if not jugadores_evaluables_fisico().filter(pk=jugador.pk).exists():
+            raise PermissionDenied("Ese jugador no está en Competición de tardes.")
+        serializer.save(evaluador=self.request.user, nombre_evaluador=_nombre_evaluador(self.request.user))
+
+    def _editable(self, ev):
+        if not ev.puede_editar(self.request.user):
+            raise PermissionDenied("Solo quien la hizo o gestión deportiva pueden cambiarla.")
+        return ev
+
+    def perform_update(self, serializer):
+        self._editable(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._editable(instance).delete()
+
+    @action(detail=False)
+    def catalogo(self, request):
+        return Response(catalogo.fisico_para_api())
+
+    @action(detail=False)
+    def jugadores(self, request):
+        """Los jugadores a los que se les puede hacer la parte física, con la
+        fecha de su última evaluación física."""
+        ultimas = {}
+        for ev in EvaluacionFisica.objects.order_by("fecha").values("jugador_id", "fecha", "estado"):
+            ultimas[ev["jugador_id"]] = ev
+        return Response([{
+            "id": j.id, "nombre": j.nombre, "edad": j.edad, "foto": j.foto_url or "",
+            "ultima": str(ultimas[j.id]["fecha"]) if j.id in ultimas else None,
+        } for j in jugadores_evaluables_fisico()])
+
+    @action(detail=True, methods=["post"])
+    def terminar(self, request, pk=None):
+        ev = self._editable(self.get_object())
+        faltan = [b["titulo"] for b in catalogo.BLOQUES_FISICO
+                  if any(k not in ev.puntuaciones for k, _, _ in b["criterios"])]
+        if faltan:
+            raise ValidationError({"puntuaciones": f"Faltan notas en: {', '.join(faltan)}."})
+        ev.estado = EvaluacionFisica.Estado.TERMINADA
+        ev.terminada_en = ev.terminada_en or timezone.now()
+        ev.save(update_fields=["estado", "terminada_en", "actualizada"])
+        return Response(self.get_serializer(ev).data)

@@ -11,6 +11,9 @@ class User(AbstractUser):
         SUPERADMIN = "SUPERADMIN", "Super Administrador"
         COACH = "COACH", "Coach"
         ENTRENADOR = "ENTRENADOR", "Entrenador"
+        # 21/10/2026: hace la parte física de los informes (Josep Mari). No
+        # entra al cuadrante ni a las faltas: solo a Evaluaciones.
+        PREPARADOR = "PREPARADOR", "Preparador físico"
 
     role = models.CharField(
         max_length=20, choices=Role.choices, default=Role.ENTRENADOR
@@ -25,6 +28,10 @@ class User(AbstractUser):
         """Rol intermedio (#16): por encima del entrenador, por debajo de la
         dirección. No incluye a los Super Admin (usa is_direccion para 've todo')."""
         return self.role == self.Role.COACH and not self.is_superadmin
+
+    @property
+    def is_preparador(self):
+        return self.role == self.Role.PREPARADOR and not self.is_superadmin
 
     @property
     def is_direccion(self):
