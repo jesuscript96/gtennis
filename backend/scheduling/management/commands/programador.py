@@ -1,6 +1,7 @@
 """Genera cada día de entreno en su corte (01/10/2026).
 
 A las 19:00 se rehace el día siguiente —el viernes a las 16:30, el sábado—
+(si la semana aún está vacía, se genera entera desde ese día hasta el sábado),
 respetando lo puesto a mano. Lo que llegue después ya no cambia el cuadrante
 (ver `scheduling.corte`). Si el proceso estaba parado a esa hora, lo hace en
 cuanto arranca, mientras ese día no haya empezado.
@@ -19,7 +20,7 @@ from django.utils import timezone
 
 from academy.models import Aviso
 from scheduling.corte import dia_a_generar, lunes_y_dia
-from scheduling.models import GeneracionProgramada, Semana
+from scheduling.models import Asignacion, GeneracionProgramada, Semana
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
@@ -38,13 +39,23 @@ def generar_dia(fecha):
     nombre = f"{DIAS[dia]} {fecha.day}"
     try:
         semana, _ = Semana.objects.get_or_create(fecha_inicio=lunes)
-        informe = generate(semana, dias=[dia])
+        # Una semana que aún no tiene nada se genera entera, de este día al
+        # sábado (21/10/2026): el domingo a las 19:00 salía solo el lunes y la
+        # semana, ya creada y publicada, parecía hecha con el resto vacío.
+        # Luego cada tarde se rehace el día siguiente, como siempre.
+        entera = not Asignacion.objects.filter(semana=semana).exists()
+        informe = generate(semana, dias=list(range(dia, 6)) if entera else [dia])
         fuera = sum(len(u["jugadores"]) for u in informe.get("unassigned", []))
         fila.ok = True
-        fila.detalle = f"{fuera} sin pista"
+        fila.detalle = f"{fuera} sin pista" + (" (semana entera)" if entera else "")
         titulo = f"Listo el cuadrante del {nombre}"
         mensaje = ("Generado en el corte, respetando lo puesto a mano. Desde "
                    "ahora los cambios de ese día no lo tocan: llegan como aviso.")
+        if entera:
+            titulo = f"Lista la semana del {lunes.day}/{lunes.month}"
+            mensaje = (f"Generada entera, del {nombre} al sábado. Cada día se "
+                       "vuelve a rehacer a las 19:00 del día anterior con las "
+                       "faltas que haya entonces. " + mensaje)
         if fuera:
             mensaje += f" {fuera} jugador(es) se han quedado sin pista."
         forzadas = len(informe.get("forzadas", []))

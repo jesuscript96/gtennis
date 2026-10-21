@@ -135,3 +135,23 @@ class ProgramadorTests(TestCase):
         self.assertEqual(GeneracionProgramada.objects.count(), 1)
         self.assertTrue(Semana.objects.filter(fecha_inicio=LUNES).exists())
         self.assertEqual(Aviso.objects.filter(tipo=Aviso.Tipo.GENERACION).count(), 1)
+
+    def test_semana_vacia_se_genera_entera_y_si_no_solo_el_dia(self):
+        from scheduling.management.commands.programador import generar_dia
+
+        vacio = {"unassigned": [], "forzadas": []}
+        with mock.patch("engine.service.generate", return_value=vacio) as gen:
+            generar_dia(LUNES)  # domingo a las 19:00, semana sin nada
+        self.assertEqual(gen.call_args.kwargs["dias"], [0, 1, 2, 3, 4, 5])
+
+        semana = Semana.objects.get(fecha_inicio=LUNES)
+        sede = Sede.objects.create(nombre="Prueba", densidad_default=2, densidad_max=2)
+        Asignacion.objects.create(
+            semana=semana, dia=0, jugador=Jugador.objects.create(nombre="Ana"),
+            pista=Pista.objects.create(sede=sede, numero=1, superficie="TIERRA"),
+            turno=Turno.objects.get_or_create(
+                codigo="M1", defaults={"nombre": "M1", "bloque": Turno.Bloque.MANANA,
+                                       "hora_inicio": time(8, 30), "hora_fin": time(10, 0)})[0])
+        with mock.patch("engine.service.generate", return_value=vacio) as gen:
+            generar_dia(MARTES)
+        self.assertEqual(gen.call_args.kwargs["dias"], [1])
