@@ -1139,6 +1139,19 @@ ul.cal-lista .cuando { font-weight: 600; white-space: nowrap; }
 ul.cal-lista .que { color: var(--muted); }
 /* Botón con su palabra, no una ✕: en el móvil la cruz no se entendía. */
 ul.cal-lista .quitar { flex: none; white-space: nowrap; }
+ul.cal-lista > li { flex-wrap: wrap; }
+ul.cal-lista .cal-botones { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
+ul.cal-lista .cal-botones .btn { white-space: nowrap; }
+/* «Ha vuelto el…»: debajo de su falta, a lo ancho. */
+.cal-vuelta {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: .4rem;
+  margin-top: .3rem; padding-top: .4rem; border-top: 1px dashed var(--border);
+}
+.cal-vuelta label { display: grid; gap: .15rem; font-size: .75rem; color: var(--muted); }
+@media (max-width: 600px) {
+  /* En el móvil los botones van debajo del texto, a lo ancho. */
+  ul.cal-lista .cal-botones { flex-basis: 100%; padding-left: calc(8px + .5rem); justify-content: flex-start; }
+}
 .cal-declaradas, .cal-pasadas {
   margin-top: .7rem; padding-top: .6rem; border-top: 1px solid var(--border);
 }

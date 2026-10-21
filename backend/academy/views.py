@@ -744,6 +744,29 @@ class PreferenciaSuperficieViewSet(viewsets.ModelViewSet):
         self._avisar_head_coach(instance, "quita")
         instance.delete()
 
+    @action(detail=True, methods=["post"])
+    def quitar_dias(self, request, pk=None):
+        """Quitar solo unos días de una superficie por fechas; el resto se
+        queda. Sin `hasta`, desde `desde` hasta el final."""
+        from scheduling.recorte import fechas_a_quitar, quitar_dias
+
+        pref = self.get_object()
+        self._assert_puede(pref.jugador)
+        if not (pref.fecha_desde and pref.fecha_hasta):
+            return Response(
+                {"error": "Es la superficie de su ficha, sin fechas: se cambia en la ficha."},
+                status=400)
+        desde, hasta = fechas_a_quitar(request.data, pref.fecha_hasta)
+        quitada = PreferenciaSuperficie(
+            jugador=pref.jugador, superficie=pref.superficie,
+            fecha_desde=max(desde, pref.fecha_desde), fecha_hasta=min(hasta, pref.fecha_hasta))
+        try:
+            quedan = quitar_dias(pref, desde, hasta, "fecha_desde", "fecha_hasta")
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        self._avisar_head_coach(quitada, "quita")
+        return Response({"quedan": self.get_serializer(quedan, many=True).data})
+
 
 class AvisoViewSet(viewsets.ModelViewSet):
     """Avisos in-app mostrados en el perfil. Cada usuario ve los suyos; el Super

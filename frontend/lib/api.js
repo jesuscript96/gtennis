@@ -287,6 +287,11 @@ export const addAusenciaFechas = (body) =>
   req("/ausencias-fechas/", { method: "POST", body: JSON.stringify(body) });
 export const delAusenciaFechas = (id) =>
   req(`/ausencias-fechas/${id}/`, { method: "DELETE" });
+// Quitar solo unos días («ha vuelto el miércoles»); sin `hasta`, hasta el final.
+export const quitarDiasAusencia = (id, desde, hasta) =>
+  req(`/ausencias-fechas/${id}/quitar_dias/`, {
+    method: "POST", body: JSON.stringify({ desde, ...(hasta ? { hasta } : {}) }),
+  });
 
 // --- Superficie por fechas («del 5 al 9, resina») ----------------------------
 export const getPreferenciasSuperficie = async (jugador) =>
@@ -295,6 +300,10 @@ export const addPreferenciaSuperficie = (body) =>
   req("/preferencias-superficie/", { method: "POST", body: JSON.stringify(body) });
 export const delPreferenciaSuperficie = (id) =>
   req(`/preferencias-superficie/${id}/`, { method: "DELETE" });
+export const quitarDiasSuperficie = (id, desde, hasta) =>
+  req(`/preferencias-superficie/${id}/quitar_dias/`, {
+    method: "POST", body: JSON.stringify({ desde, ...(hasta ? { hasta } : {}) }),
+  });
 
 // --- Torneos (módulo aparte: comparte jugadores y entrenadores) -----------
 export const getTorneos = async (params = {}) => {

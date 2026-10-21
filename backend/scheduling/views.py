@@ -1132,3 +1132,30 @@ class AusenciaJugadorViewSet(DisponibilidadViewSet):
         # Queda registrado quién la declaró: para una baja larga conviene
         # poder preguntar.
         self._tras_guardar(serializer.save(declarada_por=self._entrenador()))
+
+    @action(detail=True, methods=["post"])
+    def quitar_dias(self, request, pk=None):
+        """Quitar solo unos días de la falta: «ha vuelto del torneo el
+        miércoles». Sin `hasta`, desde `desde` hasta el final."""
+        from .avisos_corte import avisar
+        from .corte import corte
+        from .recorte import fechas_a_quitar, quitar_dias
+
+        fila = self.get_object()
+        self._assert_puede(fila.jugador)
+        desde, hasta = fechas_a_quitar(request.data, fila.fecha_fin)
+        jugador, ambito, estado = fila.jugador, fila.ambito, fila.estado
+        try:
+            quedan = quitar_dias(fila, desde, hasta)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        # Tardía es «llegó después del corte de su primer día»: al moverse el
+        # primer día puede dejar de serlo.
+        for f in quedan:
+            tardia = f.created_at >= corte(f.fecha_inicio)
+            if f.tardia != tardia:
+                f.tardia = tardia
+                f.save(update_fields=["tardia"])
+        if estado in ESTADOS_EXCLUYENTES:
+            avisar(jugador, desde, hasta, ambito, "quita_falta", request.user)
+        return Response({"quedan": self.get_serializer(quedan, many=True).data})

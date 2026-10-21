@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addAusenciaFechas, addPreferenciaSuperficie, delAusenciaFechas,
   delPreferenciaSuperficie, getAusenciasFechas, getPreferenciasSuperficie,
-  getUser,
+  getUser, quitarDiasAusencia, quitarDiasSuperficie,
 } from "../lib/api";
 import { roleRank } from "../lib/perms";
 import { ESTADO_COLOR, SUPERFICIE_COLOR } from "../lib/format";
@@ -33,8 +33,10 @@ const fmtCorta = (s) => {
   const d = deIso(s);
   return `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
 };
+const tramoTxt = (desde, hasta) => (desde !== hasta
+  ? `del ${fmtCorta(desde)} al ${fmtCorta(hasta)}` : `el ${fmtCorta(desde)}`);
 const cuando = (a) => (a.fecha_fin !== a.fecha_inicio
-  ? `del ${fmtCorta(a.fecha_inicio)} al ${fmtCorta(a.fecha_fin)}`
+  ? tramoTxt(a.fecha_inicio, a.fecha_fin)
   : `del ${fmtCorta(a.fecha_inicio)}`);
 
 // Lo que se declara, en el idioma de quien lo declara. Para el alumno, por
@@ -128,6 +130,10 @@ function fuenteDeJugador(jugador) {
       })),
     borrar: (a) => (a.esSuperficie
       ? delPreferenciaSuperficie(a.prefId) : delAusenciaFechas(a.id)),
+    // Solo unos días: vuelve antes del torneo, o un día en medio sí viene.
+    quitarDias: (a, desde, hasta) => (a.esSuperficie
+      ? quitarDiasSuperficie(a.prefId, desde, hasta)
+      : quitarDiasAusencia(a.id, desde, hasta)),
     describir: (a) => (a.esSuperficie
       ? `entrena en ${a.superficie === "RESINA" ? "resina" : "tierra"}`
       : [
@@ -152,7 +158,9 @@ function fuenteDeJugador(jugador) {
  *
  * Con `jugador` trabaja sobre las faltas de ese alumno. Para otra cosa —las del
  * entrenador en su agenda— se le pasa una `fuente` ({clave, cargar, crear,
- * borrar, describir, colorDe}) y sus `motivos`.
+ * borrar, describir, colorDe}) y sus `motivos`. Si la fuente trae
+ * `quitarDias(a, desde, hasta)`, una falta de varios días se puede quitar solo
+ * en parte: «ha vuelto el miércoles» o los días marcados.
  */
 export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio }) {
   const origen = fuente || fuenteDeJugador(jugador);
@@ -183,6 +191,8 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  // La falta a la que se le está diciendo «ha vuelto el…»: {id, fecha}.
+  const [vuelta, setVuelta] = useState(null);
   const pintando = useRef(null);
 
   const cargar = useCallback(async () => {
@@ -287,6 +297,32 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
     setGuardando(false);
   }
 
+  async function quitarParte(a, rangos, pregunta) {
+    if (!window.confirm(pregunta)) return;
+    setGuardando(true); setError("");
+    try {
+      // De atrás adelante: lo que queda delante sigue siendo la misma falta, y
+      // así su id vale para el tramo siguiente aunque se parta en dos.
+      for (const [desde, hasta] of [...rangos].reverse()) {
+        await origenRef.current.quitarDias(a, desde, hasta);
+      }
+      setVuelta(null);
+      marcar(new Set());
+      await cargar();
+      onCambio?.();
+    } catch (e) { setError(e.message); }
+    setGuardando(false);
+  }
+
+  // Los días marcados que caen dentro de `a`, en tramos seguidos.
+  const marcadosDe = (a) => tramos([...sel].sort()
+    .filter((d) => a.fecha_inicio <= d && d <= a.fecha_fin));
+  const diasDe = (a) => {
+    let n = 0;
+    for (let d = a.fecha_inicio; d <= a.fecha_fin; d = sumaDias(d, 1)) n += 1;
+    return n;
+  };
+
   // Rejilla del mes, empezando en lunes y completando la primera semana.
   const celdas = [];
   const primero = new Date(mes.getFullYear(), mes.getMonth(), 1);
@@ -310,23 +346,73 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   const queEs = (a) => (a.esSuperficie ? [origen.describir(a)]
     : [ambitoDe(a)?.corto || a.ambito || "día", origen.describir(a)])
     .filter(Boolean).join(" · ");
-  const fila = (a) => (
-    <li key={a.id}>
-      <i className="punto" style={{ background: origen.colorDe(a) }} />
-      <span className="texto">
-        <span className="cuando">
-          {fmtCorta(a.fecha_inicio)}
-          {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
+  const parcial = Boolean(origen.quitarDias);
+  const nombre = (a) => (a.esSuperficie ? "la superficie" : "la falta");
+  const fila = (a, { enMarca = false } = {}) => {
+    const marcados = enMarca && parcial ? marcadosDe(a) : [];
+    const nMarcados = marcados.reduce((n, t) => n + diasDe({ fecha_inicio: t[0], fecha_fin: t[1] }), 0);
+    // Solo si quedan días sin marcar: si están todos, es quitarla entera.
+    const soloMarcados = nMarcados > 0 && nMarcados < diasDe(a);
+    // «Ha vuelto» en lo que dura varios días y no ha terminado: desde mañana
+    // de su primer día como pronto, y nunca antes de hoy.
+    const primeraVuelta = [sumaDias(a.fecha_inicio, 1), isoHoy].sort()[1];
+    const puedeVolver = parcial && !enMarca && primeraVuelta <= a.fecha_fin;
+    const abierta = vuelta?.id === a.id;
+    return (
+      <li key={a.id} className={abierta ? "abierta" : undefined}>
+        <i className="punto" style={{ background: origen.colorDe(a) }} />
+        <span className="texto">
+          <span className="cuando">
+            {fmtCorta(a.fecha_inicio)}
+            {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
+          </span>
+          <span className="que">{queEs(a)}</span>
+          {a.tardia && <span className="tag-tardia">tras el corte</span>}
         </span>
-        <span className="que">{queEs(a)}</span>
-        {a.tardia && <span className="tag-tardia">tras el corte</span>}
-      </span>
-      <button type="button" className="btn danger sm quitar" disabled={guardando}
-        onClick={() => borrar(a)}>
-        {a.esSuperficie ? "Quitar superficie" : "Quitar falta"}
-      </button>
-    </li>
-  );
+        <span className="cal-botones">
+          {puedeVolver && !abierta && (
+            <button type="button" className="btn ghost sm" disabled={guardando}
+              onClick={() => setVuelta({ id: a.id, fecha: primeraVuelta })}>
+              {a.esSuperficie ? "Acaba antes" : "Ha vuelto"}
+            </button>
+          )}
+          {soloMarcados && (
+            <button type="button" className="btn ghost sm" disabled={guardando}
+              onClick={() => quitarParte(a, marcados,
+                `¿Quitar ${nombre(a)} solo ${nMarcados === 1 ? "el día marcado" : `los ${nMarcados} días marcados`}? `
+                + "El resto se queda como está.")}>
+              Quitar solo {nMarcados === 1 ? "este día" : `estos ${nMarcados} días`}
+            </button>
+          )}
+          <button type="button" className="btn danger sm quitar" disabled={guardando}
+            onClick={() => borrar(a)}>
+            {a.esSuperficie ? "Quitar superficie" : "Quitar falta"}
+            {(soloMarcados || puedeVolver) && " entera"}
+          </button>
+        </span>
+        {abierta && (
+          <form className="cal-vuelta" onSubmit={(e) => {
+            e.preventDefault();
+            quitarParte(a, [[vuelta.fecha, a.fecha_fin]],
+              `¿Quitar ${nombre(a)} ${tramoTxt(vuelta.fecha, a.fecha_fin)}? `
+              + `Se queda solo ${tramoTxt(a.fecha_inicio, sumaDias(vuelta.fecha, -1))}.`);
+          }}>
+            <label>{a.esSuperficie ? "Desde el" : "Vuelve el"}
+              <input type="date" value={vuelta.fecha} required
+                min={primeraVuelta} max={a.fecha_fin}
+                onChange={(e) => setVuelta({ id: a.id, fecha: e.target.value })} />
+            </label>
+            <button type="submit" className="btn sm" disabled={guardando || !vuelta.fecha}>
+              Quitar desde ese día
+            </button>
+            <button type="button" className="btn ghost sm" onClick={() => setVuelta(null)}>
+              Cancelar
+            </button>
+          </form>
+        )}
+      </li>
+    );
+  };
   const motivoSel = lista.find((m) => m.value === motivo) || motivosFalta[0];
   const esSuperficie = Boolean(motivoSel.superficie);
 
@@ -398,7 +484,7 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
               <p className="cal-ya-tit">
                 Ya tiene{sel.size === 1 ? " ese día" : " en esos días"}:
               </p>
-              <ul className="cal-lista">{enLaMarca.map(fila)}</ul>
+              <ul className="cal-lista">{enLaMarca.map((a) => fila(a, { enMarca: true }))}</ul>
             </div>
           )}
           {conSuperficie && (
@@ -465,13 +551,13 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
       {vigentes.length > 0 && (
         <div className="cal-declaradas">
           <p className="cal-ya-tit">Declarado</p>
-          <ul className="cal-lista">{vigentes.map(fila)}</ul>
+          <ul className="cal-lista">{vigentes.map((a) => fila(a))}</ul>
         </div>
       )}
       {pasadas.length > 0 && (
         <details className="cal-pasadas">
           <summary>Ya pasadas ({pasadas.length})</summary>
-          <ul className="cal-lista">{pasadas.map(fila)}</ul>
+          <ul className="cal-lista">{pasadas.map((a) => fila(a))}</ul>
         </details>
       )}
     </div>
