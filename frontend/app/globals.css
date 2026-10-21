@@ -1639,3 +1639,13 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
   .tabla-torneos td.td-fechas { align-items: flex-start; }
   .fechas-bloque { justify-items: end; text-align: right; }
 }
+
+/* Divisiones con aspecto de Grupos (21/10/2026): solo para mirar, nada se arrastra. */
+.divisiones-vista .col-head,
+.divisiones-vista ul.miembros > li,
+.divisiones-vista .columna,
+.divisiones-vista ul.miembros > li:active { cursor: default; user-select: text; }
+.divisiones-vista .nombre-alumno { cursor: default; }
+.editar-divisiones { margin-top: 1.5rem; }
+.editar-divisiones > summary { cursor: pointer; font-weight: 500; color: var(--muted); padding: .4rem 0; }
+.editar-divisiones[open] > summary { margin-bottom: .6rem; color: var(--text); }
