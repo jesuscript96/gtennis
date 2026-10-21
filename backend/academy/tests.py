@@ -713,7 +713,7 @@ class TardeConT2YEntrenadorDeTardeTests(TestCase):
 
         cfg = ConfiguracionMotor.objects.first() or ConfiguracionMotor.objects.create()
         cfg.time_limit_s = 2
-        cfg.usar_satelites = False
+        cfg.modo_satelites = "NUNCA"
         cfg.save()
         Jugador.objects.update(activo=False)
         Entrenador.objects.update(activo=False)
@@ -1410,7 +1410,7 @@ class RellenoForzadoTests(TestCase):
 
         cfg = ConfiguracionMotor.objects.first() or ConfiguracionMotor.objects.create()
         cfg.time_limit_s = 2
-        cfg.usar_satelites = False
+        cfg.modo_satelites = "NUNCA"
         cfg.save()
         Jugador.objects.update(activo=False)
         Entrenador.objects.update(activo=False)

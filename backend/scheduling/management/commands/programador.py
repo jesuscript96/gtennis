@@ -63,6 +63,11 @@ def generar_dia(fecha):
             mensaje += (f" {forzadas} jugador(es) se han metido en una pista "
                         "saltándose reglas base para que entrenen: salen marcados "
                         "como «forzada» en el cuadrante.")
+        satelites = informe.get("satelites", [])
+        if satelites:
+            sedes = ", ".join(sorted({s["sede"] for s in satelites if s["sede"]}))
+            mensaje += (f" {len(satelites)} jugador(es) no cabían en el Resort y "
+                        f"van a {sedes or 'los satélites'} sin entrenador.")
     except Exception:  # noqa: BLE001 — cualquier fallo se avisa
         fila.detalle = traceback.format_exc()[-4000:]
         titulo = f"Ha fallado la generación del {nombre}"

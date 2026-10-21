@@ -60,6 +60,7 @@ class ConfiguracionMotorSerializer(serializers.ModelSerializer):
             "peso_asignacion", "peso_satelite", "peso_central",
             "peso_repeticion", "peso_equilibrio_franjas", "peso_resina", "peso_pista_division", "peso_division_entrenador",
             "max_dias_misma_pista", "aplicar_vecindad", "time_limit_s",
+            "modo_satelites",
         ]
 
 

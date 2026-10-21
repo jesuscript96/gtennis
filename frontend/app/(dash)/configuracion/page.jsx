@@ -16,6 +16,12 @@ const NUM_FIELDS = [
   ["time_limit_s", "Límite del solver (s)", "Tiempo máximo de cálculo por turno."],
 ];
 
+const MODOS_SATELITES = [
+  ["RESCATE", "Solo para no dejar a nadie en el banquillo"],
+  ["DESBORDAR", "Desbordar cuando el Resort se llena (con entrenador)"],
+  ["NUNCA", "Nunca"],
+];
+
 export default function ConfiguracionPage() {
   const [cfg, setCfg] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -79,6 +85,21 @@ export default function ConfiguracionPage() {
             <span style={{ marginTop: 6, fontSize: 11 }}>{hint}</span>
           </label>
         ))}
+
+        <label className="field">
+          <span>Clubs satélite (Sta. Bárbara, Bétera, Mas Camarena)</span>
+          <select
+            value={cfg.modo_satelites || "RESCATE"}
+            onChange={(e) => setCfg({ ...cfg, modo_satelites: e.target.value })}
+          >
+            {MODOS_SATELITES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <span style={{ marginTop: 6, fontSize: 11 }}>
+            Por la tarde nunca se usan. En «solo para no dejar a nadie en el banquillo», quien no
+            cabe en el Resort ni en un hueco de sus pistas va a Sta. Bárbara (y luego Bétera y Mas
+            Camarena) sin entrenador, marcado con ⚠ en el cuadrante.
+          </span>
+        </label>
 
         <label className="check">
           <input

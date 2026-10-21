@@ -564,10 +564,18 @@ class ConfiguracionMotor(models.Model):
         help_text="Permitir pistas de un solo jugador (clase particular) "
                   "cuando no hay con quién emparejarlo.",
     )
-    usar_satelites = models.BooleanField(
-        default=True,
-        help_text="Desbordar a los clubs satélite cuando el Resort se llena. "
-                  "En verano se desactiva: lo que no cabe queda en el banquillo.",
+    class ModoSatelites(models.TextChoices):
+        NUNCA = "NUNCA", "Nunca"
+        RESCATE = "RESCATE", "Solo para no dejar a nadie en el banquillo"
+        DESBORDAR = "DESBORDAR", "Desbordar cuando el Resort se llena"
+
+    # 21/10/2026: por defecto los satélites solo se abren, sin entrenador, para
+    # quien se quedaría en el banquillo después del relleno forzado. Por la
+    # tarde nunca.
+    modo_satelites = models.CharField(
+        max_length=10, choices=ModoSatelites.choices, default=ModoSatelites.RESCATE,
+        help_text="Cuándo usa el motor los clubs satélite (Sta. Bárbara, Bétera, "
+                  "Mas Camarena). Por la tarde nunca.",
     )
 
     class Meta:
