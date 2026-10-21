@@ -58,3 +58,13 @@ class DireccionOrCoachWrite(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return es_direccion(request.user) or es_coach(request.user)
+
+
+# Mueven alumnos de una división a otra desde la vista de Divisiones
+# (21/10/2026): dirección y, además, Dani Gimeno aunque su rol sea de coach.
+MUEVEN_DIVISIONES = {"daniel.gimeno"}
+
+
+def mueve_divisiones(user):
+    return es_direccion(user) or bool(
+        user and user.is_authenticated and user.username in MUEVEN_DIVISIONES)

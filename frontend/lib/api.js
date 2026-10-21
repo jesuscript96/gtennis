@@ -263,6 +263,10 @@ export const guardarEntrenadoresJugador = (jugadorId, body) =>
 // --- Grupos de entrenamiento (entrenador ↔ alumnos) ------------------------
 export const getGrupos = () => req("/grupos/");
 export const getGruposDivisiones = () => req("/grupos/divisiones/");
+// Divisiones: ¿puede mover alumnos? y moverlos (division null = sin división).
+export const getPermisosDivisiones = () => req("/divisiones/permisos/");
+export const moverDeDivision = (jugador, division) =>
+  req("/divisiones/mover/", { method: "POST", body: JSON.stringify({ jugador, division }) });
 export const grupoAnadir = (jugador, entrenador) =>
   req("/grupos/anadir/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
 export const grupoQuitar = (jugador, entrenador) =>

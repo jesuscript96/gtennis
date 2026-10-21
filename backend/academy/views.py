@@ -33,7 +33,7 @@ from .models import (
     VetoEntrenador,
     VisitaInvitado,
 )
-from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion, aprueba_invitados
+from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion, aprueba_invitados, mueve_divisiones
 from .scope import (
     coaches_del_entrenador,
     coaches_visibles,
@@ -98,6 +98,37 @@ class DivisionViewSet(viewsets.ModelViewSet):
     queryset = Division.objects.all()
     serializer_class = DivisionSerializer
     permission_classes = [ReadOnlyOrDireccion]
+
+    @action(detail=False, methods=["get"])
+    def permisos(self, request):
+        """¿Puede quien pregunta mover alumnos de división en la vista?"""
+        return Response({"puede_mover": mueve_divisiones(request.user)})
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
+    def mover(self, request):
+        """`{jugador, division}` → cambia la división del alumno (`division`
+        vacío = sin división). Dirección y Dani Gimeno, desde Divisiones."""
+        if not mueve_divisiones(request.user):
+            raise PermissionDenied("Solo dirección y Dani Gimeno pueden mover alumnos de división.")
+        jugador = Jugador.objects.filter(pk=request.data.get("jugador"), activo=True).select_related("division").first()
+        if jugador is None:
+            raise NotFound("Ese alumno no existe o no está activo.")
+        destino = request.data.get("division")
+        division = None
+        if destino not in (None, ""):
+            division = Division.objects.filter(pk=destino).first()
+            if division is None:
+                raise ValidationError({"division": "Esa división no existe."})
+        anterior = jugador.division
+        if (anterior.pk if anterior else None) != (division.pk if division else None):
+            jugador.division = division
+            jugador.save(update_fields=["division"])
+        return Response({
+            "jugador": jugador.id,
+            "division": division.nivel if division else None,
+            "anterior": anterior.nivel if anterior else None,
+            "anterior_id": anterior.pk if anterior else None,
+        })
 
 
 class EntrenadorViewSet(viewsets.ModelViewSet):

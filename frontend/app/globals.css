@@ -1671,3 +1671,8 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .editar-divisiones { margin-top: 1.5rem; }
 .editar-divisiones > summary { cursor: pointer; font-weight: 500; color: var(--muted); padding: .4rem 0; }
 .editar-divisiones[open] > summary { margin-bottom: .6rem; color: var(--text); }
+/* Quien puede mover alumnos de división (dirección y Dani Gimeno) los arrastra. */
+.divisiones-vista.movible ul.miembros > li { cursor: grab; }
+.divisiones-vista.movible ul.miembros > li:active { cursor: grabbing; }
+.divisiones-vista.movible .nombre-alumno { cursor: pointer; }
+.divisiones-vista .deshacer-div { margin-left: .6rem; vertical-align: middle; }
