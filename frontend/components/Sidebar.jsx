@@ -27,6 +27,7 @@ const SECTIONS = [
     ["/jugadores", "Jugadores"],
     ["/mis-jugadores", "Jugadores · faltas", "direccion"],
     ["/grupos", "Grupos"],
+    ["/divisiones", "Divisiones"],
     ["/entrenadores", "Entrenadores", "coach"],
     ["/coaches", "Coaches", "direccion"],
     ["/escuelas", "Escuelas", "direccion"],
@@ -63,6 +64,7 @@ const SECTIONS_ENTRENADOR = [
   { title: "Mis jugadores", items: [
     ["/jugadores", "Mis jugadores"],
     ["/grupos", "Grupos"],
+    ["/divisiones", "Divisiones"],
     ["/ausencias", "Ausencias de la semana"],
     ["/ausencias-fechas", "Bajas por fechas"],
   ] },

@@ -40,7 +40,8 @@ const PATH_MIN = {
   "/vacaciones": "coach",
   "/preferencias-superficie": "coach", "/invitados": "coach",
   "/mantenimiento": "coach", "/feedback": "coach",
-  "/sedes": "direccion", "/pistas": "direccion", "/divisiones": "direccion",
+  "/sedes": "direccion", "/pistas": "direccion",
+  // Divisiones: la ven todos (21/10/2026), pero solo dirección la cambia (WRITE).
   "/escuelas": "direccion", "/turnos": "direccion", "/coaches": "direccion",
   "/mis-jugadores": "direccion",
   "/configuracion": "direccion",
