@@ -4,6 +4,8 @@ morning at once—, assigns coaches and persists Asignacion rows.
 """
 from __future__ import annotations
 
+import os
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -1293,6 +1295,12 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
     grupos = _grupos_de_turnos(turnos, turnos_exclusivos)
 
     cfg = ConfiguracionMotor.get_solo()
+    # Tope de toda la generación (21/10/2026): una semana tarda en torno a un
+    # minuto; si alguna se complica, al pasar de MOTOR_TOPE_GENERACION_S (2
+    # minutos) lo que falte se resuelve con 1 s por llamada, sin dejar días a
+    # medias.
+    fin_generacion = time.monotonic() + float(
+        os.environ.get("MOTOR_TOPE_GENERACION_S", "120"))
     # Los satélites entran en el reparto solo en modo «desbordar». En modo
     # «rescate» (el normal desde el 21/10/2026) se abren después, sin
     # entrenador, para quien se quedaría en el banquillo.
@@ -1609,7 +1617,8 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     courts=turno_courts,
                     vetoes=vetoes_dia,
                     recent_partners=recent,
-                    time_limit_s=cfg.time_limit_s * len(fase),
+                    time_limit_s=max(1.0, min(cfg.time_limit_s * len(fase),
+                                              fin_generacion - time.monotonic())),
                     w_assign=cfg.peso_asignacion,
                     w_satellite=cfg.peso_satelite,
                     w_central=cfg.peso_central,
