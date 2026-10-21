@@ -30,6 +30,9 @@ Soft (minimised):
 """
 from __future__ import annotations
 
+import os
+import threading
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from math import lcm
@@ -90,7 +93,13 @@ class PairingInput:
     courts: list[Court]
     vetoes: set[tuple[int, int]] = field(default_factory=set)
     recent_partners: dict[frozenset[int], int] = field(default_factory=dict)
+    # Tope de seguridad: el solver nunca pasa de aquí.
     time_limit_s: float = 10.0
+    # Se para antes si lleva este rato sin mejorar la mejor solución
+    # (21/10/2026: con 30 s fijos un día tardaba 3 minutos y, con 2 s, salía
+    # el mismo reparto). None = MOTOR_SIN_MEJORA_S del entorno, o 1 s; 0 = no
+    # se para hasta el tope.
+    sin_mejora_s: float | None = None
     # Tunable criteria (read from ConfiguracionMotor). Defaults = current values.
     w_assign: int = 1000
     w_satellite: int = 5
@@ -234,6 +243,54 @@ class PairingResult:
     dedicadas: dict[int, dict[int, int]] = field(default_factory=dict)
     # franja -> {pista vigilada: pista con entrenador que la vigila}
     vigilancia: dict[int, dict[int, int]] = field(default_factory=dict)
+
+
+def num_workers() -> int:
+    """Hilos del solver: los procesadores que de verdad tiene la máquina (en
+    Fly, los de la VM), o MOTOR_WORKERS si se fija a mano."""
+    fijo = os.environ.get("MOTOR_WORKERS")
+    if fijo:
+        return max(1, int(fijo))
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except AttributeError:  # macOS
+        cpus = os.cpu_count() or 1
+    return max(1, min(8, cpus))
+
+
+class _ParaSinMejora(cp_model.CpSolverSolutionCallback):
+    """Para la búsqueda cuando lleva `segundos` sin encontrar una solución
+    mejor. El solver solo avisa al encontrar soluciones, así que un hilo
+    aparte mira el reloj."""
+
+    def __init__(self, solver: cp_model.CpSolver, segundos: float):
+        super().__init__()
+        self._solver = solver
+        self._segundos = segundos
+        self._ultima: float | None = None
+        self._mejor: float | None = None
+        self._fin = threading.Event()
+        self._hilo = threading.Thread(target=self._vigilar, daemon=True)
+        self._hilo.start()
+
+    def on_solution_callback(self) -> None:
+        # El solver solo avisa de soluciones que mejoran la anterior; aun así,
+        # el reloj se reinicia solo si cambia el objetivo.
+        valor = self.objective_value
+        if valor != self._mejor:
+            self._mejor = valor
+            self._ultima = time.monotonic()
+
+    def _vigilar(self) -> None:
+        while not self._fin.wait(0.05):
+            if (self._ultima is not None
+                    and time.monotonic() - self._ultima >= self._segundos):
+                self._solver.stop_search()
+                return
+
+    def terminar(self) -> None:
+        self._fin.set()
+        self._hilo.join()
 
 
 def _normalise(a: int, b: int) -> tuple[int, int]:
@@ -890,8 +947,17 @@ def solve_pairing(data: PairingInput) -> PairingResult:
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = data.time_limit_s
-    solver.parameters.num_search_workers = 8
-    status = solver.Solve(model)
+    solver.parameters.num_search_workers = num_workers()
+    sin_mejora = (data.sin_mejora_s if data.sin_mejora_s is not None
+                  else float(os.environ.get("MOTOR_SIN_MEJORA_S", "1")))
+    if sin_mejora > 0:
+        parar = _ParaSinMejora(solver, sin_mejora)
+        try:
+            status = solver.Solve(model, parar)
+        finally:
+            parar.terminar()
+    else:
+        status = solver.Solve(model)
 
     por_franja: dict = {f: {} for f in franjas}
     cubiertas: dict = {f: set() for f in franjas}

@@ -1,7 +1,11 @@
 """Pure-engine tests (no DB). Run: python manage.py test engine"""
+import os
+import time
+from unittest import mock
+
 from django.test import SimpleTestCase
 
-from .pairing import Court, PairingInput, Player, solve_pairing
+from .pairing import Court, PairingInput, Player, num_workers, solve_pairing
 from .service import hay_entrenamiento
 
 
@@ -88,6 +92,36 @@ class PairingTests(SimpleTestCase):
         res = solve_pairing(PairingInput(players=players, courts=courts))
         self.assertEqual(res.unassigned, [])
         self.assertIn(2, res.courts)  # satellite used
+
+
+class TiempoDelSolverTests(SimpleTestCase):
+    """21/10/2026: el solver para cuando lleva un rato sin mejorar, en vez de
+    agotar siempre su tope (un día tardaba 3 minutos)."""
+
+    def test_para_sin_mejora_mucho_antes_del_tope(self):
+        players = [Player(i, division=1 + i % 8) for i in range(1, 41)]
+        data = PairingInput(players=players, courts=central(20),
+                            recent_partners={frozenset((i, i + 1)): 1 for i in range(1, 40)},
+                            time_limit_s=30, sin_mejora_s=0.2)
+        t = time.monotonic()
+        res = solve_pairing(data)
+        self.assertLess(time.monotonic() - t, 10)
+        self.assertIn(res.status, ("OPTIMAL", "FEASIBLE"))
+        self.assertEqual(res.unassigned, [])
+
+    def test_sin_parada_tambien_resuelve(self):
+        players = [Player(i, division=2) for i in range(1, 5)]
+        res = solve_pairing(PairingInput(players=players, courts=central(4),
+                                         sin_mejora_s=0))
+        self.assertEqual(res.unassigned, [])
+
+    def test_hilos_del_entorno(self):
+        with mock.patch.dict(os.environ, {"MOTOR_WORKERS": "3"}):
+            self.assertEqual(num_workers(), 3)
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MOTOR_WORKERS", None)
+            self.assertGreaterEqual(num_workers(), 1)
+            self.assertLessEqual(num_workers(), 8)
 
 
 class _Ent:
