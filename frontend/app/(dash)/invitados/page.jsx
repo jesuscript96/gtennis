@@ -3,7 +3,7 @@ import { Fragment, useEffect, useState } from "react";
 import {
   getInvitados, crearInvitado, editarInvitado, aprobarInvitado, rechazarInvitado,
   anadirDiasInvitado, borrarInvitado, editarVisita, quitarVisita, aprobarVisita,
-  rechazarVisita, getUser, resource,
+  rechazarVisita, getUser, refrescarUsuario, resource,
 } from "../../../lib/api";
 
 /**
@@ -67,14 +67,16 @@ export default function InvitadosPage() {
   const [cat, setCat] = useState({ jugadores: [], entrenadores: [], divisiones: [], escuelas: [], turnos: [] });
   const [error, setError] = useState(null);
   const [pestana, setPestana] = useState("calendario");
-  const user = getUser();
-  const esAdmin = !!user?.is_superadmin;
+  const [user, setUser] = useState(getUser);
+  // Dirección, y también Dani e Iván: lo que meten queda aprobado (21/10/2026).
+  const esAdmin = !!(user?.aprueba_invitados ?? user?.is_superadmin);
 
   async function load() {
     try { setItems(await getInvitados()); } catch (e) { setError(String(e.message || e)); }
   }
   useEffect(() => {
     load();
+    refrescarUsuario().then(setUser).catch(() => {});
     const lista = (r) => resource(r).list().catch(() => []);
     Promise.all([lista("jugadores"), lista("entrenadores"), lista("divisiones"),
       lista("escuelas"), lista("turnos")])
@@ -111,7 +113,8 @@ export default function InvitadosPage() {
         Cada invitado tiene una ficha —la deportiva y lo que mira el motor— que se
         rellena una vez. Los días que viene se añaden en el calendario, y para
         volver a invitar a uno conocido basta con añadirle días. Dirección
-        aprueba la ficha y cada día.
+        aprueba la ficha y cada día; lo que mete dirección (y Dani o Iván) queda
+        aprobado al momento.
       </p>
       {esAdmin && pendientes > 0 && (
         <p className="help" style={{ borderLeftColor: "var(--accent)" }}>
@@ -410,7 +413,8 @@ function AnadirDias({ i, franjas, onCancelar, onGuardar }) {
   return (
     <div className="inv-form card">
       <h3>Añadir días a {i.nombre}</h3>
-      <p className="hint">Su ficha se queda como está. Los días nuevos los aprueba dirección.</p>
+      <p className="hint">Su ficha se queda como está. Los días nuevos los aprueba dirección
+        {getUser()?.aprueba_invitados ? " (los tuyos quedan aprobados al guardar)" : ""}.</p>
       <Calendario fechas={fechas} onChange={(cambio) => setFechas((x) => cambio(x))}
         franjas={franjas} marcadas={marcadas} />
       {error && <p className="err">{error}</p>}
@@ -497,8 +501,8 @@ function FormInvitado({ cat, esAdmin, inicial, existente, soloLectura, onCancela
           </label>
           {esAdmin && !existente && (
             <label>Entrenador que lo propone
-              <select required value={f.entrenador_solicitante} onChange={set("entrenador_solicitante")}>
-                <option value="">—</option>
+              <select required={!getUser()?.entrenador_id} value={f.entrenador_solicitante} onChange={set("entrenador_solicitante")}>
+                <option value="">{getUser()?.entrenador_id ? "Yo" : "—"}</option>
                 {cat.entrenadores.map((en) => <option key={en.id} value={en.id}>{en.nombre}</option>)}
               </select>
             </label>
@@ -616,7 +620,7 @@ function FormInvitado({ cat, esAdmin, inicial, existente, soloLectura, onCancela
       <div className="row-actions">
         {!soloLectura && (
           <button className="btn" disabled={guardando}>
-            {guardando ? "Guardando…" : existente ? "Guardar ficha" : "Solicitar"}
+            {guardando ? "Guardando…" : existente ? "Guardar ficha" : esAdmin ? "Añadir (queda aprobado)" : "Solicitar"}
           </button>
         )}
         <button type="button" className="btn ghost" onClick={onCancelar}>

@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academy.models import Coach, Entrenador
+from academy.permissions import aprueba_invitados
 
 User = get_user_model()
 
@@ -43,6 +44,7 @@ def _user_payload(user):
         "nombre": user.get_full_name() or user.username,
         "role": user.role,
         "is_superadmin": user.is_superadmin,
+        "aprueba_invitados": aprueba_invitados(user),
         "is_coach": bool(getattr(user, "is_coach", False)),
         "entrenador_id": entrenador.id if entrenador else None,
         "entrenador": entrenador_info,

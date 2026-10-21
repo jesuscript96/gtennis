@@ -18,6 +18,17 @@ def es_direccion(user):
     return bool(user and user.is_authenticated and user.is_superadmin)
 
 
+# Además de dirección, estos usuarios meten invitados ya aprobados y aprueban
+# los de los demás (petición del 21/10/2026: Dani e Iván cuentan como dirección
+# para los invitados aunque su rol sea de coach).
+APRUEBAN_INVITADOS = {"daniel.gimeno", "ivan.gallego"}
+
+
+def aprueba_invitados(user):
+    return es_direccion(user) or bool(
+        user and user.is_authenticated and user.username in APRUEBAN_INVITADOS)
+
+
 def es_coach(user):
     coach = getattr(user, "coach", None) if (user and user.is_authenticated) else None
     return bool(coach is not None and coach.activo)

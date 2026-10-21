@@ -994,6 +994,15 @@ ul.miembros .quitar {
 ul.miembros .quitar:hover { background: var(--surface-2); color: var(--st-ausencia); }
 
 .columna .msg { font-size: .78rem; color: var(--muted); margin: 0; padding: .35rem 0; }
+/* Por división: todas a la vista, en varias filas si no caben. */
+.columnas.por-division { flex-wrap: wrap; overflow-x: visible; }
+ul.miembros > li.alumno-div {
+  display: grid; gap: 0; cursor: default; padding: .22rem .3rem;
+}
+li.alumno-div .txt {
+  font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+li.alumno-div .resp { font-size: .7rem; color: var(--muted); }
 
 /* Mientras se arrastra: ni selección de texto ni cursor de escritura, y el
    fantasma que sigue al puntero para saber qué se lleva uno. */

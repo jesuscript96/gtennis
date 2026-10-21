@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getGrupos, grupoMover, grupoMoverEntrenador, grupoOrdenar, grupoQuitar, resource,
+  getGrupos, getGruposDivisiones, grupoMover, grupoMoverEntrenador, grupoOrdenar,
+  grupoQuitar, resource,
 } from "../../../lib/api";
 
 /**
@@ -34,8 +35,118 @@ import {
  * Desde el 14/10/2026 la ven todos igual (el entrenador, solo mirando), y las
  * columnas de un bloque se ordenan de izquierda a derecha arrastrándolas por la
  * cabecera: dirección en todos los bloques, el head coach en el suyo.
+ *
+ * 21/10/2026: segunda pestaña, «Por división»: solo los alumnos, cada uno en la
+ * columna de su división. Es para mirar; la división se cambia en la ficha.
  */
+const VISTAS = [["entrenador", "Por entrenador"], ["division", "Por división"]];
+
 export default function Page() {
+  const [vista, setVista] = useState("entrenador");
+  // Se recuerda la última pestaña en este navegador (si se puede).
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("gt_grupos_vista");
+      if (VISTAS.some(([k]) => k === v)) setVista(v);
+    } catch {}
+  }, []);
+  const elegir = (v) => {
+    setVista(v);
+    try { localStorage.setItem("gt_grupos_vista", v); } catch {}
+  };
+  const pestanas = (
+    <div className="tabs-inv" role="tablist">
+      {VISTAS.map(([k, t]) => (
+        <button key={k} type="button" role="tab" aria-selected={vista === k}
+          className={`chip${vista === k ? " on" : ""}`} onClick={() => elegir(k)}>
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+  return vista === "division"
+    ? <PorDivision pestanas={pestanas} />
+    : <PorEntrenador pestanas={pestanas} />;
+}
+
+/** Los alumnos por división: una columna por división, sin entrenadores. */
+function PorDivision({ pestanas }) {
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState("");
+  const [busca, setBusca] = useState("");
+
+  useEffect(() => {
+    getGruposDivisiones().then(setDatos).catch((e) => setError(e.message));
+  }, []);
+
+  const coincide = (j) =>
+    !busca.trim() || j.nombre.toLowerCase().includes(busca.trim().toLowerCase());
+  const total = datos ? datos.divisiones.reduce((n, d) => n + d.jugadores.length, 0) : 0;
+
+  return (
+    <div className="page grupos">
+      <div className="page-head"><h1>Grupos</h1></div>
+      {pestanas}
+      {!datos ? (
+        error ? <p className="err">{error}</p> : <p className="msg">Cargando…</p>
+      ) : (
+        <>
+          <div className="toolbar">
+            <input className="search" placeholder="Buscar alumno…" value={busca}
+              onChange={(e) => setBusca(e.target.value)} />
+          </div>
+          <section className="bloque">
+            <header className="bloque-head">
+              <h2>Alumnos por división</h2>
+              <span className="cuenta">
+                {datos.divisiones.filter((d) => d.nivel != null).length} divisiones
+                {" · "}{total} alumno{total === 1 ? "" : "s"}
+              </span>
+              <span className="nota-grupo">
+                Debajo de cada alumno, el entrenador que responde por él. La división
+                se cambia en su ficha.
+              </span>
+            </header>
+            <div className="columnas por-division">
+              {datos.divisiones.map((d) => {
+                const suyos = d.jugadores.filter(coincide);
+                return (
+                  <article key={d.id ?? "sin"} className="columna">
+                    <header className="col-head" style={{ cursor: "default" }}>
+                      <div>
+                        <h3>{d.nivel != null ? `D${d.nivel}` : "Sin división"}
+                          {d.nivel != null && d.nombre ? ` · ${d.nombre}` : ""}</h3>
+                        <p className="sub">{d.jugadores.length} alumno
+                          {d.jugadores.length === 1 ? "" : "s"}</p>
+                      </div>
+                    </header>
+                    {suyos.length === 0 ? (
+                      <p className="msg">{busca && d.jugadores.length ? "Ninguno con ese nombre." : "Sin alumnos."}</p>
+                    ) : (
+                      <ul className="miembros">
+                        {suyos.map((j) => (
+                          <li key={j.id} className="alumno-div">
+                            <span className="txt">{j.nombre}</span>
+                            <span className="resp">
+                              {[j.responsable || "Sin grupo", j.edad ? `${j.edad} año${j.edad === 1 ? "" : "s"}` : null]
+                                .filter(Boolean).join(" · ")}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PorEntrenador({ pestanas }) {
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -275,6 +386,7 @@ export default function Page() {
     return (
       <div className="page grupos">
         <h1>Grupos</h1>
+        {pestanas}
         {error ? <p className="err">{error}</p> : <p className="msg">Cargando…</p>}
       </div>
     );
@@ -380,6 +492,7 @@ export default function Page() {
         <h1>Grupos</h1>
         {!editable && <span className="pill no">Solo lectura</span>}
       </div>
+      {pestanas}
       {editable && (
         <p className="help">
           Arrastra un <b>alumno</b> a la columna de otro entrenador

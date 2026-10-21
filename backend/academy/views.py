@@ -33,7 +33,7 @@ from .models import (
     VetoEntrenador,
     VisitaInvitado,
 )
-from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion
+from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion, aprueba_invitados
 from .scope import (
     coaches_del_entrenador,
     coaches_visibles,
@@ -901,7 +901,10 @@ def _aprobar_visitas(visitas, usuario):
             v.save(update_fields=["estado", "aprobado_por"])
         _fechas_de_alta(inv)
         quien = suyas[0].solicitante or inv.entrenador_solicitante
-        _avisar(getattr(quien, "user", None), f"Invitado aprobado: {inv.nombre}",
+        destinatario = getattr(quien, "user", None)
+        if destinatario == usuario:
+            continue
+        _avisar(destinatario, f"Invitado aprobado: {inv.nombre}",
                 f"Viene el {_dias_texto(v.fecha for v in suyas)}.")
 
 
@@ -922,12 +925,12 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         return getattr(self.request.user, "entrenador", None)
 
     def _crear_visitas(self, inv, fechas, solicitante):
-        """Añade estos días al invitado. Los pone dirección: aprobados si su
-        ficha ya lo está. Los pone un entrenador: pendientes de dirección."""
+        """Añade estos días al invitado. Los pone dirección (o quien aprueba
+        invitados): aprobados, y su ficha también. Los pone un entrenador:
+        pendientes de dirección."""
         from datetime import date
 
-        direccion = self.request.user.is_superadmin
-        directo = direccion and inv.estado == Invitado.Estado.APROBADO
+        direccion = aprueba_invitados(self.request.user)
         nuevas = []
         for clave, fila in fechas.items():
             dia = date.fromisoformat(clave)
@@ -938,15 +941,18 @@ class InvitadoViewSet(viewsets.ModelViewSet):
                 v = VisitaInvitado(invitado=inv, fecha=dia)
             v.manana, v.tarde = fila.get("manana"), fila.get("tarde")
             v.solicitante = solicitante
-            if directo:
-                v.estado = VisitaInvitado.Estado.APROBADA
-                v.aprobado_por = self.request.user
-            elif v.estado != VisitaInvitado.Estado.APROBADA:
+            if v.estado != VisitaInvitado.Estado.APROBADA:
                 v.estado = VisitaInvitado.Estado.PENDIENTE
             v.save()
             nuevas.append(v)
-        if directo:
-            _fechas_de_alta(inv)
+        if direccion:
+            # Lo pone dirección (o Dani, Iván): aprobado en el acto, ficha
+            # incluida si era nuevo. Ya aprobadas solo cambian de franja.
+            pendientes = [v for v in nuevas if v.estado == VisitaInvitado.Estado.PENDIENTE]
+            if pendientes:
+                _aprobar_visitas(pendientes, self.request.user)
+            else:
+                _fechas_de_alta(inv)
         elif nuevas:
             _avisar_direccion(
                 f"Invitado pendiente: {inv.nombre}",
@@ -963,6 +969,8 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             inv = serializer.save(entrenador_solicitante=solicitante)
             self._crear_visitas(inv, fechas, solicitante)
+        if inv.estado == Invitado.Estado.APROBADO:
+            return
         from .scope import coaches_del_entrenador
         for coach_user in coaches_del_entrenador(solicitante):
             _avisar(coach_user, f"Invitado propuesto por {solicitante.nombre}",
@@ -971,7 +979,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
     def _puede_tocar(self, inv):
         """Dirección siempre; quien lo propuso, mientras la ficha está
         pendiente."""
-        if self.request.user.is_superadmin:
+        if aprueba_invitados(self.request.user):
             return True
         ent = self._entrenador()
         return (inv.estado == Invitado.Estado.PENDIENTE and ent is not None
@@ -988,7 +996,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
                 _aplicar_ficha(inv)
 
     def perform_destroy(self, instance):
-        if not self.request.user.is_superadmin:
+        if not aprueba_invitados(self.request.user):
             raise PermissionDenied("Solo la dirección deportiva borra invitados.")
         if instance.jugador_creado_id:
             raise PermissionDenied(
@@ -1001,7 +1009,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         from .serializers import fechas_validas
 
         inv = self.get_object()
-        if inv.estado == Invitado.Estado.RECHAZADO and not request.user.is_superadmin:
+        if inv.estado == Invitado.Estado.RECHAZADO and not aprueba_invitados(request.user):
             raise PermissionDenied("Dirección rechazó a este invitado.")
         fechas = fechas_validas(request.data.get("fechas") or {})
         if not fechas:
@@ -1017,7 +1025,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def aprobar(self, request, pk=None):
         """La ficha y todos sus días pendientes."""
-        if not request.user.is_superadmin:
+        if not aprueba_invitados(request.user):
             raise PermissionDenied("Solo la dirección deportiva aprueba invitados.")
         inv = self.get_object()
         pendientes = list(inv.visitas.filter(estado=VisitaInvitado.Estado.PENDIENTE))
@@ -1041,7 +1049,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
     def rechazar(self, request, pk=None):
         """Sin aprobar aún: rechaza la ficha. Aprobado: rechaza sus días
         pendientes."""
-        if not request.user.is_superadmin:
+        if not aprueba_invitados(request.user):
             raise PermissionDenied("Solo la dirección deportiva rechaza invitados.")
         inv = self.get_object()
         with transaction.atomic():
@@ -1081,7 +1089,7 @@ class VisitaInvitadoViewSet(viewsets.ModelViewSet):
         raise PermissionDenied("Los días se añaden desde el invitado.")
 
     def _puede_tocar(self, v):
-        if self.request.user.is_superadmin:
+        if aprueba_invitados(self.request.user):
             return True
         ent = getattr(self.request.user, "entrenador", None)
         return (v.estado == VisitaInvitado.Estado.PENDIENTE and ent is not None
@@ -1104,7 +1112,7 @@ class VisitaInvitadoViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def aprobar(self, request, pk=None):
-        if not request.user.is_superadmin:
+        if not aprueba_invitados(request.user):
             raise PermissionDenied("Solo la dirección deportiva aprueba invitados.")
         v = self.get_object()
         with transaction.atomic():
@@ -1114,7 +1122,7 @@ class VisitaInvitadoViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def rechazar(self, request, pk=None):
-        if not request.user.is_superadmin:
+        if not aprueba_invitados(request.user):
             raise PermissionDenied("Solo la dirección deportiva rechaza invitados.")
         v = self.get_object()
         aprobada = v.estado == VisitaInvitado.Estado.APROBADA
@@ -1586,6 +1594,42 @@ class GrupoViewSet(viewsets.ViewSet):
             # Bloques cuyas columnas puede ordenar (todos, para dirección).
             "puede_ordenar": [c.id for c in coaches if self._puede_ordenar(c.id)],
         })
+
+    @action(detail=False, methods=["get"])
+    def divisiones(self, request):
+        """Los alumnos por división (21/10/2026): solo jugadores, sin
+        entrenadores. Todas las divisiones, también las vacías, y al final
+        quien no tiene división. Fuera quien ya no entrena (baja pasada:
+        invitados que ya vinieron, «No entrena»)."""
+        from datetime import date
+
+        hoy = date.today()
+        jugadores = (
+            Jugador.objects.filter(activo=True)
+            .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy))
+            .select_related("division", "escuela", "entrenador_responsable")
+            .order_by("nombre")
+        )
+        por_division = defaultdict(list)
+        for j in jugadores:
+            resp = j.entrenador_responsable
+            por_division[j.division_id].append({
+                "id": j.id,
+                "nombre": j.nombre,
+                "edad": j.edad,
+                "sexo": j.sexo,
+                "escuela": j.escuela.nombre if j.escuela_id else None,
+                "responsable": resp.nombre if resp and resp.activo else None,
+            })
+        divisiones = [
+            {"id": d.id, "nivel": d.nivel, "nombre": d.nombre,
+             "jugadores": por_division.get(d.id, [])}
+            for d in Division.objects.order_by("nivel")
+        ]
+        if por_division.get(None):
+            divisiones.append({"id": None, "nivel": None, "nombre": "Sin división",
+                               "jugadores": por_division[None]})
+        return Response({"divisiones": divisiones})
 
     def _jugador(self, request):
         jugador = Jugador.objects.filter(pk=request.data.get("jugador")).first()

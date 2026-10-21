@@ -15,6 +15,14 @@ function setAuth(data) {
   localStorage.setItem("gt_token", data.token);
   localStorage.setItem("gt_user", JSON.stringify(data));
 }
+// El usuario guardado al entrar puede ser de antes de un permiso nuevo: se
+// pide otra vez al servidor y se guarda lo que diga.
+export async function refrescarUsuario() {
+  const me = await req("/auth/me/");
+  const nuevo = { ...(getUser() || {}), ...me };
+  localStorage.setItem("gt_user", JSON.stringify(nuevo));
+  return nuevo;
+}
 export function logout() {
   localStorage.removeItem("gt_token");
   localStorage.removeItem("gt_user");
@@ -254,6 +262,7 @@ export const guardarEntrenadoresJugador = (jugadorId, body) =>
 
 // --- Grupos de entrenamiento (entrenador ↔ alumnos) ------------------------
 export const getGrupos = () => req("/grupos/");
+export const getGruposDivisiones = () => req("/grupos/divisiones/");
 export const grupoAnadir = (jugador, entrenador) =>
   req("/grupos/anadir/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
 export const grupoQuitar = (jugador, entrenador) =>

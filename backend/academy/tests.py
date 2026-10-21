@@ -1325,6 +1325,42 @@ class InvitadoComoJugadorTests(TestCase):
                                         format="json").status_code, 200)
         self.assertEqual(Jugador.objects.get(nombre__startswith="Llorca").edad, 17)
 
+    def test_dani_e_ivan_lo_meten_ya_aprobado(self):
+        """21/10/2026: si lo pone dirección, Dani o Iván (aunque sean coaches),
+        el invitado y sus días quedan aprobados al momento."""
+        from rest_framework.test import APIClient
+
+        from academy.models import Aviso, VisitaInvitado
+        from users.models import User
+
+        u_dani = User.objects.create_user(
+            username="daniel.gimeno", password="x", role=User.Role.COACH)
+        dani = Entrenador.objects.create(nombre="Dani", user=u_dani)
+        c = APIClient()
+        c.force_authenticate(u_dani)
+        self.assertIs(c.get("/api/auth/me/").json()["aprueba_invitados"], True)
+        datos = {"nombre": "Chicote", "division": self.d3.id,
+                 "fechas": {"2026-10-22": {"manana": "M1"}}}
+        r = c.post("/api/invitados/", datos, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        inv = Invitado.objects.get(pk=r.json()["id"])
+        self.assertEqual((inv.estado, inv.entrenador_solicitante), ("APROBADO", dani))
+        self.assertIsNotNone(inv.jugador_creado_id)
+        self.assertEqual(list(inv.visitas.values_list("estado", flat=True)), ["APROBADA"])
+        self.assertFalse(Aviso.objects.filter(titulo__startswith="Invitado pendiente").exists())
+        # Volver a invitarle: también directo.
+        c.post(f"/api/invitados/{inv.id}/dias/",
+               {"fechas": {"2026-10-26": {"manana": "M2"}}}, format="json")
+        self.assertEqual(VisitaInvitado.objects.get(invitado=inv, fecha=date(2026, 10, 26)).estado,
+                         "APROBADA")
+        # Y aprueba lo que proponen los demás.
+        otro = self._proponer().json()
+        self.assertEqual(c.post(f"/api/invitados/{otro['id']}/aprobar/").status_code, 200)
+        # Un entrenador cualquiera sigue necesitando aprobación.
+        self.assertEqual(Invitado.objects.get(pk=otro["id"]).estado, "APROBADO")
+        r = self.ent2.post("/api/invitados/", {**datos, "nombre": "Otro"}, format="json")
+        self.assertEqual(Invitado.objects.get(pk=r.json()["id"]).estado, "PENDIENTE")
+
 
 class InvitadoEnElMotorTests(TestCase):
     """El invitado entra en el cuadrante los días de sus visitas aprobadas, y
@@ -1437,3 +1473,38 @@ class RellenoForzadoTests(TestCase):
         a.save()
         a.refresh_from_db()
         self.assertEqual((a.forzada, a.motivo_forzado), (False, ""))
+
+
+class GruposPorDivisionTests(TestCase):
+    """21/10/2026: segunda pestaña de Grupos, los alumnos por división."""
+
+    def test_alumnos_por_division_sin_los_que_ya_no_entrenan(self):
+        from datetime import timedelta
+
+        from rest_framework.test import APIClient
+
+        from academy.models import Division
+        from users.models import User
+
+        d1, _ = Division.objects.get_or_create(nivel=1)
+        d2, _ = Division.objects.get_or_create(nivel=2)
+        ent = Entrenador.objects.create(nombre="Blas")
+        Jugador.objects.create(nombre="Bea", division=d2, entrenador_responsable=ent)
+        Jugador.objects.create(nombre="Ana", division=d2)
+        Jugador.objects.create(nombre="Sin div")
+        Jugador.objects.create(nombre="Baja", division=d1,
+                               fecha_baja=date.today() - timedelta(days=1))
+        Jugador.objects.create(nombre="Inactivo", division=d1, activo=False)
+        c = APIClient()
+        c.force_authenticate(User.objects.create_user(
+            username="e", password="x", role=User.Role.ENTRENADOR))
+        r = c.get("/api/grupos/divisiones/")
+        self.assertEqual(r.status_code, 200, r.content)
+        # Las migraciones ya traen alumnos: se miran solo los de esta prueba.
+        mios = {"Ana", "Bea", "Sin div", "Baja", "Inactivo"}
+        filas = {d["nivel"]: [j for j in d["jugadores"] if j["nombre"] in mios]
+                 for d in r.json()["divisiones"]}
+        self.assertEqual(filas[1], [])
+        self.assertEqual([(j["nombre"], j["responsable"]) for j in filas[2]],
+                         [("Ana", None), ("Bea", "Blas")])
+        self.assertEqual([j["nombre"] for j in filas[None]], ["Sin div"])
