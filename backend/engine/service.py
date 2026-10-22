@@ -34,7 +34,10 @@ from scheduling.models import (
     Semana,
 )
 
-from .pairing import NIVEL_MAX, Court, PairingInput, Player, _normalise, solve_pairing
+from .pairing import (
+    NIVEL_MAX, Court, PairingInput, Player, _normalise, emparejamiento_maximo,
+    pueden_juntos, solve_pairing,
+)
 
 
 def _build_courts(usar_satelites: bool = True) -> list[Court]:
@@ -1437,6 +1440,146 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
     return metidos
 
 
+# Lo que pesa, al compactar una franja, que una pareja sea del mismo color y
+# que ya estuviera junta en el reparto del solver: desempates por debajo de
+# una pareja declarada (peso_pareja) y de no repetir (peso_repeticion).
+BONUS_COMPACTAR_COLOR = 100
+BONUS_COMPACTAR_MISMA = 50
+
+
+def _compactar_franja(grupos, cubiertas, vigilancia, intocables, por_id,
+                      courts_by_id, reglas, con_entrenador, color_jugador,
+                      recent, pairs_soft, pairs_hard, cfg):
+    """Vuelve a emparejar a la gente de una franja si así salen menos pistas
+    (22/10/2026). El solver para en cuanto lleva un rato sin mejorar y a veces
+    se queda con dos individuales que podrían ir juntos, o con una pareja que,
+    cambiada por otra, deja a todos de dos en dos; cada pista de más cuesta,
+    con pocos entrenadores, sacar a uno de la directiva.
+
+    Busca el emparejamiento de menos pistas entre los de la franja sin romper
+    ninguna regla (rencillas, división, chico/chica, edad), sin tocar la pista
+    de quien solo entra con los suyos (`intocables`), las parejas declaradas
+    obligatorias ni a los alumnos sin prioridad, y recoloca los grupos en las
+    mismas pistas por división (los mejores en las primeras), cerrando las que
+    sobran. Las pistas conservan si llevan entrenador o van vigiladas; si se
+    cierra la que vigilaba a otra, la vigila la vecina o pasa a llevar
+    entrenador ella. Nunca hacen falta más entrenadores que antes.
+
+    `grupos` es {pista: jugadores} tal y como lo dejó el solver; `cubiertas`
+    las pistas con entrenador (None si no se miró); `vigilancia` {vigilada:
+    pista que la vigila}. Devuelve (grupos, cubiertas, vigilancia, pistas
+    cerradas) o None si no se ahorra ninguna pista."""
+    fijas = set(intocables)
+    en_dura = {j for par in pairs_hard for j in par}
+    for cid, miembros in grupos.items():
+        if any(j not in por_id or j in en_dura or por_id[j].sin_prioridad
+               for j in miembros):
+            fijas.add(cid)
+    viejas = [cid for cid in grupos if cid not in fijas]
+    movibles = [por_id[j] for cid in viejas for j in grupos[cid]]
+    if len(movibles) < 2:
+        return None
+    pista_de = {j: cid for cid, m in grupos.items() for j in m}
+    pesos = {}
+    for i, a in enumerate(movibles):
+        for b in movibles[i + 1:]:
+            par = frozenset((a.id, b.id))
+            w = 0
+            if par in pairs_soft or par in reglas.pairs_declaradas:
+                w += cfg.peso_pareja
+            w -= cfg.peso_repeticion * recent.get(par, 0)
+            if color_jugador.get(a.id) and color_jugador.get(a.id) == color_jugador.get(b.id):
+                w += BONUS_COMPACTAR_COLOR
+            if pista_de[a.id] == pista_de[b.id]:
+                w += BONUS_COMPACTAR_MISMA
+            if w:
+                pesos[par] = w
+    parejas = emparejamiento_maximo(movibles, reglas, pesos)
+    if parejas is None:
+        return None
+    emparejados = {j for par in parejas for j in par}
+    nuevos = ([sorted(par) for par in parejas]
+              + [[p.id] for p in movibles if p.id not in emparejados])
+    # A igual número de pistas también vale si así se deshace una pareja
+    # forzada (el nuevo emparejamiento nunca rompe reglas).
+    forzadas = sum(
+        1 for cid in viejas if len(grupos[cid]) > 1
+        and not pueden_juntos(por_id[grupos[cid][0]], por_id[grupos[cid][1]], reglas))
+    if len(nuevos) > len(viejas) or (len(nuevos) == len(viejas) and not forzadas):
+        return None
+
+    def apta(j, cid):
+        c, p = courts_by_id[cid], por_id[j]
+        if p.surface_pref and c.surface and c.surface != p.surface_pref:
+            return False
+        return not (p.solo_central and c.is_satellite)
+
+    def orden_pista(cid):
+        c = courts_by_id[cid]
+        return (c.is_satellite, c.fill_rank, c.number or 0, cid)
+
+    libres = sorted(viejas, key=orden_pista)
+    nuevas_cub = set(cubiertas) if cubiertas is not None else None
+    nueva_vig = dict(vigilancia)
+    asignacion = {}
+    for miembros in sorted(nuevos, key=lambda m: (
+            not any(j in con_entrenador for j in m), -len(m),
+            min(por_id[j].division or NIVEL_MAX + 1 for j in m))):
+        necesita_cub = any(j in con_entrenador for j in miembros)
+        for cid in libres:
+            if cid in asignacion or not all(apta(j, cid) for j in miembros):
+                continue
+            if necesita_cub and nuevas_cub is not None and cid not in nuevas_cub:
+                continue
+            asignacion[cid] = miembros
+            break
+        else:
+            return None
+    cerradas = [cid for cid in viejas if cid not in asignacion]
+    abiertas = set(asignacion) | (fijas & set(grupos))
+    if nuevas_cub is not None:
+        def vecinas(cid):
+            c = courts_by_id[cid]
+            return [o for o in abiertas if o != cid
+                    and courts_by_id[o].venue_id == c.venue_id
+                    and c.number is not None and courts_by_id[o].number is not None
+                    and abs(courts_by_id[o].number - c.number) == 1]
+
+        for cid in cerradas:
+            if cid not in nuevas_cub:
+                nueva_vig.pop(cid, None)
+                continue
+            nuevas_cub.discard(cid)
+            for v, w in list(nueva_vig.items()):
+                if w != cid:
+                    continue
+                del nueva_vig[v]
+                otra = next((o for o in vecinas(v) if o in nuevas_cub
+                             and o not in nueva_vig.values() and o not in intocables), None)
+                if otra is not None:
+                    nueva_vig[v] = otra
+                else:
+                    nuevas_cub.add(v)
+        # En resina y en cada satélite, al menos una pista con entrenador.
+        por_sede = defaultdict(list)
+        for cid in abiertas:
+            c = courts_by_id[cid]
+            if c.surface == "RESINA" or c.is_satellite:
+                por_sede[(c.venue_id, c.is_satellite)].append(cid)
+        for cids in por_sede.values():
+            if not any(cid in nuevas_cub for cid in cids):
+                v = min(cids, key=orden_pista)
+                nuevas_cub.add(v)
+                nueva_vig.pop(v, None)
+        if any(cid not in nuevas_cub and cid not in nueva_vig for cid in abiertas):
+            return None
+        if len(nuevas_cub) > len(cubiertas):
+            return None
+    grupos_nuevos = {cid: m for cid, m in grupos.items() if cid in fijas}
+    grupos_nuevos.update(asignacion)
+    return grupos_nuevos, nuevas_cub, nueva_vig, len(cerradas)
+
+
 def _dias_de_invitados():
     """{jugador: {"2026-10-14": {"manana": "M2", …}}}: los días que viene cada
     invitado, de sus visitas aprobadas (14/10/2026)."""
@@ -1562,12 +1705,12 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
     grupos = _grupos_de_turnos(turnos, turnos_exclusivos)
 
     cfg = ConfiguracionMotor.get_solo()
-    # Tope de toda la generación (21/10/2026): una semana tarda en torno a un
-    # minuto; si alguna se complica, al pasar de MOTOR_TOPE_GENERACION_S (2
-    # minutos) lo que falte se resuelve con 1 s por llamada, sin dejar días a
-    # medias.
+    # Tope de toda la generación (21/10/2026): una semana tarda en torno a dos
+    # minutos; si alguna se complica, al pasar de MOTOR_TOPE_GENERACION_S (3
+    # minutos desde el 22/10) lo que falte se resuelve con 1 s por llamada, sin
+    # dejar días a medias.
     fin_generacion = time.monotonic() + float(
-        os.environ.get("MOTOR_TOPE_GENERACION_S", "120"))
+        os.environ.get("MOTOR_TOPE_GENERACION_S", "180"))
     # Los satélites entran en el reparto solo en modo «desbordar». En modo
     # «rescate» (el normal desde el 21/10/2026) se abren después, sin
     # entrenador, para quien se quedaría en el banquillo.
@@ -2037,6 +2180,31 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 puestos = {jid for t in fase for m in franjas_res[t.id].values()
                            for jid in m}
                 pendientes = [p for p in pendientes if p.id not in puestos]
+            # Por la mañana (pistas de dos), si reemparejando salen menos
+            # pistas, se compacta la franja (22/10/2026).
+            if not es_tarde:
+                reglas = PairingInput(
+                    players=[], courts=[], vetoes=vetoes_dia,
+                    pairs_declaradas=pairs_declaradas_dia,
+                    apply_neighbor=cfg.aplicar_vecindad, neighbor_span=cfg.vecindad_max)
+                for t in grupo:
+                    if not franjas_res.get(t.id):
+                        continue
+                    atados_t = {
+                        jid for jid, cids in atados_de(t).items()
+                        if jid in franjas_de and cids & del_reparto(t, presentes_en(t, players))}
+                    res = _compactar_franja(
+                        franjas_res[t.id], cubiertas_res.get(t.id),
+                        vigilancia_res.get(t.id, {}),
+                        set(dedicadas_res.get(t.id, {}).values()), por_id_bloque,
+                        courts_by_id, reglas, atados_t,
+                        {pid: color_del_jugador(pid, responsable_de, color_de)
+                         for pid in por_id_bloque},
+                        recent, pairs_soft_dia, pairs_hard_dia, cfg)
+                    if res:
+                        franjas_res[t.id], cubiertas_res[t.id], vigilancia_res[t.id], n = res
+                        report.setdefault("compactadas", []).append(
+                            {"dia": dia, "turno": t.codigo, "pistas_cerradas": n})
             # Regenerar = rehacer el bloque desde cero, menos lo puesto a mano.
             Asignacion.objects.filter(
                 semana=semana, dia=dia, turno__in=grupo

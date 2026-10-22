@@ -304,9 +304,11 @@ def num_workers() -> int:
 
 
 # Si en la mejor solución queda alguien fuera y la cota del solver no descarta
-# que quepa, se espera esto por cada segundo de `sin_mejora` antes de parar
-# (22/10/2026: en la máquina de prod, parar al segundo dejaba a veces a 12-14
-# jugadores fuera de una mañana).
+# que quepa, o si abre más pistas de las que hacen falta como mínimo
+# (`cota_pistas`), se espera esto por cada segundo de `sin_mejora` antes de
+# parar (22/10/2026: en la máquina de prod, parar al segundo dejaba a veces a
+# 12-14 jugadores fuera de una mañana, o 16 pistas con 4 individuales donde
+# cabían 15 con 2).
 PACIENCIA_SI_FALTA_GENTE = 4
 
 
@@ -318,16 +320,24 @@ class _ParaSinMejora(cp_model.CpSolverSolutionCallback):
     Con `colocados` (variable con las plazas ocupadas) y `todos` (las que
     harían falta para colocar a todos), solo para tan pronto si ya están todos
     o si la cota dice que no cabe nadie más (`margen`, lo que vale colocar a
-    uno); si no, aguanta PACIENCIA_SI_FALTA_GENTE veces más."""
+    uno); si no, aguanta PACIENCIA_SI_FALTA_GENTE veces más. Y lo mismo con
+    las pistas: con `abiertas`, `distintos` (jugadores con pista) y
+    `cota_pistas` (parejas que como mucho se pueden hacer), mientras abra más
+    pistas que `distintos - cota_pistas` aún puede ahorrar alguna."""
 
     def __init__(self, solver: cp_model.CpSolver, segundos: float,
-                 margen: float | None = None, colocados=None, todos: int = 0):
+                 margen: float | None = None, colocados=None, todos: int = 0,
+                 abiertas=None, distintos=None, cota_pistas: int | None = None):
         super().__init__()
         self._solver = solver
         self._segundos = segundos
         self._margen = margen
         self._colocados = colocados
         self._todos = todos
+        self._abiertas = abiertas
+        self._distintos = distintos
+        self._cota_pistas = cota_pistas
+        self._sobran_pistas = False
         self._n = None
         self._ultima: float | None = None
         self._mejor: float | None = None
@@ -343,11 +353,16 @@ class _ParaSinMejora(cp_model.CpSolverSolutionCallback):
         self._cota = self.best_objective_bound
         if self._colocados is not None:
             self._n = self.Value(self._colocados)
+        if self._cota_pistas is not None and self._abiertas is not None:
+            self._sobran_pistas = (self.Value(self._abiertas)
+                                   > self.Value(self._distintos) - self._cota_pistas)
         if valor != self._mejor:
             self._mejor = valor
             self._ultima = time.monotonic()
 
     def _espera(self) -> float:
+        if self._sobran_pistas:
+            return self._segundos * PACIENCIA_SI_FALTA_GENTE
         if (self._margen is None or self._mejor is None or self._cota is None
                 or self._cota - self._mejor < self._margen
                 or (self._n is not None and self._n >= self._todos)):
@@ -368,6 +383,51 @@ class _ParaSinMejora(cp_model.CpSolverSolutionCallback):
 
 def _normalise(a: int, b: int) -> tuple[int, int]:
     return (a, b) if a <= b else (b, a)
+
+
+def pueden_juntos(a: Player, b: Player, data: PairingInput) -> bool:
+    """¿Pueden `a` y `b` compartir pista sin romper nada? Las rencillas van
+    dentro de `data.vetoes`; una pareja declarada a mano salta las reglas de
+    emparejamiento, pero no una rencilla."""
+    if _normalise(a.id, b.id) in data.vetoes:
+        return False
+    if frozenset((a.id, b.id)) in data.pairs_declaradas:
+        return True
+    return _motivo(a, b, data.vetoes, data.apply_neighbor, data.neighbor_span,
+                   data.span_extra, data.edad_extra) is None
+
+
+def emparejamiento_maximo(players: list[Player], data: PairingInput,
+                          pesos: dict[frozenset[int], int] | None = None,
+                          segundos: float = 1.0) -> list[frozenset[int]] | None:
+    """Las parejas que se pueden hacer como mucho entre `players` sin romper
+    nada (y, a igual número, las de más `pesos`): un emparejamiento máximo,
+    que con tan poca gente CP-SAT resuelve al instante. None si no llega a
+    demostrar que es el máximo."""
+    model = cp_model.CpModel()
+    de = defaultdict(list)
+    ys = {}
+    for i in range(len(players)):
+        for j in range(i + 1, len(players)):
+            a, b = players[i], players[j]
+            if not pueden_juntos(a, b, data):
+                continue
+            y = model.NewBoolVar(f"y_{a.id}_{b.id}")
+            ys[frozenset((a.id, b.id))] = y
+            de[a.id].append(y)
+            de[b.id].append(y)
+    for vs in de.values():
+        model.Add(sum(vs) <= 1)
+    if not ys:
+        return []
+    escala = 1 + sum(abs(w) for w in (pesos or {}).values())
+    model.Maximize(sum((escala + (pesos or {}).get(par, 0)) * y for par, y in ys.items()))
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = segundos
+    solver.parameters.num_search_workers = 1
+    if solver.Solve(model) != cp_model.OPTIMAL:
+        return None
+    return [par for par, y in ys.items() if solver.Value(y)]
 
 
 # Diferencia de edad que admite cada franja de edad: (desde, hasta, años). Los
@@ -1114,10 +1174,33 @@ def solve_pairing(data: PairingInput) -> PairingResult:
         # y la cota, ya no cabe nadie más.
         colocados = model.NewIntVar(0, len(x), "colocados")
         model.Add(colocados == sum(x.values()))
+        # Pistas de más: si de dos en dos cabrían en menos pistas de las que
+        # abre (emparejamiento máximo, sin mirar franjas), que siga buscando.
+        abiertas = distintos = cota_pistas = None
+        activos = [p for p in players if del_jugador[p.id]]
+        if (data.paciencia and activos
+                and all(tope(c) <= 2 for c in courts)):
+            parejas = emparejamiento_maximo(activos, data)
+            if parejas is not None:
+                cota_pistas = len(parejas)
+                abiertas = model.NewIntVar(0, len(used), "abiertas")
+                model.Add(abiertas == sum(used.values()))
+                con_pista = []
+                for p in activos:
+                    v = model.NewBoolVar(f"con_pista_{p.id}")
+                    suyas = [var for _f, var in del_jugador[p.id]]
+                    model.Add(v <= sum(suyas))
+                    for var in suyas:
+                        model.Add(v >= var)
+                    con_pista.append(v)
+                distintos = model.NewIntVar(0, len(activos), "distintos")
+                model.Add(distintos == sum(con_pista))
         parar = _ParaSinMejora(solver, sin_mejora,
                                margen=(data.w_assign + piso) if data.paciencia else None,
                                colocados=colocados,
-                               todos=sum(1 for p in players if del_jugador[p.id]))
+                               todos=sum(1 for p in players if del_jugador[p.id]),
+                               abiertas=abiertas, distintos=distintos,
+                               cota_pistas=cota_pistas)
         try:
             status = solver.Solve(model, parar)
         finally:

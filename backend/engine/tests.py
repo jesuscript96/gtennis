@@ -1433,3 +1433,124 @@ class DirectivaArribaYColoresTests(SimpleTestCase):
         # entrenador de su color, juntos con la directiva.
         self.assertIn(sorted(next(iter(r.franjas[1].values()))), ([0, 1], [2, 3]))
         self.assertEqual(len(r.franjas[1]), 2)
+
+
+class CompactarFranjaTests(SimpleTestCase):
+    """22/10/2026: si reemparejando a los de una franja salen menos pistas, se
+    compacta: el solver, con poco tiempo, dejaba individuales que podían ir
+    juntos o parejas que, cambiadas, dejaban a todos de dos en dos."""
+
+    class _Cfg:
+        peso_pareja, peso_repeticion = 5000, 50
+
+    def _tierra(self, *numeros):
+        return {n: Court(id=n, venue_id=1, capacity=2, number=n, surface="TIERRA")
+                for n in numeros}
+
+    def _compactar(self, grupos, por_id, courts, cubiertas=None, vigilancia=None,
+                   intocables=(), con_entrenador=(), pairs_hard=(), vetoes=(),
+                   pairs_soft=()):
+        from .service import _compactar_franja
+
+        reglas = PairingInput(players=[], courts=[], vetoes=set(vetoes))
+        return _compactar_franja(
+            grupos, cubiertas, vigilancia or {}, set(intocables), por_id, courts,
+            reglas, set(con_entrenador), {}, {}, set(pairs_soft), set(pairs_hard),
+            self._Cfg())
+
+    def test_dos_individuales_compatibles_se_juntan(self):
+        por_id = {1: Player(id=1, division=5), 2: Player(id=2, division=5),
+                  3: Player(id=3, division=9), 4: Player(id=4, division=9)}
+        courts = self._tierra(1, 2, 3)
+        res = self._compactar({1: [1], 3: [2], 2: [3, 4]}, por_id, courts,
+                              cubiertas={1, 3}, vigilancia={2: 1})
+        grupos, cub, vig, cerradas = res
+        self.assertEqual(cerradas, 1)
+        self.assertEqual(sorted(sorted(m) for m in grupos.values()), [[1, 2], [3, 4]])
+        # Los D5 (mejores) en la 1, cubierta; la 2 sigue vigilada por la 1.
+        self.assertEqual(grupos[1], [1, 2])
+        self.assertEqual((cub, vig), ({1}, {2: 1}))
+
+    def test_cambia_una_pareja_para_que_todos_vayan_de_dos(self):
+        # (Vicent D4, Marc D3) + Nazim D5 solo + Enzo D3 solo → (Vicent, Nazim)
+        # y (Marc, Enzo): una pista menos.
+        por_id = {1: Player(id=1, division=4), 2: Player(id=2, division=3),
+                  3: Player(id=3, division=5), 4: Player(id=4, division=3)}
+        courts = self._tierra(1, 3, 7)
+        courts[7] = Court(id=7, venue_id=1, capacity=2, number=7, surface="RESINA")
+        res = self._compactar({7: [1, 2], 1: [3], 3: [4]}, por_id, courts,
+                              cubiertas={1, 3, 7})
+        grupos, cub, _vig, cerradas = res
+        self.assertEqual(cerradas, 1)
+        self.assertEqual(sorted(sorted(m) for m in grupos.values()), [[1, 3], [2, 4]])
+        self.assertNotIn(7, grupos)  # se cierra la resina, la última
+        self.assertEqual(cub, {1, 3})
+
+    def test_individuales_incompatibles_se_quedan(self):
+        por_id = {1: Player(id=1, division=2), 2: Player(id=2, division=7)}
+        self.assertIsNone(self._compactar({1: [1], 3: [2]}, por_id, self._tierra(1, 3),
+                                          cubiertas={1, 3}))
+
+    def test_si_se_cierra_la_que_vigilaba_la_vecina_la_vigila_otra_o_lleva_entrenador(self):
+        por_id = {1: Player(id=1, division=5), 2: Player(id=2, division=5),
+                  3: Player(id=3, division=7), 4: Player(id=4, division=7)}
+        courts = self._tierra(1, 2, 3)
+        # La 3 (cubierta, con un D5) vigila a la 2; la 1 (cubierta) lleva al otro D5.
+        res = self._compactar({1: [1], 3: [2], 2: [3, 4]}, por_id, courts,
+                              cubiertas={1, 3}, vigilancia={2: 3})
+        grupos, cub, vig, _n = res
+        self.assertEqual(set(grupos), {1, 2})
+        self.assertEqual((cub, vig), ({1}, {2: 1}))
+        # Sin otra vecina con entrenador, la vigilada pasa a llevarlo ella (y
+        # no hacen falta más entrenadores que antes: dos).
+        courts = self._tierra(1, 4, 5)
+        res = self._compactar({1: [1], 5: [2], 4: [3, 4]}, por_id, courts,
+                              cubiertas={1, 5}, vigilancia={4: 5})
+        grupos, cub, vig, _n = res
+        self.assertEqual(set(grupos), {1, 4})
+        self.assertEqual((cub, vig), ({1, 4}, {}))
+
+    def test_no_toca_la_pareja_obligatoria_ni_la_pista_del_dedicado(self):
+        por_id = {i: Player(id=i, division=5) for i in range(1, 6)}
+        courts = self._tierra(1, 2, 3, 4)
+        res = self._compactar({1: [1], 2: [2], 3: [3], 4: [4, 5]}, por_id, courts,
+                              cubiertas={1, 3, 4}, vigilancia={2: 1},
+                              intocables={1}, pairs_hard={frozenset((4, 5))})
+        grupos, _cub, _vig, cerradas = res
+        self.assertEqual(cerradas, 1)
+        self.assertEqual(grupos[1], [1])
+        self.assertEqual(grupos[4], [4, 5])
+        self.assertEqual(sorted(m for m in grupos.values() if len(m) == 2), [[2, 3], [4, 5]])
+
+    def test_una_rencilla_no_se_junta(self):
+        por_id = {1: Player(id=1, division=5), 2: Player(id=2, division=5)}
+        self.assertIsNone(self._compactar({1: [1], 3: [2]}, por_id, self._tierra(1, 3),
+                                          cubiertas={1, 3}, vetoes={(1, 2)}))
+
+    def test_emparejamiento_maximo(self):
+        from .pairing import emparejamiento_maximo
+
+        ps = [Player(id=1, division=2), Player(id=2, division=3),
+              Player(id=3, division=4), Player(id=4, division=9)]
+        data = PairingInput(players=ps, courts=[])
+        parejas = emparejamiento_maximo(ps, data)
+        self.assertEqual(len(parejas), 1)
+        # A igual número, manda el peso: con 2 y 3 juntos, 1 se queda solo.
+        parejas = emparejamiento_maximo(ps, data, {frozenset((2, 3)): 10})
+        self.assertEqual(parejas, [frozenset((2, 3))])
+
+    def test_a_igual_numero_de_pistas_deshace_una_pareja_forzada(self):
+        # (D3, D9) forzados + D3 solo + D9 solo → (D3, D3) y (D9, D9).
+        por_id = {1: Player(id=1, division=3), 2: Player(id=2, division=9),
+                  3: Player(id=3, division=3), 4: Player(id=4, division=9)}
+        courts = self._tierra(1, 3, 4)
+        res = self._compactar({1: [1, 2], 3: [3], 4: [4]}, por_id, courts,
+                              cubiertas={1, 3, 4})
+        grupos, _cub, _vig, cerradas = res
+        self.assertEqual(cerradas, 1)
+        self.assertEqual(sorted(sorted(m) for m in grupos.values()), [[1, 3], [2, 4]])
+        # Y sin ahorrar pista tampoco: (D3, D9) forzados + (D3, D9) forzados.
+        res = self._compactar({1: [1, 2], 3: [3, 4]}, por_id, courts, cubiertas={1, 3})
+        grupos, _cub, _vig, cerradas = res
+        self.assertEqual(cerradas, 0)
+        self.assertEqual(sorted(sorted(m) for m in grupos.values()), [[1, 3], [2, 4]])
