@@ -203,6 +203,21 @@ VIGILADAS_ESTRICTAS = True
 # (800)—, así que solo salen cuando hacen falta para colocar a alguien.
 PESO_BANQUILLO = 2000
 
+# Colores en el solver (23/10/2026): cada jugador con color en una pista cuyo
+# entrenador es de otro color. Por debajo de abrir pista (900): no se abren
+# pistas para cuadrar colores, solo se coloca a la gente para que encajen.
+PESO_FUERA_COLOR = 300
+# La directiva arriba: cada división por debajo de la 1 de cada jugador de su
+# pista (de una pista de D2 a una de D7 son 5 por jugador: más que lo que se
+# ahorra en colores), y nunca a la resina o a otra sede si otro puede ir.
+PESO_DIRECTIVA_DIVISION = 150
+PESO_DIRECTIVA_FUERA = 10000
+
+
+def fuera_del_resort(court) -> bool:
+    """Resina u otra sede: donde nunca va la directiva si otro puede ir."""
+    return court.is_satellite or court.surface == "RESINA"
+
 
 def debe_llevar_entrenador(court) -> bool:
     """¿Esta pista, si se abre, lleva entrenador sí o sí? La tierra del Resort
@@ -217,13 +232,8 @@ def debe_llevar_entrenador(court) -> bool:
 # menos que dejar a alguien sin pista (1000): nadie se queda fuera por esto.
 PESO_ALTO_SIN_ENTRENADOR = 800
 
-# El color del grupo (pestaña Grupos) al elegir entrenador para una pista
-# (16/10/2026): por cada alumno de su color, y algo más si es su propio
-# entrenador de gestión. Pesa más que los porcentajes (`_afinidad`, en unidades
-# de ESCALA_AFINIDAD), que deciden dentro del color: la afinidad de un alumno
-# es su porcentaje por las sesiones de la semana menos las hechas, así que
-# para el viernes llega a valer varias unidades; con 3 no ganaba el color.
-BONUS_MISMO_COLOR = 20
+# Su propio entrenador de gestión, dentro de los porcentajes (en unidades de
+# ESCALA_AFINIDAD). El color va en su escalón (COSTE_FUERA_DE_COLOR).
 BONUS_SU_RESPONSABLE = 5
 
 
@@ -517,9 +527,9 @@ def _recent_partners(semana, before_dia) -> dict[frozenset[int], int]:
 # El resolvedor trabaja con enteros: un 1% de peso son 100 unidades, y la carga
 # de cada entrenador (unas pocas sesiones) solo desempata.
 ESCALA_AFINIDAD = 10_000
-# Cubrir una pista vale más que cualquier afinidad: primero que no quede
-# ninguna sin entrenador, y luego quién va a cada una.
-VALOR_CUBRIR = 10**8
+# Cubrir una pista vale más que todo lo demás: primero que no quede ninguna
+# sin entrenador, y luego quién va a cada una (ver los escalones de abajo).
+VALOR_CUBRIR = 10**14
 
 
 def pesos_de_entrenamiento():
@@ -547,23 +557,29 @@ def pesos_de_entrenamiento():
     return pesos
 
 
-def _puntos_color(miembros, cid, responsable_de, color_de):
-    """Lo que tira el color del grupo hacia este entrenador en esta pista: por
-    cada alumno de su color, y más si es su entrenador de gestión. Los alumnos
-    sin color (sin grupo, o de un bloque sin color) no cuentan."""
-    if not responsable_de or not color_de:
+def color_del_jugador(jid, responsable_de, color_de):
+    """El color de un alumno: el del bloque de su entrenador de gestión. "" si
+    no tiene (sin grupo, o de un bloque sin color)."""
+    suyo = (responsable_de or {}).get(jid)
+    return (color_de or {}).get(suyo, "") if suyo is not None else ""
+
+
+def _fuera_de_color(miembros, cid, responsable_de, color_de):
+    """Alumnos de la pista de otro color que el del entrenador. Si él no tiene
+    color, o el alumno tampoco, no cuenta."""
+    mio = (color_de or {}).get(cid)
+    if not mio:
         return 0
-    mio = color_de.get(cid)
-    puntos = 0
-    for jid in miembros:
-        suyo = responsable_de.get(jid)
-        if suyo is None:
-            continue
-        if suyo == cid:
-            puntos += BONUS_MISMO_COLOR + BONUS_SU_RESPONSABLE
-        elif mio and color_de.get(suyo) == mio:
-            puntos += BONUS_MISMO_COLOR
-    return puntos
+    return sum(1 for jid in miembros
+               if color_del_jugador(jid, responsable_de, color_de) not in ("", mio))
+
+
+def _puntos_color(miembros, cid, responsable_de, color_de):
+    """Lo que tira hacia este entrenador ser el de gestión de los alumnos de la
+    pista (dentro de los porcentajes). El color va aparte, en su escalón."""
+    if not responsable_de:
+        return 0
+    return sum(BONUS_SU_RESPONSABLE for jid in miembros if responsable_de.get(jid) == cid)
 
 
 def _afinidad(miembros, cid, pesos, con_quien, sesiones):
@@ -583,22 +599,35 @@ def _afinidad(miembros, cid, pesos, con_quien, sesiones):
     return total
 
 
-# Sacar a uno del banquillo para cubrir una pista (22/10/2026): primero los
-# del reparto, y del banquillo por su orden (Dani, Sergio, Iván, Jorge
-# García), aunque al siguiente le encaje mejor el grupo. Cada puesto en la cola
-# pesa más que ir fuera de su grupo, y todo junto menos que cubrir la pista.
-COSTE_BANQUILLO = 10**7
+# Quién va a cada pista, por escalones (23/10/2026): cada uno pesa más que
+# todo lo que viene después, y todos juntos menos que cubrir la pista.
+#
+# 1. La directiva (los del banquillo: Dani, Sergio, Iván, Jorge García) sale
+#    solo si faltan entrenadores, y por su orden.
+COSTE_BANQUILLO = 10**13
 COSTE_PUESTO_BANQUILLO = 10**7
 MAX_PUESTO_BANQUILLO = 8
-# Un entrenador fuera de su grupo, en una pista que tiene que llevar uno: antes
-# eso que dejarla sin nadie, y antes eso que sacar a uno del banquillo. Pesa
-# más que cualquier afinidad o color.
-COSTE_FUERA_DE_GRUPO = 5 * 10**6
+#    Nunca a la resina ni a otra sede mientras quede otro que pueda ir.
+COSTE_DIRECTIVA_FUERA = 2 * 10**13
+#    Y con las divisiones más altas: cada división por debajo de la 1 cuesta,
+#    y a igualdad, cada número de pista.
+COSTE_ALTURA_DIRECTIVA = 10**11
+COSTE_NUMERO_DIRECTIVA = 10**10
+# 2. Cada entrenador con alumnos de su color (amarillo, turquesa, naranja).
+COSTE_FUERA_DE_COLOR = 10**9
+# 3. Dentro de su grupo de divisiones: pasarse de la tolerancia en una pista
+#    que tiene que llevar entrenador (si no, ni se le pone)…
+COSTE_FUERA_DE_GRUPO = 10**8
+#    …y, dentro, cada división de distancia (`_penalizacion_division` con el
+#    peso de Criterios del motor, multiplicado por esto).
+ESCALA_GRUPO = 100
+# 4. Los porcentajes (`ESCALA_AFINIDAD`) y su entrenador de gestión.
+# 5. La carga de la semana y, a igualdad, la pista de número más bajo.
 
 # Coste con el que un entrenador vetado nunca gana al hueco «sin entrenador».
 # Tiene que superar a VALOR_CUBRIR: cubrir la pista vale mucho, pero romper un
 # veto no compensa ni así.
-VALOR_PROHIBIDO = 10 ** 10
+VALOR_PROHIBIDO = 10 ** 16
 
 
 def _mejor_asignacion(pistas, entrenadores, valor):
@@ -657,7 +686,7 @@ def _emparejar_entrenadores(
     peso_division=0, vetos=None, solo_si_atado=frozenset(),
     nivel_protegido=0, tolerancia_division=None, cubrir=None,
     sin_rescate=frozenset(), responsable_de=None, color_de=None,
-    banquillo_orden=None,
+    banquillo_orden=None, fuera_del_resort=frozenset(),
 ):
     """Reparte los entrenadores de un turno: uno por pista, sin repetir.
 
@@ -712,11 +741,16 @@ def _emparejar_entrenadores(
     vigila). Con ellas no se busca otro patrón: se cubren esas.
 
     `banquillo_orden` ({entrenador: puesto}) son los que salen del banquillo
-    cuando faltan entrenadores para esas pistas (22/10/2026), por su orden. En
-    esas pistas el grupo deja de ser límite y pasa a ser coste: antes un
-    entrenador fuera de su grupo que la pista sin nadie. Para las pistas que
-    se cubren de más (vigiladas que llevarían uno porque sobra) no sale nadie
-    del banquillo y el grupo sigue siendo límite.
+    (la directiva) cuando faltan entrenadores para esas pistas (22/10/2026),
+    por su orden, y van a las de las divisiones más altas; nunca a las
+    `fuera_del_resort` (resina, otras sedes) mientras otro pueda ir: el que
+    estaba arriba baja (23/10/2026). En esas pistas el grupo deja de ser límite
+    y pasa a ser coste: antes un entrenador fuera de su grupo que la pista sin
+    nadie. Para las pistas que se cubren de más (vigiladas que llevarían uno
+    porque sobra) no sale nadie del banquillo y el grupo sigue siendo límite.
+
+    Quién va a cada pista sigue escalones (ver COSTE_*): cubrir, directiva
+    solo si falta y arriba, color, grupo, porcentajes, carga.
     """
     from .reparto_pistas import opciones_de_pistas, repartir_entre_sedes
 
@@ -775,24 +809,47 @@ def _emparejar_entrenadores(
     por_id = {c.id: c for c in elegibles}
 
     banquillo_orden = banquillo_orden or {}
+    info_pistas = info_pistas or {}
+    # Desempate final: la pista de número más bajo.
+    posicion = {p: n for n, p in enumerate(sorted(
+        todas, key=lambda p: ((info_pistas.get(p) or (None, None, 0))[2],
+                              (info_pistas.get(p) or (None, 0))[1] or 0, p)))}
+
+    def altura(pista):
+        """Lo que cuesta poner aquí a la directiva: nada en la pista de las
+        divisiones más altas; más cuanto más abajo, y en la resina y otras
+        sedes, solo si no hay nadie más."""
+        _sede, numero, _rango = info_pistas.get(pista, (None, None, 0))
+        niveles = [divisiones[j] for j in courts[pista] if divisiones.get(j)]
+        coste = (COSTE_ALTURA_DIRECTIVA * (min(niveles) - 1 if niveles else NIVEL_MAX)
+                 + COSTE_NUMERO_DIRECTIVA * max(0, (numero or 1) - 1))
+        if pista in fuera_del_resort:
+            coste += COSTE_DIRECTIVA_FUERA
+        return coste
 
     def valor(pista, cid, estricto=True):
         coste = 0
         if cid in vetado.get(pista, ()):
             return -VALOR_PROHIBIDO
-        if cid not in grupo_ok[pista]:
-            if estricto:
-                return -VALOR_PROHIBIDO
-            coste += COSTE_FUERA_DE_GRUPO
-        if cid in solo_si_atado and cid not in contratados(courts[pista], sponsors):
+        directiva = (cid in solo_si_atado
+                     and cid not in contratados(courts[pista], sponsors))
+        if directiva:
             if estricto or cid not in banquillo_orden:
                 return -VALOR_PROHIBIDO
-            coste += COSTE_BANQUILLO + COSTE_PUESTO_BANQUILLO * min(
-                banquillo_orden[cid], MAX_PUESTO_BANQUILLO)
-        return (round(ESCALA_AFINIDAD * afin[(pista, cid)]) - load[cid]
+            coste += (COSTE_BANQUILLO + altura(pista) + COSTE_PUESTO_BANQUILLO
+                      * min(banquillo_orden[cid], MAX_PUESTO_BANQUILLO))
+        else:
+            if cid not in grupo_ok[pista]:
+                if estricto:
+                    return -VALOR_PROHIBIDO
+                coste += COSTE_FUERA_DE_GRUPO
+            coste += (COSTE_FUERA_DE_COLOR
+                      * _fuera_de_color(courts[pista], cid, responsable_de, color_de))
+            coste += ESCALA_GRUPO * _penalizacion_division(
+                courts[pista], por_id[cid], divisiones, peso_division)
+        return (round(ESCALA_AFINIDAD * afin[(pista, cid)])
                 + ESCALA_AFINIDAD * _puntos_color(courts[pista], cid, responsable_de, color_de)
-                - _penalizacion_division(courts[pista], por_id[cid], divisiones, peso_division)
-                - coste)
+                - 10 * load[cid] - posicion[pista] - coste)
 
     # Candidatos por pista: todos los disponibles, primero el del contrato duro
     # y después por afinidad.
@@ -1137,9 +1194,51 @@ def _rellenar_huecos(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
     return metidos
 
 
+def _altura(filas):
+    """La división más alta de una pista (la 1 es la mejor); 99 sin datos."""
+    niveles = [a.jugador.division.nivel for a in filas
+               if a.jugador.division_id and a.jugador.division.nivel]
+    return min(niveles, default=99)
+
+
+def _subir_directiva(tid, nueva, directivo, yo, pistas, coach_de, by_id,
+                     directiva, no_vigilan, vetos_coach, atados):
+    """La pista del Resort, ya abierta en esta franja, adonde sube el de la
+    directiva para que baje su entrenador a la `nueva`: la de divisiones más
+    altas que lleve uno normal, no puesta a mano, sin contrato con los suyos, que el directivo
+    no tenga vetado y que el de la pista nueva pueda llevar. None si ninguna
+    está más arriba que la nueva (salvo que la nueva sea resina u otra sede,
+    donde va otro siempre que se pueda)."""
+    mia = yo.division or 99
+    candidatas = []
+    for (t, pid), filas in pistas.items():
+        c = by_id.get(pid)
+        coach = coach_de.get((t, pid))
+        if (t != tid or c is None or fuera_del_resort(c) or not filas
+                or coach is None or coach in directiva or coach in no_vigilan):
+            continue
+        # Lo puesto a mano no se toca.
+        if any(a.manual for a in filas):
+            continue
+        if any(directivo in vetos_coach.get(a.jugador_id, ()) for a in filas):
+            continue
+        if any(coach in atados.get(a.jugador_id, ()) for a in filas):
+            continue
+        if coach in vetos_coach.get(yo.id, ()):
+            continue
+        candidatas.append((_altura(filas), c.number or 0, pid))
+    if not candidatas:
+        return None
+    altura, _n, pid = min(candidatas)
+    if altura >= mia and not fuera_del_resort(nueva):
+        return None
+    return pid
+
+
 def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
               vetos_coach, overrides, resort, satelites, libres_de, tomar,
-              nombres, no_vigilan, es_tarde, report):
+              nombres, no_vigilan, es_tarde, report, directiva=frozenset(),
+              atados=None, coach_share=None):
     """Quien sigue en el banquillo después del relleno forzado entra en una
     pista nueva (22/10/2026): primero las que quedan libres en el Resort, que
     tiene preferencia hasta llenarse, y solo después los clubs satélite (Sta.
@@ -1155,7 +1254,11 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
     solo él) y, si ya no quedan pistas, se mete donde haya hueco rompiendo las
     reglas base. Nunca se salta una rencilla, la superficie estricta, un veto
     de entrenador ni a quien solo entrena en el Resort. Devuelve {jugador:
-    asignación}."""
+    asignación}.
+
+    Si el que queda libre es de la directiva (23/10/2026), se queda arriba: va
+    a la pista del Resort de divisiones más altas que lleve un entrenador
+    normal, y ese baja a la pista nueva (seguro si es resina u otra sede)."""
     from academy.models import Jugador as _J
 
     todas = list(resort) + list(satelites)
@@ -1273,7 +1376,28 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
             continue
         clase, _n, _f, _o, tid, c, coach, rotas = min(opciones)
         nueva = not pistas.get((tid, c.id))
-        if nueva:
+        if nueva and coach in directiva:
+            arriba = _subir_directiva(tid, c, coach, yo, pistas, coach_de, by_id,
+                                      directiva, no_vigilan, vetos_coach, atados or {})
+            if arriba is not None:
+                bajado = coach_de[(tid, arriba)]
+                tomar(coach, turnos[tid])
+                coach_de[(tid, arriba)] = coach
+                for a in pistas[(tid, arriba)]:
+                    Asignacion.objects.filter(pk=a.pk).update(entrenador_id=coach)
+                    a.entrenador_id = coach
+                    if coach_share is not None:
+                        coach_share[(a.jugador_id, bajado)] -= 1
+                        coach_share[(a.jugador_id, coach)] += 1
+                report.setdefault("directiva_arriba", []).append(
+                    {"dia": dia, "turno": turnos[tid].codigo, "pista": arriba,
+                     "entrenador": coach, "baja": bajado, "a": c.id})
+                coach = bajado
+            else:
+                tomar(coach, turnos[tid])
+            abiertas_aqui.add((tid, c.id))
+            coach_de[(tid, c.id)] = coach
+        elif nueva:
             abiertas_aqui.add((tid, c.id))
             coach_de[(tid, c.id)] = coach
             if coach is not None:
@@ -1855,12 +1979,22 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     banquillo=banquillo_fase,
                     banquillo_dedicados=set(solo_con) & set(banquillo_orden),
                     w_banquillo=PESO_BANQUILLO,
+                    clases_entrenador={
+                        t.id: dict(Counter(color_de.get(cid, "") for cid in reparto[t.id]
+                                           if cid not in solo_con))
+                        for t in fase},
+                    color_jugador={p.id: color_del_jugador(p.id, responsable_de, color_de)
+                                   for p in jugadores},
+                    w_fuera_color=PESO_FUERA_COLOR,
+                    w_directiva_division=PESO_DIRECTIVA_DIVISION,
+                    w_directiva_fuera=PESO_DIRECTIVA_FUERA,
                     prioridad_cubrir={
                         p.id for p in jugadores
                         if cfg.nivel_protegido and p.division is not None
                         and p.division <= cfg.nivel_protegido},
                     w_cubrir_prioridad=PESO_ALTO_SIN_ENTRENADOR,
                     forzar=forzar,
+                    paciencia=ultima and not forzar,
                     forzar_con=_dificiles(jugadores, fase, previo) if previo else set(),
                     pista_previa=({(jid, f): c for f, pistas in previo.franjas.items()
                                    for c, m in pistas.items() for jid in m}
@@ -1938,6 +2072,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     sin_rescate=set(solo_con) - set(banquillo_orden),
                     responsable_de=responsable_de, color_de=color_de,
                     banquillo_orden=banquillo_orden,
+                    fuera_del_resort={c.id for c in turno_courts if fuera_del_resort(c)},
                 )
                 _con_la_de_menos(entrenador_de, pistas, vigilancia_res.get(turno.id, {}),
                                  courts_by_id, atados, vetos_coach, solo_atado)
@@ -2041,6 +2176,8 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     [c for c in turno_courts if not c.is_satellite],
                     satelites if usar_sat else [], libres_rescate, tomar,
                     nombres_coach, set(solo_con), es_tarde, report,
+                    directiva=set(banquillo_orden), atados=sponsors,
+                    coach_share=coach_share,
                 )
                 for jid, a in metidos.items():
                     player_sessions[jid] += 1

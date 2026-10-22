@@ -1352,3 +1352,84 @@ class OrdenDelBanquilloTests(SimpleTestCase):
             banquillo={200, 300}, orden={200: 1, 300: 2}, cubrir={10},
             divisiones={1: 6}, tolerancia=2)
         self.assertEqual(asig, {10: 200})
+
+
+class DirectivaArribaYColoresTests(SimpleTestCase):
+    """23/10/2026: la directiva (los del banquillo) entrena a las divisiones más
+    altas y nunca va a la resina o a otra sede si otro puede ir; y el
+    entrenador se elige por escalones: color, grupo, porcentajes."""
+
+    def _emparejar(self, courts, entrenadores, cubrir, divisiones, info,
+                   banquillo=frozenset(), orden=None, **kw):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        return _emparejar_entrenadores(
+            courts, {}, entrenadores, Counter(), divisiones=divisiones,
+            solo_si_atado=banquillo, banquillo_orden=orden or {}, cubrir=cubrir,
+            info_pistas=info, **kw)
+
+    def test_la_directiva_a_la_pista_de_los_mejores(self):
+        # 100 lleva el grupo 1-3 y encajaría mejor con el D1; aun así va Dani
+        # (directiva) arriba y 100 baja a la de D5.
+        asig, _ = self._emparejar(
+            {10: [1], 11: [2]}, [_EntGrupo(100, 1, 3), _EntGrupo(200, 1, 2)],
+            cubrir={10, 11}, divisiones={1: 1, 2: 5},
+            info={10: (1, 1, 0), 11: (1, 3, 0)}, banquillo={200}, orden={200: 1})
+        self.assertEqual(asig, {10: 200, 11: 100})
+
+    def test_a_la_resina_va_otro(self):
+        asig, _ = self._emparejar(
+            {10: [1], 12: [2]}, [_Ent(100), _Ent(200)],
+            cubrir={10, 12}, divisiones={1: 6, 2: 9},
+            info={10: (1, 4, 0), 12: (1, 7, 0)}, banquillo={200}, orden={200: 1},
+            fuera_del_resort={12})
+        self.assertEqual(asig, {10: 200, 12: 100})
+
+    def test_el_color_manda_sobre_el_grupo_y_los_porcentajes(self):
+        # El D3 es del bloque turquesa (su responsable es 101) y el D6, del
+        # amarillo: el color pesa más que el grupo de cada uno y que los
+        # porcentajes, que tiran al revés.
+        asig, _ = self._emparejar(
+            {10: [1], 11: [2]}, [_EntGrupo(100, 1, 3), _EntGrupo(101, 4, 6)],
+            cubrir={10, 11}, divisiones={1: 3, 2: 6},
+            info={10: (1, 1, 0), 11: (1, 3, 0)},
+            responsable_de={1: 101, 2: 100},
+            color_de={100: "amarillo", 101: "turquesa"},
+            pesos={1: {100: 1.0}, 2: {101: 1.0}}, peso_division=1000)
+        self.assertEqual(asig, {10: 101, 11: 100})
+
+    def test_el_solver_junta_por_colores(self):
+        colores = {0: "amarillo", 1: "turquesa", 2: "amarillo", 3: "turquesa"}
+        r = solve_pairing(PairingInput(
+            players=[Player(id=i, division=5) for i in range(4)],
+            courts=[Court(id=n, venue_id=1, capacity=2, number=n, surface="TIERRA")
+                    for n in (1, 3)],
+            franjas=[1], capacidad_max=2, time_limit_s=5,
+            entrenadores_reparto={1: 2}, vigiladas_preferidas=frozenset({2, 5}),
+            vigiladas_estrictas=True,
+            clases_entrenador={1: {"amarillo": 1, "turquesa": 1}},
+            color_jugador=colores, w_fuera_color=300,
+        ))
+        self.assertEqual(r.unassigned, [])
+        for miembros in r.franjas[1].values():
+            self.assertEqual(len({colores[j] for j in miembros}), 1)
+
+    def test_el_solver_deja_la_directiva_arriba(self):
+        r = solve_pairing(PairingInput(
+            players=[Player(id=i, division=d) for i, d in enumerate((5, 5, 2, 2))],
+            courts=[Court(id=n, venue_id=1, capacity=2, number=n, surface="TIERRA")
+                    for n in (1, 3)],
+            franjas=[1], capacidad_max=2, time_limit_s=5,
+            entrenadores_reparto={1: 1}, vigiladas_preferidas=frozenset({2, 5}),
+            vigiladas_estrictas=True, banquillo={1: 1}, w_banquillo=2000,
+            clases_entrenador={1: {"turquesa": 1}},
+            color_jugador={0: "turquesa", 1: "turquesa", 2: "amarillo", 3: "amarillo"},
+            w_fuera_color=300, w_directiva_division=150,
+        ))
+        self.assertEqual(r.unassigned, [])
+        # Los dos turquesa (D5) con su entrenador y los D2, amarillos sin
+        # entrenador de su color, juntos con la directiva.
+        self.assertIn(sorted(next(iter(r.franjas[1].values()))), ([0, 1], [2, 3]))
+        self.assertEqual(len(r.franjas[1]), 2)

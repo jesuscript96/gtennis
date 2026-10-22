@@ -166,3 +166,18 @@ class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
         pistas = {self.de(a).pista, self.de(b).pista}
         self.assertEqual(pistas, set(self.sb))
         self.assertEqual({self.de(a).entrenador, self.de(b).entrenador}, {sergio, None})
+
+
+class DirectivaNoVaASantaBarbaraTests(SatelitesDeRescateTests):
+    """23/10/2026: si para abrir Sta. Bárbara solo queda libre alguien de la
+    directiva, se queda arriba en el Resort y baja otro."""
+
+    def test_sube_la_directiva_y_baja_el_otro(self):
+        sergio = Entrenador.objects.create(nombre="Sergio", reserva=True, orden_banquillo=2)
+        a, b = self.jugador("Alto A", 2), self.jugador("Alto B", 2)
+        nik = self.jugador("Nik", 9)
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual({self.de(a).entrenador, self.de(b).entrenador}, {sergio})
+        self.assertEqual((self.de(nik).pista, self.de(nik).entrenador),
+                         (self.sb[0], self.pablo))
+        self.assertTrue(rep["directiva_arriba"])

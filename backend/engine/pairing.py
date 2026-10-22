@@ -103,6 +103,10 @@ class PairingInput:
     # el mismo reparto). None = MOTOR_SIN_MEJORA_S del entorno, o 1 s; 0 = no
     # se para hasta el tope.
     sin_mejora_s: float | None = None
+    # Si queda alguien fuera, esperar más antes de parar (PACIENCIA_SI_FALTA_
+    # GENTE). No hace falta cuando los que sobran tienen otra franja después
+    # (T1 antes que T2) ni al repetir forzando desde una solución ya buena.
+    paciencia: bool = True
     # Tunable criteria (read from ConfiguracionMotor). Defaults = current values.
     w_assign: int = 1000
     w_satellite: int = 5
@@ -229,6 +233,20 @@ class PairingInput:
     # pista, ya no están para cubrir otra.
     banquillo_dedicados: set[int] = field(default_factory=set)
     w_banquillo: int = 0
+    # Colores (23/10/2026). Franja -> {color: entrenadores del reparto de ese
+    # color} ("" = sin color; sin contar a los dedicados). Con esto cada pista
+    # con entrenador lleva uno de un color concreto —o de la directiva, del
+    # banquillo— y el solver coloca a los jugadores para que encajen: cada
+    # jugador con color en una pista de entrenador de otro color cuesta
+    # `w_fuera_color`. None = solo se cuenta cuántos hay.
+    clases_entrenador: dict[int, dict[str, int]] | None = None
+    color_jugador: dict[int, str] = field(default_factory=dict)
+    w_fuera_color: int = 0
+    # La directiva, con las divisiones más altas: cada división por debajo de
+    # la 1 de cada jugador de su pista cuesta esto, y la resina o un satélite,
+    # `w_directiva_fuera`.
+    w_directiva_division: int = 0
+    w_directiva_fuera: int = 0
     # Jugadores cuya pista se prefiere con entrenador (16/10/2026: D1 y D2):
     # cada pista suya que se queda sin él, vigilada, cuesta esto.
     prioridad_cubrir: set[int] = field(default_factory=set)
@@ -264,9 +282,17 @@ class PairingResult:
     vigilancia: dict[int, dict[int, int]] = field(default_factory=dict)
 
 
+# Hilos mínimos del solver aunque la máquina tenga menos procesadores
+# (23/10/2026): con uno solo, en prod, CP-SAT se quedaba a menudo con un
+# reparto de 11-14 jugadores fuera; con cuatro repartiéndose el procesador,
+# 0-1. Cada hilo prueba una estrategia distinta, y eso es lo que ayuda.
+MIN_WORKERS = 4
+
+
 def num_workers() -> int:
     """Hilos del solver: los procesadores que de verdad tiene la máquina (en
-    Fly, los de la VM), o MOTOR_WORKERS si se fija a mano."""
+    Fly, los de la VM) y al menos MIN_WORKERS, o MOTOR_WORKERS si se fija a
+    mano."""
     fijo = os.environ.get("MOTOR_WORKERS")
     if fijo:
         return max(1, int(fijo))
@@ -274,20 +300,38 @@ def num_workers() -> int:
         cpus = len(os.sched_getaffinity(0))
     except AttributeError:  # macOS
         cpus = os.cpu_count() or 1
-    return max(1, min(8, cpus))
+    return max(MIN_WORKERS, min(8, cpus))
+
+
+# Si en la mejor solución queda alguien fuera y la cota del solver no descarta
+# que quepa, se espera esto por cada segundo de `sin_mejora` antes de parar
+# (23/10/2026: en la máquina de prod, parar al segundo dejaba a veces a 12-14
+# jugadores fuera de una mañana).
+PACIENCIA_SI_FALTA_GENTE = 4
 
 
 class _ParaSinMejora(cp_model.CpSolverSolutionCallback):
     """Para la búsqueda cuando lleva `segundos` sin encontrar una solución
     mejor. El solver solo avisa al encontrar soluciones, así que un hilo
-    aparte mira el reloj."""
+    aparte mira el reloj.
 
-    def __init__(self, solver: cp_model.CpSolver, segundos: float):
+    Con `colocados` (variable con las plazas ocupadas) y `todos` (las que
+    harían falta para colocar a todos), solo para tan pronto si ya están todos
+    o si la cota dice que no cabe nadie más (`margen`, lo que vale colocar a
+    uno); si no, aguanta PACIENCIA_SI_FALTA_GENTE veces más."""
+
+    def __init__(self, solver: cp_model.CpSolver, segundos: float,
+                 margen: float | None = None, colocados=None, todos: int = 0):
         super().__init__()
         self._solver = solver
         self._segundos = segundos
+        self._margen = margen
+        self._colocados = colocados
+        self._todos = todos
+        self._n = None
         self._ultima: float | None = None
         self._mejor: float | None = None
+        self._cota: float | None = None
         self._fin = threading.Event()
         self._hilo = threading.Thread(target=self._vigilar, daemon=True)
         self._hilo.start()
@@ -296,14 +340,24 @@ class _ParaSinMejora(cp_model.CpSolverSolutionCallback):
         # El solver solo avisa de soluciones que mejoran la anterior; aun así,
         # el reloj se reinicia solo si cambia el objetivo.
         valor = self.objective_value
+        self._cota = self.best_objective_bound
+        if self._colocados is not None:
+            self._n = self.Value(self._colocados)
         if valor != self._mejor:
             self._mejor = valor
             self._ultima = time.monotonic()
 
+    def _espera(self) -> float:
+        if (self._margen is None or self._mejor is None or self._cota is None
+                or self._cota - self._mejor < self._margen
+                or (self._n is not None and self._n >= self._todos)):
+            return self._segundos
+        return self._segundos * PACIENCIA_SI_FALTA_GENTE
+
     def _vigilar(self) -> None:
         while not self._fin.wait(0.05):
             if (self._ultima is not None
-                    and time.monotonic() - self._ultima >= self._segundos):
+                    and time.monotonic() - self._ultima >= self._espera()):
                 self._solver.stop_search()
                 return
 
@@ -611,6 +665,8 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     vig = {}
     fuera_de_patron = []
     del_banquillo = []
+    clase_de = {}
+    directiva = {}
     sin_entrenador_alto = []
     if data.entrenadores_reparto is not None:
         por_sede = defaultdict(dict)
@@ -629,14 +685,40 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                         + sum(ded_f))
             # Si faltan, salen los del banquillo, pagando cada uno.
             n_banq = data.banquillo.get(f, 0)
-            if n_banq:
-                de_banq = model.NewIntVar(0, n_banq, f"banq_{f}")
-                model.Add(de_banq <= n_banq - sum(
-                    v for (ff, e, _c), v in ded.items()
-                    if ff == f and e in data.banquillo_dedicados))
-                tope_cub = tope_cub + de_banq
-                del_banquillo.append(de_banq)
-            model.Add(sum(cub[f, c.id] for c in courts) <= tope_cub)
+            ded_banq = [v for (ff, e, _c), v in ded.items()
+                        if ff == f and e in data.banquillo_dedicados]
+            clases = (data.clases_entrenador.get(f, {})
+                      if data.clases_entrenador is not None else None)
+            if clases is not None:
+                # Cada pista con entrenador, de una clase: un color, o la
+                # directiva, o el dedicado que la lleva.
+                for c in courts:
+                    partes = []
+                    for k, n in clases.items():
+                        if n > 0:
+                            y = model.NewBoolVar(f"clase_{f}_{c.id}_{k}")
+                            clase_de[f, c.id, k] = y
+                            partes.append(y)
+                    if n_banq:
+                        d = model.NewBoolVar(f"dir_{f}_{c.id}")
+                        directiva[f, c.id] = d
+                        partes.append(d)
+                    ded_c = [v for (ff, _e, cid), v in ded.items()
+                             if ff == f and cid == c.id]
+                    model.Add(sum(partes) + sum(ded_c) == cub[f, c.id])
+                for k, n in clases.items():
+                    if n > 0:
+                        model.Add(sum(clase_de[f, c.id, k] for c in courts) <= n)
+                if n_banq:
+                    model.Add(sum(directiva[f, c.id] for c in courts)
+                              <= n_banq - sum(ded_banq))
+            else:
+                if n_banq:
+                    de_banq = model.NewIntVar(0, n_banq, f"banq_{f}")
+                    model.Add(de_banq <= n_banq - sum(ded_banq))
+                    tope_cub = tope_cub + de_banq
+                    del_banquillo.append(de_banq)
+                model.Add(sum(cub[f, c.id] for c in courts) <= tope_cub)
             for (ff, _e, cid), v in ded.items():
                 if ff == f:
                     model.Add(cub[f, cid] >= v)
@@ -757,7 +839,8 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             + data.w_pista_division * max_num
             + max(data.coste_franja.values(), default=0) + data.w_balance
             + data.w_vigilada_fuera + data.w_cubrir_prioridad + data.w_relajar
-            + data.w_banquillo
+            + data.w_banquillo + data.w_fuera_color
+            + data.w_directiva_division * NIVEL_MAX + data.w_directiva_fuera
             + data.w_repeat * max(data.recent_partners.values(), default=0)
             + data.w_div_pref + 1)
     # Una pareja forzada cuesta más que todo lo que se ahorra juntando a dos
@@ -917,9 +1000,41 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     # 5a') Pistas de D1-D2 sin entrenador: las últimas en quedarse sin él.
     for z in sin_entrenador_alto:
         terms.append(-data.w_cubrir_prioridad * z)
-    # 5a'') Entrenadores sacados del banquillo.
+    # 5b) Entrenadores sacados del banquillo: solo si faltan, y arriba.
     for b in del_banquillo:
         terms.append(-data.w_banquillo * b)
+    for (f, cid), d in directiva.items():
+        c = court_by_id[cid]
+        coste = data.w_banquillo
+        if c.is_satellite or c.surface == "RESINA":
+            coste += data.w_directiva_fuera
+        terms.append(-coste * d)
+        # Cuanto más baja la división de los de su pista, más cuesta. Se
+        # cuenta por pista (no por jugador) para no cargar el modelo.
+        if data.w_directiva_division:
+            niveles = [(pidx[pid].division - 1) * v for (pid, ff, cc), v in x.items()
+                       if ff == f and cc == cid and pidx[pid].division]
+            if niveles:
+                tope_n = tope(c) * (NIVEL_MAX - 1)
+                bajo = model.NewIntVar(0, tope_n, f"dirdiv_{f}_{cid}")
+                model.Add(bajo >= sum(niveles) - tope_n * (1 - d))
+                terms.append(-data.w_directiva_division * bajo)
+    # 5c) Cada jugador con un entrenador de su color: en una pista con
+    # entrenador de color k, cada jugador de otro color paga. Se cuenta por
+    # pista y color (no por jugador) para no cargar el modelo.
+    if clase_de and data.w_fuera_color:
+        con_color = defaultdict(list)
+        for (pid, f, cid), v in x.items():
+            if data.color_jugador.get(pid):
+                con_color[f, cid].append((data.color_jugador[pid], v))
+        for (f, cid, k), y in clase_de.items():
+            otros = [v for col, v in con_color[f, cid] if col != k]
+            if not k or not otros:
+                continue
+            cap = tope(court_by_id[cid])
+            malos = model.NewIntVar(0, cap, f"color_{f}_{cid}_{k}")
+            model.Add(malos >= sum(otros) - cap * (1 - y))
+            terms.append(-data.w_fuera_color * malos)
 
     # 5b) Los de la lista de un dedicado, juntos en su pista.
     if data.w_dedicado:
@@ -995,7 +1110,14 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     sin_mejora = (data.sin_mejora_s if data.sin_mejora_s is not None
                   else float(os.environ.get("MOTOR_SIN_MEJORA_S", "1")))
     if sin_mejora > 0:
-        parar = _ParaSinMejora(solver, sin_mejora)
+        # Lo menos que vale colocar a uno: con menos margen entre la solución
+        # y la cota, ya no cabe nadie más.
+        colocados = model.NewIntVar(0, len(x), "colocados")
+        model.Add(colocados == sum(x.values()))
+        parar = _ParaSinMejora(solver, sin_mejora,
+                               margen=(data.w_assign + piso) if data.paciencia else None,
+                               colocados=colocados,
+                               todos=sum(1 for p in players if del_jugador[p.id]))
         try:
             status = solver.Solve(model, parar)
         finally:
