@@ -1242,3 +1242,113 @@ class ColocarAntesQueCostesYForzarTests(SimpleTestCase):
             players=[Player(id=1, division=2), Player(id=2, division=9)],
             courts=pistas, min_occupancy=1, forzar=True, **self.PESOS))
         self.assertEqual(len(r.franjas[1]), 2)
+
+
+class SoloLaDosYLaCincoSinEntrenadorTests(SimpleTestCase):
+    """22/10/2026: en la tierra del Resort solo la 2 y la 5 se quedan sin
+    entrenador; los satélites abiertos llevan uno; y si faltan, salen los del
+    banquillo, pagando."""
+
+    def _resolver(self, pistas, n_jugadores, entrenadores, banquillo=0, **kw):
+        return solve_pairing(PairingInput(
+            players=[Player(id=i, division=5) for i in range(n_jugadores)],
+            courts=pistas, franjas=[1], capacidad_max=2, time_limit_s=5,
+            entrenadores_reparto={1: entrenadores},
+            vigiladas_preferidas=frozenset({2, 5}), vigiladas_estrictas=True,
+            banquillo={1: banquillo}, w_banquillo=2000, **kw,
+        ))
+
+    def tierra(self, *numeros, venue=1, satelite=False):
+        return [Court(id=venue * 100 + n, venue_id=venue, capacity=2, number=n,
+                      surface="TIERRA", is_satellite=satelite) for n in numeros]
+
+    def test_la_4_no_se_queda_sin_entrenador(self):
+        # Dos entrenadores para las pistas 1-4: la 1 y la 3 con él, la 2
+        # vigilada; la 4 no se puede abrir vigilada desde la 3.
+        r = self._resolver(self.tierra(1, 2, 3, 4), 8, 2)
+        abiertas = {c for c in r.franjas[1]}
+        self.assertNotIn(104, abiertas - r.cubiertas[1])
+        self.assertEqual(len(abiertas), 3)
+        self.assertEqual(len(r.unassigned), 2)
+
+    def test_si_faltan_sale_uno_del_banquillo(self):
+        r = self._resolver(self.tierra(1, 2, 3, 4), 8, 2, banquillo=1)
+        self.assertEqual(r.unassigned, [])
+        self.assertEqual(r.cubiertas[1], {101, 103, 104})
+
+    def test_el_banquillo_no_sale_si_no_hace_falta(self):
+        r = self._resolver(self.tierra(1, 2, 3), 6, 2, banquillo=2)
+        self.assertEqual(r.unassigned, [])
+        self.assertEqual(r.cubiertas[1], {101, 103})
+
+    def test_el_satelite_abierto_lleva_entrenador(self):
+        pistas = self.tierra(1) + self.tierra(1, 2, venue=2, satelite=True)
+        r = self._resolver(pistas, 6, 1, satelite_con_entrenador=True)
+        # Un entrenador: o el Resort o Sta. Bárbara, no los dos.
+        self.assertEqual(len(r.unassigned), 2)
+        r = self._resolver(pistas, 6, 1, banquillo=1, satelite_con_entrenador=True)
+        self.assertEqual(r.unassigned, [])
+        self.assertEqual(len(r.cubiertas[1] & {201, 202}), 1)
+
+
+class OrdenDelBanquilloTests(SimpleTestCase):
+    """22/10/2026: cuando el motor manda cubrir más pistas que entrenadores del
+    reparto, salen los del banquillo por su orden (Dani, Sergio, Iván,
+    Jorge García), y antes uno fuera de su grupo que la pista sin nadie."""
+
+    def _emparejar(self, courts, entrenadores, banquillo, orden, cubrir, divisiones,
+                   tolerancia=None):
+        from collections import Counter
+
+        from .service import _emparejar_entrenadores
+
+        return _emparejar_entrenadores(
+            courts, {}, entrenadores, Counter(), divisiones=divisiones,
+            solo_si_atado=banquillo, banquillo_orden=orden, cubrir=cubrir,
+            tolerancia_division=tolerancia,
+            info_pistas={p: (1, n, 0) for n, p in enumerate(courts, start=1)})
+
+    def test_salen_por_su_orden(self):
+        asig, _ = self._emparejar(
+            {10: [1], 11: [2], 12: [3]},
+            [_Ent(100), _Ent(201), _Ent(202), _Ent(203)],
+            banquillo={201, 202, 203}, orden={202: 1, 201: 2, 203: 3},
+            cubrir={10, 12}, divisiones={})
+        self.assertEqual(set(asig.values()), {100, 202})
+
+    def test_sin_cubrir_no_salen(self):
+        asig, _ = self._emparejar(
+            {10: [1], 11: [2]}, [_Ent(100), _Ent(201)],
+            banquillo={201}, orden={201: 1}, cubrir={10}, divisiones={})
+        self.assertEqual(asig, {10: 100})
+
+    def test_antes_fuera_de_su_grupo_que_sin_nadie(self):
+        # La resina con D9 y solo Dani (grupo 1-2) libre: la lleva él.
+        asig, _ = self._emparejar(
+            {10: [1]}, [_EntGrupo(100, 1, 2), _EntGrupo(101, 4, 9)],
+            banquillo={100}, orden={100: 1}, cubrir={10}, divisiones={1: 9},
+            tolerancia=2)
+        self.assertEqual(asig, {10: 101})
+        asig, _ = self._emparejar(
+            {10: [1], 11: [2]}, [_EntGrupo(100, 1, 2), _EntGrupo(101, 4, 9)],
+            banquillo={100}, orden={100: 1}, cubrir={10, 11},
+            divisiones={1: 9, 2: 9}, tolerancia=2)
+        self.assertEqual(set(asig.values()), {100, 101})
+
+    def test_antes_uno_del_reparto_fuera_de_su_grupo_que_el_banquillo(self):
+        # 100 (grupo 7-9) no encaja con D2; 200, del banquillo y del 1-3, sí;
+        # pero no faltan entrenadores, así que no sale.
+        asig, _ = self._emparejar(
+            {10: [1]}, [_EntGrupo(100, 7, 9), _EntGrupo(200, 1, 3)],
+            banquillo={200}, orden={200: 1}, cubrir={10}, divisiones={1: 2},
+            tolerancia=2)
+        self.assertEqual(asig, {10: 100})
+
+    def test_el_orden_manda_sobre_el_grupo(self):
+        # Hace falta uno del banquillo para la pista de D6: sale Sergio (1º, grupo
+        # 1-3) aunque a Iván (2º, grupo 1-4) le encaje mejor.
+        asig, _ = self._emparejar(
+            {10: [1]}, [_EntGrupo(200, 1, 3), _EntGrupo(300, 1, 4)],
+            banquillo={200, 300}, orden={200: 1, 300: 2}, cubrir={10},
+            divisiones={1: 6}, tolerancia=2)
+        self.assertEqual(asig, {10: 200})

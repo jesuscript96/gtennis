@@ -66,7 +66,7 @@ class EntrenadorSerializer(serializers.ModelSerializer):
         fields = [
             "id", "nombre", "activo", "disponibilidad_notas", "disponible_semana",
             "foto_url", "gestiona_todos_jugadores", "turno_manana", "turno_tarde",
-            "turnos_display", "reserva", "solo_manual", "division_desde",
+            "turnos_display", "reserva", "orden_banquillo", "solo_manual", "division_desde",
             "division_hasta", "solo_con",
         ]
 

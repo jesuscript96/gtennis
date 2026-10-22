@@ -17,6 +17,9 @@ Hard constraints:
   * Pistas sin entrenador (13/10/2026, si se dan `entrenadores_reparto`): como
     mucho dos jugadores, y al lado una pista con entrenador y dos jugadores
     como mucho que la vigila. Cada pista con entrenador vigila a una sola.
+    En la tierra del Resort solo la 2 y la 5; la resina y cada satélite
+    abiertos llevan al menos uno (22/10/2026). Si faltan, salen los del
+    banquillo, pagando.
 
 Soft (minimised):
   * Anti-repetition: penalise pairs that already played together this week.
@@ -207,9 +210,25 @@ class PairingInput:
     # `w_vigilada_fuera`.
     vigiladas_preferidas: frozenset[int] = frozenset()
     w_vigilada_fuera: int = 0
+    # Regla dura (22/10/2026): en la tierra de la sede base solo se quedan
+    # sin entrenador las `vigiladas_preferidas` (la 2 y la 5, contiguas a
+    # otras); la 1, 3, 4 y 6, si se abren, lo llevan.
+    vigiladas_estrictas: bool = False
     # En resina siempre hay algún entrenador: si una sede abre pistas de
     # resina, al menos una de ellas lo lleva (y vigila a la otra).
     resina_con_entrenador: bool = False
+    # Lo mismo en los satélites (22/10/2026): si se abre Sta. Bárbara, al
+    # menos una de sus pistas lleva entrenador.
+    satelite_con_entrenador: bool = False
+    # Franja -> entrenadores de banquillo que se pueden sacar si faltan (Dani,
+    # Sergio, Iván, Jorge García). Cada pista con entrenador por encima de los
+    # del reparto sale de aquí y cuesta `w_banquillo`: menos que dejar a
+    # alguien fuera, más que cualquier preferencia de pista.
+    banquillo: dict[int, int] = field(default_factory=dict)
+    # Los de `dedicados` que además son de banquillo (Dani): si llevan su
+    # pista, ya no están para cubrir otra.
+    banquillo_dedicados: set[int] = field(default_factory=set)
+    w_banquillo: int = 0
     # Jugadores cuya pista se prefiere con entrenador (16/10/2026: D1 y D2):
     # cada pista suya que se queda sin él, vigilada, cuesta esto.
     prioridad_cubrir: set[int] = field(default_factory=set)
@@ -591,6 +610,7 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     cub = {}
     vig = {}
     fuera_de_patron = []
+    del_banquillo = []
     sin_entrenador_alto = []
     if data.entrenadores_reparto is not None:
         por_sede = defaultdict(dict)
@@ -605,9 +625,18 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             # está en el banquillo y no cubre ninguna otra.
             n_ded = len(data.dedicados.get(f, {}))
             ded_f = [v for (ff, _e, _c), v in ded.items() if ff == f]
-            model.Add(sum(cub[f, c.id] for c in courts)
-                      <= max(0, data.entrenadores_reparto.get(f, 0) - n_ded)
-                      + sum(ded_f))
+            tope_cub = (max(0, data.entrenadores_reparto.get(f, 0) - n_ded)
+                        + sum(ded_f))
+            # Si faltan, salen los del banquillo, pagando cada uno.
+            n_banq = data.banquillo.get(f, 0)
+            if n_banq:
+                de_banq = model.NewIntVar(0, n_banq, f"banq_{f}")
+                model.Add(de_banq <= n_banq - sum(
+                    v for (ff, e, _c), v in ded.items()
+                    if ff == f and e in data.banquillo_dedicados))
+                tope_cub = tope_cub + de_banq
+                del_banquillo.append(de_banq)
+            model.Add(sum(cub[f, c.id] for c in courts) <= tope_cub)
             for (ff, _e, cid), v in ded.items():
                 if ff == f:
                     model.Add(cub[f, cid] >= v)
@@ -641,10 +670,12 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                     model.Add(sum(vigilada[c.id]) <= 1)
                 # La 2 y la 5 son las que se dejan sin entrenador: vigilar otra
                 # de tierra cuesta.
-                if (data.w_vigilada_fuera and c.surface != "RESINA"
-                        and c.number is not None
+                if (c.surface != "RESINA" and c.number is not None
                         and c.number not in data.vigiladas_preferidas):
-                    fuera_de_patron.append(used[f, c.id] - cub[f, c.id])
+                    if data.vigiladas_estrictas and not c.is_satellite:
+                        model.Add(cub[f, c.id] >= used[f, c.id])
+                    elif data.w_vigilada_fuera:
+                        fuera_de_patron.append(used[f, c.id] - cub[f, c.id])
                 if vigila[c.id]:
                     model.Add(sum(vigila[c.id]) <= 1)
                     if extra:
@@ -669,6 +700,15 @@ def solve_pairing(data: PairingInput) -> PairingResult:
                     if c.surface == "RESINA":
                         resinas[c.venue_id].append(c)
                 for de_sede in resinas.values():
+                    for c in de_sede:
+                        model.Add(used[f, c.id]
+                                  <= sum(cub[f, r.id] for r in de_sede))
+            if data.satelite_con_entrenador:
+                sedes_sat = defaultdict(list)
+                for c in courts:
+                    if c.is_satellite:
+                        sedes_sat[c.venue_id].append(c)
+                for de_sede in sedes_sat.values():
                     for c in de_sede:
                         model.Add(used[f, c.id]
                                   <= sum(cub[f, r.id] for r in de_sede))
@@ -717,6 +757,7 @@ def solve_pairing(data: PairingInput) -> PairingResult:
             + data.w_pista_division * max_num
             + max(data.coste_franja.values(), default=0) + data.w_balance
             + data.w_vigilada_fuera + data.w_cubrir_prioridad + data.w_relajar
+            + data.w_banquillo
             + data.w_repeat * max(data.recent_partners.values(), default=0)
             + data.w_div_pref + 1)
     # Una pareja forzada cuesta más que todo lo que se ahorra juntando a dos
@@ -876,6 +917,9 @@ def solve_pairing(data: PairingInput) -> PairingResult:
     # 5a') Pistas de D1-D2 sin entrenador: las últimas en quedarse sin él.
     for z in sin_entrenador_alto:
         terms.append(-data.w_cubrir_prioridad * z)
+    # 5a'') Entrenadores sacados del banquillo.
+    for b in del_banquillo:
+        terms.append(-data.w_banquillo * b)
 
     # 5b) Los de la lista de un dedicado, juntos en su pista.
     if data.w_dedicado:

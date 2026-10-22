@@ -127,3 +127,42 @@ class SatelitesDeRescateTests(TestCase):
         nik = self.jugador("Nik", 9)
         generate(self.semana, dias=[0], bloques=["MANANA"])
         self.assertIsNone(self.de(nik))
+
+
+class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
+    """22/10/2026: el Resort tiene preferencia hasta llenarse, y Sta. Bárbara
+    abre con entrenador: el primero libre del banquillo por su orden."""
+
+    def banquillo(self, nombre, orden):
+        return Entrenador.objects.create(nombre=nombre, reserva=True, orden_banquillo=orden)
+
+    def test_antes_una_pista_libre_del_resort_que_sta_barbara(self):
+        self.resort_lleno()
+        p3 = Pista.objects.create(sede=self.resort.sede, numero=3, superficie="TIERRA")
+        sergio = self.banquillo("Sergio", 2)
+        nik = self.jugador("Nik", 9)
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        a = self.de(nik)
+        self.assertEqual((a.pista, a.entrenador), (p3, sergio))
+        self.assertFalse(rep.get("satelites"))
+
+    def test_sta_barbara_con_el_primero_del_banquillo(self):
+        self.resort_lleno()
+        self.banquillo("Ivan", 3)
+        sergio = self.banquillo("Sergio", 2)
+        nik = self.jugador("Nik", 9)
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        a = self.de(nik)
+        self.assertEqual((a.pista, a.entrenador), (self.sb[0], sergio))
+        self.assertIn("Sta. Bárbara con Sergio", a.motivo_forzado)
+        self.assertEqual(rep["satelites"][0]["entrenador"], sergio.id)
+
+    def test_el_segundo_va_vigilado_al_lado(self):
+        self.resort_lleno()
+        sergio = self.banquillo("Sergio", 2)
+        self.banquillo("Ivan", 3)
+        a, b = self.jugador("Uno", 2), self.jugador("Dos", 9)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        pistas = {self.de(a).pista, self.de(b).pista}
+        self.assertEqual(pistas, set(self.sb))
+        self.assertEqual({self.de(a).entrenador, self.de(b).entrenador}, {sergio, None})

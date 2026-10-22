@@ -135,6 +135,16 @@ class Entrenador(models.Model):
         help_text="El motor no le asigna pistas; se le coloca a mano desde el "
                   "cuadrante.",
     )
+    # Orden en que el motor saca a los del banquillo cuando faltan
+    # entrenadores para cubrir las pistas que lo necesitan (22/10/2026: Dani
+    # Gimeno, Sergio Gallego, Iván Gallego y Jorge García). Vacío = no sale.
+    # Dani no es de banquillo: lleva su pista con los suyos y, si no la
+    # lleva, es el primero en salir.
+    orden_banquillo = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="Orden en el banquillo",
+        help_text="1 = el primero que sale cuando faltan entrenadores. Vacío = "
+                  "el motor no le saca para cubrir pistas.",
+    )
     # Más estricto que el banquillo: el motor no le pone NUNCA, ni aunque un
     # contrato le llame ni para cubrir una pista de grupo alto. Solo entra si
     # alguien lo arrastra a una pista en el cuadrante. Es lo de Álvaro

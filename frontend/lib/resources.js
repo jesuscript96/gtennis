@@ -165,6 +165,7 @@ export const RESOURCES = {
       { key: "activo", label: "Activo", type: "bool" },
       { key: "disponible_semana", label: "Disp. semana", type: "bool" },
       { key: "reserva", label: "Banquillo", type: "bool" },
+      { key: "orden_banquillo", label: "Sale del banquillo", render: (v) => (v ? `${v}º` : "—") },
       { key: "solo_manual", label: "Solo a mano", type: "bool" },
     ],
     fields: [
@@ -176,7 +177,8 @@ export const RESOURCES = {
       { name: "division_hasta", label: "…hasta la división", type: "number", help: "La más baja de su grupo. Si no queda nadie de ese grupo el motor le pone otro, pero cuesta." },
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },
       { name: "disponible_semana", label: "Disponible esta semana (fallback manual)", type: "bool", default: true },
-      { name: "reserva", label: "Solo a mano (banquillo)", type: "bool", help: "El motor no le da pistas. Sigue en la tabla de entrenadores del cuadrante para colocarlo a mano cuando haga falta." },
+      { name: "reserva", label: "Solo a mano (banquillo)", type: "bool", help: "No entra en el reparto normal. El motor solo le saca si faltan entrenadores (según su orden en el banquillo) o si un contrato le llama; si no, se le coloca a mano desde el cuadrante." },
+      { name: "orden_banquillo", label: "Orden en el banquillo", type: "number", help: "Cuando faltan entrenadores para las pistas que lo necesitan (1, 3, 4 y 6 del Resort, la resina, Sta. Bárbara), el motor saca a los del banquillo por este orden: 1 el primero. Vacío = no sale." },
       { name: "solo_manual", label: "Nunca en automático", type: "bool", help: "Más estricto que el banquillo: el motor no le pone nunca, ni por contrato ni para cubrir una pista. Solo entra si lo arrastras a una pista en el cuadrante." },
       { name: "activo", label: "Activo", type: "bool", default: true },
     ],
