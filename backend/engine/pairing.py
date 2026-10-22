@@ -233,7 +233,7 @@ class PairingInput:
     # pista, ya no están para cubrir otra.
     banquillo_dedicados: set[int] = field(default_factory=set)
     w_banquillo: int = 0
-    # Colores (23/10/2026). Franja -> {color: entrenadores del reparto de ese
+    # Colores (22/10/2026). Franja -> {color: entrenadores del reparto de ese
     # color} ("" = sin color; sin contar a los dedicados). Con esto cada pista
     # con entrenador lleva uno de un color concreto —o de la directiva, del
     # banquillo— y el solver coloca a los jugadores para que encajen: cada
@@ -283,7 +283,7 @@ class PairingResult:
 
 
 # Hilos mínimos del solver aunque la máquina tenga menos procesadores
-# (23/10/2026): con uno solo, en prod, CP-SAT se quedaba a menudo con un
+# (22/10/2026): con uno solo, en prod, CP-SAT se quedaba a menudo con un
 # reparto de 11-14 jugadores fuera; con cuatro repartiéndose el procesador,
 # 0-1. Cada hilo prueba una estrategia distinta, y eso es lo que ayuda.
 MIN_WORKERS = 4
@@ -305,7 +305,7 @@ def num_workers() -> int:
 
 # Si en la mejor solución queda alguien fuera y la cota del solver no descarta
 # que quepa, se espera esto por cada segundo de `sin_mejora` antes de parar
-# (23/10/2026: en la máquina de prod, parar al segundo dejaba a veces a 12-14
+# (22/10/2026: en la máquina de prod, parar al segundo dejaba a veces a 12-14
 # jugadores fuera de una mañana).
 PACIENCIA_SI_FALTA_GENTE = 4
 

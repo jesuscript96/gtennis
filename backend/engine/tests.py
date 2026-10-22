@@ -1355,7 +1355,7 @@ class OrdenDelBanquilloTests(SimpleTestCase):
 
 
 class DirectivaArribaYColoresTests(SimpleTestCase):
-    """23/10/2026: la directiva (los del banquillo) entrena a las divisiones más
+    """22/10/2026: la directiva (los del banquillo) entrena a las divisiones más
     altas y nunca va a la resina o a otra sede si otro puede ir; y el
     entrenador se elige por escalones: color, grupo, porcentajes."""
 

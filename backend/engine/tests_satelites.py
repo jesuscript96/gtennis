@@ -169,7 +169,7 @@ class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
 
 
 class DirectivaNoVaASantaBarbaraTests(SatelitesDeRescateTests):
-    """23/10/2026: si para abrir Sta. Bárbara solo queda libre alguien de la
+    """22/10/2026: si para abrir Sta. Bárbara solo queda libre alguien de la
     directiva, se queda arriba en el Resort y baja otro."""
 
     def test_sube_la_directiva_y_baja_el_otro(self):

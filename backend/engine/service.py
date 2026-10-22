@@ -203,7 +203,7 @@ VIGILADAS_ESTRICTAS = True
 # (800)—, así que solo salen cuando hacen falta para colocar a alguien.
 PESO_BANQUILLO = 2000
 
-# Colores en el solver (23/10/2026): cada jugador con color en una pista cuyo
+# Colores en el solver (22/10/2026): cada jugador con color en una pista cuyo
 # entrenador es de otro color. Por debajo de abrir pista (900): no se abren
 # pistas para cuadrar colores, solo se coloca a la gente para que encajen.
 PESO_FUERA_COLOR = 300
@@ -599,7 +599,7 @@ def _afinidad(miembros, cid, pesos, con_quien, sesiones):
     return total
 
 
-# Quién va a cada pista, por escalones (23/10/2026): cada uno pesa más que
+# Quién va a cada pista, por escalones (22/10/2026): cada uno pesa más que
 # todo lo que viene después, y todos juntos menos que cubrir la pista.
 #
 # 1. La directiva (los del banquillo: Dani, Sergio, Iván, Jorge García) sale
@@ -744,7 +744,7 @@ def _emparejar_entrenadores(
     (la directiva) cuando faltan entrenadores para esas pistas (22/10/2026),
     por su orden, y van a las de las divisiones más altas; nunca a las
     `fuera_del_resort` (resina, otras sedes) mientras otro pueda ir: el que
-    estaba arriba baja (23/10/2026). En esas pistas el grupo deja de ser límite
+    estaba arriba baja (22/10/2026). En esas pistas el grupo deja de ser límite
     y pasa a ser coste: antes un entrenador fuera de su grupo que la pista sin
     nadie. Para las pistas que se cubren de más (vigiladas que llevarían uno
     porque sobra) no sale nadie del banquillo y el grupo sigue siendo límite.
@@ -1256,7 +1256,7 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
     de entrenador ni a quien solo entrena en el Resort. Devuelve {jugador:
     asignación}.
 
-    Si el que queda libre es de la directiva (23/10/2026), se queda arriba: va
+    Si el que queda libre es de la directiva (22/10/2026), se queda arriba: va
     a la pista del Resort de divisiones más altas que lleve un entrenador
     normal, y ese baja a la pista nueva (seguro si es resina u otra sede)."""
     from academy.models import Jugador as _J
