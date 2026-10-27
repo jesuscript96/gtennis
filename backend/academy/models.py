@@ -510,10 +510,33 @@ class Jugador(models.Model):
         help_text="Se coloca el último, solo en pistas ya abiertas por otros.",
     )
 
+    # Puesto dentro de su división (27/10/2026): 1 = el mejor. Se ordena
+    # arrastrando en la pestaña Divisiones. Es preferencia, no regla: el motor
+    # junta a los de ranking cercano, y entre divisiones el último de la D2
+    # queda pegado al primero de la D3. Vacío = la división aún no tiene
+    # ranking (el motor la trata como hasta ahora).
+    orden_division = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="Puesto en su división",
+        help_text="1 = el mejor de su división. Se cambia arrastrando en Divisiones.",
+    )
+
     class Meta:
         verbose_name = "Jugador"
         verbose_name_plural = "Jugadores"
         ordering = ["nombre"]
+
+    @classmethod
+    def puesto_al_final(cls, division_id, sin=None):
+        """El puesto del último de la división +1 si la división tiene ranking;
+        si no lo tiene (o no hay división), None."""
+        if division_id is None:
+            return None
+        qs = cls.objects.filter(division_id=division_id, activo=True,
+                                orden_division__isnull=False)
+        if sin is not None:
+            qs = qs.exclude(pk=sin)
+        ultimo = qs.aggregate(m=models.Max("orden_division"))["m"]
+        return None if ultimo is None else ultimo + 1
 
     def save(self, *args, **kwargs):
         # La fecha de nacimiento manda: si está, recalcula la edad actual.
@@ -531,6 +554,18 @@ class Jugador(models.Model):
             )
         if self.edad is not None:
             self.es_menor = self.edad < 18
+        # Quien cambia de división entra el último de la nueva (o sin puesto si
+        # esa división aún no tiene ranking).
+        update_fields = kwargs.get("update_fields")
+        if self.pk and (update_fields is None or "division" in update_fields):
+            antes = (Jugador.objects.filter(pk=self.pk)
+                     .values_list("division_id", flat=True).first())
+            if antes != self.division_id:
+                self.orden_division = Jugador.puesto_al_final(self.division_id, sin=self.pk)
+                if update_fields is not None:
+                    kwargs["update_fields"] = list(update_fields) + ["orden_division"]
+        elif not self.pk and self.orden_division is None:
+            self.orden_division = Jugador.puesto_al_final(self.division_id)
         super().save(*args, **kwargs)
 
     def __str__(self):

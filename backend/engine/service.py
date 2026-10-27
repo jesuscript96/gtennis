@@ -1440,18 +1440,79 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
     return metidos
 
 
-# Lo que pesa, al compactar una franja, que una pareja sea del mismo color y
-# que ya estuviera junta en el reparto del solver: desempates por debajo de
-# una pareja declarada (peso_pareja) y de no repetir (peso_repeticion).
-BONUS_COMPACTAR_COLOR = 100
-BONUS_COMPACTAR_MISMA = 50
+# Lo que vale una pareja al rehacer las parejas de una franja (27/10/2026),
+# por este orden de importancia: pareja declarada (peso_pareja, 5000), ranking
+# cercano, no repetir (peso_repeticion, 50 por vez) y mismo color.
+#
+# Ranking: cada alumno tiene un nivel fino, su división más su puesto en ella
+# (el 1º de una D3 de diez es 3,05 y el último 3,95; sin ranking, 3,5). Una
+# pareja vale PESO_RANKING por cada división de cercanía hasta dos: juntos
+# 4000, a una división 2000, a dos 0. Una décima de división son 200, más que
+# repetir pareja cuatro veces.
+PESO_RANKING = 2000
+# «Se empareja preferentemente hacia arriba/abajo»: con alguien de ese lado,
+# esto; del lado contrario, la mitad en contra. Media división de ranking.
+PESO_PREF_DIVISION = 1000
+BONUS_COMPACTAR_COLOR = 30
+# Desempate: a igualdad, se quedan las parejas que ya hizo el solver.
+BONUS_COMPACTAR_MISMA = 10
+
+
+def niveles_finos(jugadores=None) -> dict[int, float]:
+    """{jugador: nivel fino} de los alumnos activos con puesto en su división:
+    la división más (puesto − 0,5) / alumnos con puesto en ella. Los de una
+    división sin ranking no salen: cuentan como su división y media."""
+    from academy.models import Jugador
+
+    qs = Jugador.objects.filter(activo=True, division__isnull=False,
+                                orden_division__isnull=False)
+    por_division = defaultdict(list)
+    for jid, nivel, orden in qs.values_list("id", "division__nivel", "orden_division"):
+        por_division[nivel].append((orden, jid))
+    finos = {}
+    for nivel, filas in por_division.items():
+        filas.sort()
+        for k, (_orden, jid) in enumerate(filas, start=1):
+            finos[jid] = nivel + (k - 0.5) / len(filas)
+    return finos
+
+
+def puntos_pareja(a, b, finos, declaradas, recent, color_jugador, cfg,
+                  misma_pista=False):
+    """Lo que vale juntar a `a` y `b` (Player), por los escalones de arriba.
+    No mira si pueden ir juntos: eso son las reglas."""
+    par = frozenset((a.id, b.id))
+    w = cfg.peso_pareja if par in declaradas else 0
+
+    def fino(p):
+        if p.id in finos:
+            return finos[p.id]
+        return p.division + 0.5 if p.division else None
+
+    fa, fb = fino(a), fino(b)
+    cercania = 1.0 if fa is None or fb is None else 2 - min(2.0, abs(fa - fb))
+    w += round(PESO_RANKING * cercania)
+    for yo, otro in ((a, b), (b, a)):
+        if yo.division_pref and yo.division and otro.division:
+            lado = (otro.division - yo.division) * yo.division_pref
+            if lado > 0:
+                w += PESO_PREF_DIVISION
+            elif lado < 0:
+                w -= PESO_PREF_DIVISION // 2
+    w -= cfg.peso_repeticion * recent.get(par, 0)
+    if color_jugador.get(a.id) and color_jugador.get(a.id) == color_jugador.get(b.id):
+        w += BONUS_COMPACTAR_COLOR
+    if misma_pista:
+        w += BONUS_COMPACTAR_MISMA
+    return w
 
 
 def _compactar_franja(grupos, cubiertas, vigilancia, intocables, por_id,
-                      courts_by_id, reglas, con_entrenador, color_jugador,
-                      recent, pairs_soft, pairs_hard, cfg):
+                      courts_by_id, reglas, con_entrenador, pairs_hard, puntos,
+                      nivel_de=None):
     """Vuelve a emparejar a la gente de una franja si así salen menos pistas
-    (22/10/2026). El solver para en cuanto lleva un rato sin mejorar y a veces
+    (22/10/2026) o, con las mismas, mejores parejas (27/10/2026: ranking,
+    pareja declarada, no repetir, color; ver `puntos_pareja`). El solver para en cuanto lleva un rato sin mejorar y a veces
     se queda con dos individuales que podrían ir juntos, o con una pareja que,
     cambiada por otra, deja a todos de dos en dos; cada pista de más cuesta,
     con pocos entrenadores, sacar a uno de la directiva.
@@ -1467,8 +1528,10 @@ def _compactar_franja(grupos, cubiertas, vigilancia, intocables, por_id,
 
     `grupos` es {pista: jugadores} tal y como lo dejó el solver; `cubiertas`
     las pistas con entrenador (None si no se miró); `vigilancia` {vigilada:
-    pista que la vigila}. Devuelve (grupos, cubiertas, vigilancia, pistas
-    cerradas) o None si no se ahorra ninguna pista."""
+    pista que la vigila}; `puntos(a, b, misma_pista)` lo que vale una pareja
+    y `nivel_de(jugador)` su nivel fino, para poner a los mejores en las
+    primeras pistas. Devuelve (grupos, cubiertas, vigilancia, pistas cerradas)
+    o None si no mejora nada."""
     fijas = set(intocables)
     en_dura = {j for par in pairs_hard for j in par}
     for cid, miembros in grupos.items():
@@ -1483,17 +1546,9 @@ def _compactar_franja(grupos, cubiertas, vigilancia, intocables, por_id,
     pesos = {}
     for i, a in enumerate(movibles):
         for b in movibles[i + 1:]:
-            par = frozenset((a.id, b.id))
-            w = 0
-            if par in pairs_soft or par in reglas.pairs_declaradas:
-                w += cfg.peso_pareja
-            w -= cfg.peso_repeticion * recent.get(par, 0)
-            if color_jugador.get(a.id) and color_jugador.get(a.id) == color_jugador.get(b.id):
-                w += BONUS_COMPACTAR_COLOR
-            if pista_de[a.id] == pista_de[b.id]:
-                w += BONUS_COMPACTAR_MISMA
+            w = puntos(a, b, pista_de[a.id] == pista_de[b.id])
             if w:
-                pesos[par] = w
+                pesos[frozenset((a.id, b.id))] = w
     parejas = emparejamiento_maximo(movibles, reglas, pesos)
     if parejas is None:
         return None
@@ -1501,11 +1556,16 @@ def _compactar_franja(grupos, cubiertas, vigilancia, intocables, por_id,
     nuevos = ([sorted(par) for par in parejas]
               + [[p.id] for p in movibles if p.id not in emparejados])
     # A igual número de pistas también vale si así se deshace una pareja
-    # forzada (el nuevo emparejamiento nunca rompe reglas).
+    # forzada (el nuevo emparejamiento nunca rompe reglas) o si las parejas
+    # puntúan más.
     forzadas = sum(
         1 for cid in viejas if len(grupos[cid]) > 1
         and not pueden_juntos(por_id[grupos[cid][0]], por_id[grupos[cid][1]], reglas))
-    if len(nuevos) > len(viejas) or (len(nuevos) == len(viejas) and not forzadas):
+    antes = sum(pesos.get(frozenset(grupos[cid]), 0) for cid in viejas
+                if len(grupos[cid]) == 2)
+    ahora = sum(pesos.get(par, 0) for par in parejas)
+    if len(nuevos) > len(viejas) or (
+            len(nuevos) == len(viejas) and not forzadas and ahora <= antes):
         return None
 
     def apta(j, cid):
@@ -1522,9 +1582,16 @@ def _compactar_franja(grupos, cubiertas, vigilancia, intocables, por_id,
     nuevas_cub = set(cubiertas) if cubiertas is not None else None
     nueva_vig = dict(vigilancia)
     asignacion = {}
+    def nivel(j):
+        if nivel_de is not None:
+            n = nivel_de(j)
+            if n is not None:
+                return n
+        return por_id[j].division or NIVEL_MAX + 1
+
     for miembros in sorted(nuevos, key=lambda m: (
             not any(j in con_entrenador for j in m), -len(m),
-            min(por_id[j].division or NIVEL_MAX + 1 for j in m))):
+            min(nivel(j) for j in m))):
         necesita_cub = any(j in con_entrenador for j in miembros)
         for cid in libres:
             if cid in asignacion or not all(apta(j, cid) for j in miembros):
@@ -1578,6 +1645,82 @@ def _compactar_franja(grupos, cubiertas, vigilancia, intocables, por_id,
     grupos_nuevos = {cid: m for cid, m in grupos.items() if cid in fijas}
     grupos_nuevos.update(asignacion)
     return grupos_nuevos, nuevas_cub, nueva_vig, len(cerradas)
+
+
+def _afinar_franja(grupos, intocables, por_id, courts_by_id, reglas,
+                   con_entrenador, cubiertas, pairs_hard, puntos, max_vueltas=20):
+    """Cambia a alumnos de pista dentro de una franja, de uno en uno, mientras
+    las pistas puntúen más (27/10/2026: ranking, pareja declarada, no repetir,
+    color). Es para la tarde, con pistas de tres, donde no vale emparejar de
+    dos en dos. Cada pista se queda con los mismos alumnos en número, así que
+    entrenadores y vigilancia no cambian; nunca junta a quien no puede ir
+    junto, no toca la pista de quien solo entra con los suyos, ni las pistas
+    con parejas forzadas u obligatorias, ni mueve a quien tiene contrato fuera
+    de una pista con entrenador. Devuelve los grupos nuevos o None."""
+    en_dura = {j for par in pairs_hard for j in par}
+    from .pairing import DURO, _motivo
+
+    def valida(miembros):
+        for i, a in enumerate(miembros):
+            for b in miembros[i + 1:]:
+                pa, pb = por_id[a], por_id[b]
+                if _normalise(a, b) in reglas.vetoes:
+                    return False
+                if frozenset((a, b)) in reglas.pairs_declaradas:
+                    continue
+                if _motivo(pa, pb, reglas.vetoes, reglas.apply_neighbor, reglas.neighbor_span,
+                           reglas.span_extra, reglas.edad_extra) == DURO:
+                    return False
+        return True
+
+    movibles = {cid: list(m) for cid, m in grupos.items()
+                if cid not in intocables and all(
+                    j in por_id and j not in en_dura and not por_id[j].sin_prioridad
+                    for j in m) and valida(m)}
+    if len(movibles) < 2:
+        return None
+    original = {j: cid for cid, m in movibles.items() for j in m}
+
+    def valor(miembros):
+        return sum(puntos(por_id[a], por_id[b], original[a] == original[b])
+                   for i, a in enumerate(miembros) for b in miembros[i + 1:])
+
+    def apta(j, cid):
+        c, p = courts_by_id[cid], por_id[j]
+        if p.surface_pref and c.surface and c.surface != p.surface_pref:
+            return False
+        if p.solo_central and c.is_satellite:
+            return False
+        return not (j in con_entrenador and cubiertas is not None and cid not in cubiertas)
+
+    cambiado = False
+    for _vuelta in range(max_vueltas):
+        mejor = None
+        pistas = sorted(movibles)
+        for x, ca in enumerate(pistas):
+            for cb in pistas[x + 1:]:
+                ma, mb = movibles[ca], movibles[cb]
+                base = valor(ma) + valor(mb)
+                for a in ma:
+                    for b in mb:
+                        if not (apta(a, cb) and apta(b, ca)):
+                            continue
+                        na = [b if j == a else j for j in ma]
+                        nb = [a if j == b else j for j in mb]
+                        ganancia = valor(na) + valor(nb) - base
+                        if ganancia > 0 and (mejor is None or ganancia > mejor[0]) \
+                                and valida(na) and valida(nb):
+                            mejor = (ganancia, ca, cb, na, nb)
+        if mejor is None:
+            break
+        _g, ca, cb, na, nb = mejor
+        movibles[ca], movibles[cb] = na, nb
+        cambiado = True
+    if not cambiado:
+        return None
+    nuevos = dict(grupos)
+    nuevos.update(movibles)
+    return nuevos
 
 
 def _dias_de_invitados():
@@ -1831,6 +1974,8 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
         for e in coach.entrenadores.all():
             color_de.setdefault(e.id, coach.color)
     turno_por_codigo = dict(Turno.objects.values_list("codigo", "id"))
+    # Ranking dentro de cada división (27/10/2026).
+    finos = niveles_finos()
     # Jornada semanal de cada entrenador: (entrenador, día) -> (mañana, tarde).
     from academy.models import HorarioEntrenador
 
@@ -2180,31 +2325,53 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 puestos = {jid for t in fase for m in franjas_res[t.id].values()
                            for jid in m}
                 pendientes = [p for p in pendientes if p.id not in puestos]
-            # Por la mañana (pistas de dos), si reemparejando salen menos
-            # pistas, se compacta la franja (22/10/2026).
-            if not es_tarde:
-                reglas = PairingInput(
-                    players=[], courts=[], vetoes=vetoes_dia,
-                    pairs_declaradas=pairs_declaradas_dia,
-                    apply_neighbor=cfg.aplicar_vecindad, neighbor_span=cfg.vecindad_max)
-                for t in grupo:
-                    if not franjas_res.get(t.id):
-                        continue
-                    atados_t = {
-                        jid for jid, cids in atados_de(t).items()
-                        if jid in franjas_de and cids & del_reparto(t, presentes_en(t, players))}
+            # Repaso de las parejas de cada franja (22 y 27/10/2026). Por la
+            # mañana (pistas de dos), el emparejamiento de menos pistas y, con
+            # las mismas, el que más puntúa (ranking, pareja declarada, no
+            # repetir, color). Por la tarde (tríos), cambios de uno en uno.
+            reglas = PairingInput(
+                players=[], courts=[], vetoes=vetoes_dia,
+                pairs_declaradas=pairs_declaradas_dia,
+                apply_neighbor=cfg.aplicar_vecindad, neighbor_span=cfg.vecindad_max,
+                span_extra=cfg.estiron_division if es_tarde else 0,
+                edad_extra=cfg.estiron_edad if es_tarde else 0)
+            colores_bloque = {pid: color_del_jugador(pid, responsable_de, color_de)
+                              for pid in por_id_bloque}
+            declaradas_bloque = pairs_soft_dia | pairs_declaradas_dia | (
+                parejas_manana if es_tarde else set())
+
+            def puntos(a, b, misma=False):
+                return puntos_pareja(a, b, finos, declaradas_bloque, recent,
+                                     colores_bloque, cfg, misma)
+
+            def nivel_de(jid):
+                p = por_id_bloque.get(jid)
+                if jid in finos:
+                    return finos[jid]
+                return p.division + 0.5 if p and p.division else None
+
+            for t in grupo:
+                if not franjas_res.get(t.id):
+                    continue
+                atados_t = {
+                    jid for jid, cids in atados_de(t).items()
+                    if jid in franjas_de and cids & del_reparto(t, presentes_en(t, players))}
+                intocables = set(dedicadas_res.get(t.id, {}).values())
+                if not es_tarde:
                     res = _compactar_franja(
                         franjas_res[t.id], cubiertas_res.get(t.id),
-                        vigilancia_res.get(t.id, {}),
-                        set(dedicadas_res.get(t.id, {}).values()), por_id_bloque,
-                        courts_by_id, reglas, atados_t,
-                        {pid: color_del_jugador(pid, responsable_de, color_de)
-                         for pid in por_id_bloque},
-                        recent, pairs_soft_dia, pairs_hard_dia, cfg)
+                        vigilancia_res.get(t.id, {}), intocables, por_id_bloque,
+                        courts_by_id, reglas, atados_t, pairs_hard_dia, puntos, nivel_de)
                     if res:
                         franjas_res[t.id], cubiertas_res[t.id], vigilancia_res[t.id], n = res
                         report.setdefault("compactadas", []).append(
                             {"dia": dia, "turno": t.codigo, "pistas_cerradas": n})
+                else:
+                    res = _afinar_franja(
+                        franjas_res[t.id], intocables, por_id_bloque, courts_by_id,
+                        reglas, atados_t, cubiertas_res.get(t.id), pairs_hard_dia, puntos)
+                    if res:
+                        franjas_res[t.id] = res
             # Regenerar = rehacer el bloque desde cero, menos lo puesto a mano.
             Asignacion.objects.filter(
                 semana=semana, dia=dia, turno__in=grupo

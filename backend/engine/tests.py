@@ -1449,14 +1449,18 @@ class CompactarFranjaTests(SimpleTestCase):
 
     def _compactar(self, grupos, por_id, courts, cubiertas=None, vigilancia=None,
                    intocables=(), con_entrenador=(), pairs_hard=(), vetoes=(),
-                   pairs_soft=()):
-        from .service import _compactar_franja
+                   pairs_soft=(), finos=None):
+        from .service import _compactar_franja, puntos_pareja
 
         reglas = PairingInput(players=[], courts=[], vetoes=set(vetoes))
+
+        def puntos(a, b, misma=False):
+            return puntos_pareja(a, b, finos or {}, set(pairs_soft), {}, {}, self._Cfg(), misma)
+
         return _compactar_franja(
             grupos, cubiertas, vigilancia or {}, set(intocables), por_id, courts,
-            reglas, set(con_entrenador), {}, {}, set(pairs_soft), set(pairs_hard),
-            self._Cfg())
+            reglas, set(con_entrenador), set(pairs_hard), puntos,
+            lambda j: (finos or {}).get(j))
 
     def test_dos_individuales_compatibles_se_juntan(self):
         por_id = {1: Player(id=1, division=5), 2: Player(id=2, division=5),
@@ -1554,3 +1558,101 @@ class CompactarFranjaTests(SimpleTestCase):
         grupos, _cub, _vig, cerradas = res
         self.assertEqual(cerradas, 0)
         self.assertEqual(sorted(sorted(m) for m in grupos.values()), [[1, 3], [2, 4]])
+
+
+
+class RankingEnLasParejasTests(SimpleTestCase):
+    """27/10/2026: el ranking dentro de cada división es preferencia al hacer
+    las parejas: por delante de no repetir y del color, por detrás de una
+    pareja declarada; nunca abre pista ni deja a nadie fuera."""
+
+    class _Cfg:
+        peso_pareja, peso_repeticion = 5000, 50
+
+    def puntos(self, a, b, finos=None, declaradas=(), recent=None, colores=None):
+        from .service import puntos_pareja
+
+        return puntos_pareja(a, b, finos or {}, set(declaradas), recent or {},
+                             colores or {}, self._Cfg())
+
+    def test_mas_cerca_en_el_ranking_vale_mas(self):
+        a, b, c = (Player(id=i, division=5) for i in (1, 2, 3))
+        finos = {1: 5.05, 2: 5.15, 3: 5.95}
+        self.assertGreater(self.puntos(a, b, finos), self.puntos(a, c, finos))
+
+    def test_el_ultimo_de_d2_y_el_primero_de_d3_estan_pegados(self):
+        ultimo_d2, primero_d3, primero_d2 = (Player(id=1, division=2), Player(id=2, division=3),
+                                             Player(id=3, division=2))
+        finos = {1: 2.95, 2: 3.05, 3: 2.05}
+        self.assertGreater(self.puntos(ultimo_d2, primero_d3, finos),
+                           self.puntos(ultimo_d2, primero_d2, finos))
+
+    def test_escalones(self):
+        a, b, c = (Player(id=i, division=5) for i in (1, 2, 3))
+        finos = {1: 5.1, 2: 5.2, 3: 5.9}
+        # La pareja declarada gana al ranking.
+        self.assertGreater(self.puntos(a, c, finos, declaradas={frozenset((1, 3))}),
+                           self.puntos(a, b, finos))
+        # El ranking gana a no repetir (cuatro veces) y al color.
+        self.assertGreater(self.puntos(a, b, finos, recent={frozenset((1, 2)): 4}),
+                           self.puntos(a, c, finos, colores={1: "x", 3: "x"}))
+
+    def test_preferencia_hacia_arriba(self):
+        d3 = Player(id=1, division=3, division_pref=-1)
+        d2, d4 = Player(id=2, division=2), Player(id=3, division=4)
+        self.assertGreater(self.puntos(d3, d2), self.puntos(d3, d4))
+
+    def test_el_repaso_de_la_manana_junta_por_ranking(self):
+        from .service import _compactar_franja, puntos_pareja
+
+        por_id = {i: Player(id=i, division=5) for i in range(1, 5)}
+        finos = {1: 5.125, 2: 5.375, 3: 5.625, 4: 5.875}
+        courts = {n: Court(id=n, venue_id=1, capacity=2, number=n, surface="TIERRA")
+                  for n in (1, 3)}
+
+        def puntos(a, b, misma=False):
+            return puntos_pareja(a, b, finos, set(), {}, {}, self._Cfg(), misma)
+
+        res = _compactar_franja({1: [1, 4], 3: [2, 3]}, {1, 3}, {}, set(), por_id, courts,
+                                PairingInput(players=[], courts=[]), set(), set(), puntos,
+                                finos.get)
+        grupos, cub, _vig, cerradas = res
+        self.assertEqual(cerradas, 0)
+        self.assertEqual((grupos[1], grupos[3]), ([1, 2], [3, 4]))
+        self.assertEqual(cub, {1, 3})
+
+    def test_con_impares_el_ranking_decide_quien_va_solo(self):
+        from .service import _compactar_franja, puntos_pareja
+
+        # El último de D2 (2,9), el primero de D3 (3,1) y el último de D3
+        # (3,9): con ranking van juntos los dos primeros; sin él, los D3.
+        por_id = {1: Player(id=1, division=2), 2: Player(id=2, division=3),
+                  3: Player(id=3, division=3)}
+        courts = {n: Court(id=n, venue_id=1, capacity=2, number=n, surface="TIERRA")
+                  for n in (1, 3)}
+        for finos, juntos in (({1: 2.9, 2: 3.1, 3: 3.9}, [1, 2]), ({}, [2, 3])):
+            def puntos(a, b, misma=False, finos=finos):
+                return puntos_pareja(a, b, finos, set(), {}, {}, self._Cfg(), misma)
+
+            res = _compactar_franja({1: [1], 3: [2, 3]}, {1, 3}, {}, set(), por_id, courts,
+                                    PairingInput(players=[], courts=[]), set(), set(), puntos,
+                                    finos.get)
+            grupos = res[0] if res else {1: [1], 3: [2, 3]}
+            self.assertIn(juntos, [sorted(m) for m in grupos.values()], finos)
+
+    def test_la_tarde_cambia_de_pista_para_juntar_por_ranking(self):
+        from .service import _afinar_franja, puntos_pareja
+
+        por_id = {i: Player(id=i, division=5) for i in range(1, 7)}
+        finos = {i: 5 + (i - 0.5) / 6 for i in range(1, 7)}
+        courts = {n: Court(id=n, venue_id=1, capacity=3, number=n, surface="TIERRA")
+                  for n in (1, 2)}
+
+        def puntos(a, b, misma=False):
+            return puntos_pareja(a, b, finos, set(), {}, {}, self._Cfg(), misma)
+
+        res = _afinar_franja({1: [1, 5, 6], 2: [2, 3, 4]}, set(), por_id, courts,
+                             PairingInput(players=[], courts=[]), set(), {1, 2}, set(), puntos)
+        self.assertEqual({tuple(sorted(m)) for m in res.values()}, {(1, 2, 3), (4, 5, 6)})
+        # Cada pista sigue con tres.
+        self.assertEqual([len(m) for m in res.values()], [3, 3])

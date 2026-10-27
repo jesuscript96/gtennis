@@ -1676,6 +1676,15 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .divisiones-vista.movible ul.miembros > li:active { cursor: grabbing; }
 .divisiones-vista.movible .nombre-alumno { cursor: pointer; }
 .divisiones-vista .deshacer-div { margin-left: .6rem; vertical-align: middle; }
+/* Ranking dentro de la división (27/10/2026): el puesto delante del nombre y
+   una raya donde caería el alumno que se arrastra. */
+.divisiones-vista .puesto {
+  flex: none; min-width: 1.5rem; text-align: right; font-size: .72rem;
+  font-variant-numeric: tabular-nums; color: var(--muted);
+}
+.divisiones-vista ul.miembros > li.caer-antes { box-shadow: inset 0 2px 0 var(--accent); }
+.divisiones-vista ul.miembros > li.caer-despues { box-shadow: inset 0 -2px 0 var(--accent); }
+.divisiones-vista ul.miembros > li.destino-toque .nombre-alumno { color: var(--accent); }
 
 /* --- Evaluación física (21/10/2026) --------------------------------------- */
 .eval-pestanas { margin-bottom: 1rem; }

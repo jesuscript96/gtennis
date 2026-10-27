@@ -128,7 +128,40 @@ class DivisionViewSet(viewsets.ModelViewSet):
             "division": division.nivel if division else None,
             "anterior": anterior.nivel if anterior else None,
             "anterior_id": anterior.pk if anterior else None,
+            "orden_division": jugador.orden_division,
         })
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
+    def ordenar(self, request):
+        """`{division, orden: [jugadores]}` → el ranking de la división, del
+        mejor al último (27/10/2026). Quien no venga en la lista y esté en la
+        división se queda detrás, en el orden que tenía. Mismos permisos que
+        mover de división."""
+        if not mueve_divisiones(request.user):
+            raise PermissionDenied("Solo dirección y Dani Gimeno ordenan las divisiones.")
+        division = Division.objects.filter(pk=request.data.get("division")).first()
+        if division is None:
+            raise ValidationError({"division": "Esa división no existe."})
+        try:
+            orden = [int(x) for x in request.data.get("orden") or []]
+        except (TypeError, ValueError):
+            raise ValidationError({"orden": "Lista de alumnos no válida."})
+        de_la_division = {
+            j.id: j for j in Jugador.objects.filter(division=division, activo=True)}
+        ajenos = [x for x in orden if x not in de_la_division]
+        if ajenos:
+            raise ValidationError({"orden": "Hay alumnos que no son de esta división."})
+        resto = sorted(
+            (j for jid, j in de_la_division.items() if jid not in set(orden)),
+            key=lambda j: (j.orden_division is None, j.orden_division or 0, j.nombre))
+        filas = [de_la_division[x] for x in dict.fromkeys(orden)] + resto
+        with transaction.atomic():
+            for n, j in enumerate(filas, start=1):
+                if j.orden_division != n:
+                    j.orden_division = n
+                    Jugador.objects.filter(pk=j.pk).update(orden_division=n)
+        return Response({"division": division.id,
+                         "orden": [{"id": j.id, "orden_division": j.orden_division} for j in filas]})
 
 
 class EntrenadorViewSet(viewsets.ModelViewSet):
@@ -1506,6 +1539,7 @@ class GrupoViewSet(viewsets.ViewSet):
             "id": j.id,
             "nombre": j.nombre,
             "division": j.division.nivel if j.division_id else None,
+            "orden_division": j.orden_division,
             "escuela": j.escuela.nombre if j.escuela_id else None,
             "foto": j.foto_url or "",
             # Gestión compartida: con quién lleva esta columna al alumno.

@@ -267,6 +267,9 @@ export const getGruposDivisiones = () => req("/grupos/divisiones/");
 export const getPermisosDivisiones = () => req("/divisiones/permisos/");
 export const moverDeDivision = (jugador, division) =>
   req("/divisiones/mover/", { method: "POST", body: JSON.stringify({ jugador, division }) });
+// Ranking dentro de una división (27/10/2026): los alumnos, del mejor al último.
+export const ordenarDivision = (division, orden) =>
+  req("/divisiones/ordenar/", { method: "POST", body: JSON.stringify({ division, orden }) });
 export const grupoAnadir = (jugador, entrenador) =>
   req("/grupos/anadir/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
 export const grupoQuitar = (jugador, entrenador) =>
