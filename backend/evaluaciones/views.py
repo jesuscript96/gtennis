@@ -10,12 +10,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from academy.models import Jugador
-from academy.permissions import evalua_fisico, evalua_tenis_solo_informes
+from academy.permissions import evalua_fisico, evalua_tenis_solo_informes, valida_informes, ve_informes
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
-from . import catalogo, drive, fichero, ia, pdf
-from .models import Evaluacion, EvaluacionFisica
-from .serializers import EvaluacionFisicaSerializer, EvaluacionSerializer
+from . import catalogo, drive, fichero, ia, informes, pdf
+from .models import Evaluacion, EvaluacionFisica, FotoJugador, Informe
+from .serializers import EvaluacionFisicaSerializer, EvaluacionSerializer, InformeSerializer
+
+
+def _sin_duplicar(jugador, campo):
+    """Un jugador de Competición de tardes tiene una sola evaluación de cada
+    parte por informe: si ya hay una en marcha, se sigue con esa."""
+    existente = informes.parte_existente(jugador, campo)
+    if existente is not None:
+        que = "de tenis" if campo == "tenis" else "física"
+        raise ValidationError({"detail": f"Ya hay una evaluación {que} de este jugador en el informe en "
+                                         f"curso: sigue con esa.", "existente": existente.pk})
 
 
 def _nombre_evaluador(user):
@@ -63,9 +73,12 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        if not self._jugadores().filter(pk=serializer.validated_data["jugador"].pk).exists():
+        jugador = serializer.validated_data["jugador"]
+        if not self._jugadores().filter(pk=jugador.pk).exists():
             raise PermissionDenied("Ese jugador no está entre los tuyos.")
-        serializer.save(evaluador=user, nombre_evaluador=_nombre_evaluador(user))
+        _sin_duplicar(jugador, "tenis")
+        ev = serializer.save(evaluador=user, nombre_evaluador=_nombre_evaluador(user))
+        informes.vincular(ev)
 
     @action(detail=False)
     def jugadores(self, request):
@@ -149,6 +162,7 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         ev.estado = Evaluacion.Estado.TERMINADA
         ev.terminada_en = ev.terminada_en or timezone.now()
         ev.save()
+        informes.parte_terminada(ev)
         datos = self.get_serializer(ev).data
         return Response({**datos, "avisos": list(dict.fromkeys(avisos))})
 
@@ -158,6 +172,11 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         ev = self._editable(self.get_object())
         if ev.estado != Evaluacion.Estado.TERMINADA:
             raise ValidationError({"estado": "Solo se guardan en Drive los informes terminados."})
+        if getattr(ev, "informe", None) is not None:
+            # Competición de tardes: lo que va a Drive es el informe conjunto
+            # (con el resumen ya retocado), cuando tenis y físico están listos.
+            informes.parte_terminada(ev)
+            return Response({**self.get_serializer(ev).data, "aviso": None})
         aviso = None
         try:
             ev.drive_file_id, ev.drive_url = drive.subir(ev)
@@ -215,7 +234,9 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
         jugador = serializer.validated_data["jugador"]
         if not jugadores_evaluables_fisico().filter(pk=jugador.pk).exists():
             raise PermissionDenied("Ese jugador no está en Competición de tardes.")
-        serializer.save(evaluador=self.request.user, nombre_evaluador=_nombre_evaluador(self.request.user))
+        _sin_duplicar(jugador, "fisica")
+        ev = serializer.save(evaluador=self.request.user, nombre_evaluador=_nombre_evaluador(self.request.user))
+        informes.vincular(ev)
 
     def _editable(self, ev):
         if not ev.puede_editar(self.request.user):
@@ -255,4 +276,139 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
         ev.estado = EvaluacionFisica.Estado.TERMINADA
         ev.terminada_en = ev.terminada_en or timezone.now()
         ev.save(update_fields=["estado", "terminada_en", "actualizada"])
+        informes.parte_terminada(ev)
         return Response(self.get_serializer(ev).data)
+
+
+class InformeViewSet(viewsets.ReadOnlyModelViewSet):
+    """Informes de Competición de tardes: tenis + físico en un PDF que valida
+    gestión deportiva. Lo ven quienes evalúan esos alumnos y quienes validan.
+    Filtros: `?estado=`, `?jugador=`."""
+
+    serializer_class = InformeSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if not ve_informes(request.user):
+            raise PermissionDenied("Los informes de Competición de tardes son de sus evaluadores y de dirección.")
+
+    def get_queryset(self):
+        qs = (Informe.objects.filter(jugador__escuela__solo_informes=True)
+              .select_related("jugador", "tenis", "fisica", "validado_por", "devuelto_por"))
+        p = self.request.query_params
+        if p.get("estado"):
+            qs = qs.filter(estado=p["estado"])
+        if p.get("jugador"):
+            qs = qs.filter(jugador_id=p["jugador"])
+        return qs
+
+    def _validador(self):
+        if not valida_informes(self.request.user):
+            raise PermissionDenied("Validan Sergio, Iván, Dani Gimeno y dirección.")
+
+    @action(detail=False)
+    def panel(self, request):
+        """Cada jugador de Competición de tardes con su ciclo y su informe en curso."""
+        hoy = timezone.localdate()
+        abiertos = {}
+        for inf in (Informe.objects.exclude(estado=Informe.Estado.VALIDADO)
+                    .filter(jugador__escuela__solo_informes=True).select_related("tenis", "fisica")
+                    .order_by("creado")):
+            abiertos[inf.jugador_id] = inf
+        fotos = set(FotoJugador.objects.values_list("jugador_id", flat=True))
+        out = []
+        for j in jugadores_evaluables_fisico():
+            inf = abiertos.get(j.id)
+            c = informes.ciclo(j, hoy)
+            ult = informes.ultimo_validado(j)
+            out.append({
+                "id": j.id, "nombre": j.nombre, "edad": j.edad, "foto": j.id in fotos,
+                "ciclo": {"estado": c["estado"], "proxima": str(c["proxima"]) if c["proxima"] else None},
+                "informe": None if inf is None else {
+                    "id": inf.id, "estado": inf.estado,
+                    "tenis": {"id": inf.tenis_id, "estado": inf.tenis.estado} if inf.tenis else None,
+                    "fisica": {"id": inf.fisica_id, "estado": inf.fisica.estado} if inf.fisica else None,
+                    "devuelto_partes": inf.devuelto_partes,
+                },
+                "ultimo": None if ult is None else {"id": ult.id, "fecha": str(timezone.localtime(ult.validado_en).date())},
+            })
+        return Response({"jugadores": out, "puede_validar": valida_informes(request.user),
+                         "evalua_tenis": evalua_tenis_solo_informes(request.user),
+                         "evalua_fisico": evalua_fisico(request.user)})
+
+    @action(detail=True)
+    def pdf(self, request, pk=None):
+        inf = self.get_object()
+        if not inf.tenis:
+            raise ValidationError({"detail": "Este informe aún no tiene la parte de tenis."})
+        respuesta = HttpResponse(pdf.generar_informe(inf), content_type="application/pdf")
+        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre_informe(inf))
+        return respuesta
+
+    @action(detail=True, methods=["post"])
+    def aprobar(self, request, pk=None):
+        """`{destinatarios: [{email, quien}]}`: se guardan para cuando haya envío por correo."""
+        self._validador()
+        inf = self.get_object()
+        destinatarios = [
+            {"email": str(d.get("email", "")).strip(), "quien": str(d.get("quien", "")).strip()}
+            for d in (request.data.get("destinatarios") or []) if isinstance(d, dict) and str(d.get("email", "")).strip()
+        ]
+        try:
+            aviso = informes.aprobar(inf, request.user, destinatarios)
+        except informes.InformeError as e:
+            raise ValidationError({"detail": str(e)})
+        return Response({**self.get_serializer(inf).data, "aviso": aviso})
+
+    @action(detail=True, methods=["post"])
+    def devolver(self, request, pk=None):
+        """`{partes: ["tenis", "fisico"], nota}`."""
+        self._validador()
+        inf = self.get_object()
+        try:
+            informes.devolver(inf, request.user, request.data.get("partes") or [], str(request.data.get("nota") or ""))
+        except informes.InformeError as e:
+            raise ValidationError({"detail": str(e)})
+        return Response(self.get_serializer(inf).data)
+
+    @action(detail=True, methods=["post"], url_path="guardar-drive")
+    def guardar_drive(self, request, pk=None):
+        inf = self.get_object()
+        if not inf.completo:
+            raise ValidationError({"detail": "Faltan partes por terminar."})
+        if not drive.configurado():
+            return Response({**self.get_serializer(inf).data, "aviso": "Drive no está conectado."})
+        aviso = informes.guardar_en_drive(inf)
+        return Response({**self.get_serializer(inf).data, "aviso": aviso})
+
+    @action(detail=False, methods=["get", "post"], url_path=r"foto/(?P<jugador_id>\d+)")
+    def foto(self, request, jugador_id=None):
+        """La foto del jugador para el informe. POST con el fichero en `foto`."""
+        jugador = jugadores_evaluables_fisico().filter(pk=jugador_id).first()
+        if jugador is None:
+            raise ValidationError({"detail": "Ese jugador no está en Competición de tardes."})
+        if request.method == "GET":
+            f = FotoJugador.objects.filter(jugador=jugador).first()
+            if f is None:
+                return Response(status=404)
+            return HttpResponse(bytes(f.imagen), content_type=f.tipo)
+        subida = request.FILES.get("foto")
+        if subida is None:
+            raise ValidationError({"foto": "Falta la imagen."})
+        if subida.size > 15_000_000:
+            raise ValidationError({"foto": "La imagen es demasiado grande (máximo 15 MB)."})
+        try:
+            from io import BytesIO
+
+            from PIL import Image, ImageOps
+            img = ImageOps.exif_transpose(Image.open(subida)).convert("RGB")
+            img.thumbnail((900, 900))
+            buf = BytesIO()
+            img.save(buf, "JPEG", quality=85)
+        except Exception:  # noqa: BLE001
+            raise ValidationError({"foto": "No se reconoce la imagen. Prueba con una foto JPG o PNG."})
+        FotoJugador.objects.update_or_create(jugador=jugador, defaults={
+            "imagen": buf.getvalue(), "tipo": "image/jpeg", "subida_por": request.user})
+        return Response({"ok": True})

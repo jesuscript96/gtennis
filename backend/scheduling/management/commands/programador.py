@@ -89,8 +89,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, una_vez=False, **opts):
         self.stdout.write("Programador en marcha.")
+        ultima_revision = None
         while True:
             close_old_connections()
+            # Recordatorios de informes de Competición de tardes (27/10/2026):
+            # una vez por hora como mucho, a partir de las 8; cada uno se da
+            # una sola vez, así que repetir no duplica nada.
+            ahora = timezone.localtime()
+            if ahora.hour >= 8 and (ultima_revision is None or (ahora - ultima_revision).total_seconds() >= 3600):
+                ultima_revision = ahora
+                try:
+                    from evaluaciones.recordatorios import revisar
+                    n = revisar()
+                    if n:
+                        self.stdout.write(f"{ahora:%Y-%m-%d %H:%M} recordatorios de informes: {n} jugadores")
+                except Exception:  # noqa: BLE001 — que un fallo aquí no pare la generación
+                    self.stdout.write(traceback.format_exc()[-2000:])
             fecha = dia_a_generar()
             if fecha is not None:
                 fila = generar_dia(fecha)

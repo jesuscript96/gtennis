@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from django.template import Context, Template
+from django.utils import timezone
 
 from . import catalogo
 
@@ -30,6 +31,9 @@ TEXTOS = {
         "competicion": "Competición", "detalle": "Detalle por bloque",
         "escala": "Cada aspecto se puntúa del 1 al 5. Debajo, el comentario del entrenador.",
         "sin_observaciones": "Sin observaciones", "sin_resultados": "Sin resultados registrados",
+        "fisico_titulo": "Preparación física", "fisico_sub": "Evaluación trimestral del preparador físico. Cada aspecto del 1 al 5.",
+        "tenis": "Tenis", "preparador": "Preparación física", "vs_anterior": "vs. informe anterior",
+        "academia_tardes": "Competición de tardes",
         "meses": ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
                   "septiembre", "octubre", "noviembre", "diciembre"],
     },
@@ -42,6 +46,9 @@ TEXTOS = {
         "competicion": "Competition", "detalle": "Detail by area",
         "escala": "Each aspect is scored from 1 to 5. Below, the coach's comment.",
         "sin_observaciones": "No observations", "sin_resultados": "No results recorded",
+        "fisico_titulo": "Physical preparation", "fisico_sub": "Quarterly assessment by the strength and conditioning coach. Each aspect from 1 to 5.",
+        "tenis": "Tennis", "preparador": "Physical preparation", "vs_anterior": "vs. previous report",
+        "academia_tardes": "Afternoon competition",
         "meses": ["January", "February", "March", "April", "May", "June", "July", "August",
                   "September", "October", "November", "December"],
     },
@@ -151,3 +158,106 @@ def generar(ev):
     from weasyprint import HTML  # carga pango: solo cuando de verdad se genera
 
     return HTML(string=html(ev), base_url=str(CARPETA)).write_pdf()
+
+
+# --- Informe conjunto de Competición de tardes (27/10/2026) -----------------
+
+def _foto_subida(jugador):
+    from .models import FotoJugador
+
+    f = FotoJugador.objects.filter(jugador=jugador).first()
+    if f is None:
+        return ""
+    return f"data:{f.tipo};base64,{base64.b64encode(bytes(f.imagen)).decode()}"
+
+
+def _media(puntuaciones, claves):
+    notas = [puntuaciones.get(k) for k in claves if puntuaciones.get(k)]
+    return sum(notas) / len(notas) if notas else None
+
+
+def _evol(actual, anterior, idioma):
+    """Flecha y diferencia respecto al informe anterior («▲ 0,5»)."""
+    if actual is None or anterior is None:
+        return None
+    d = actual - anterior
+    if abs(d) < 0.05:
+        return {"dir": "igual", "txt": "="}
+    return {"dir": "sube" if d > 0 else "baja", "txt": f"{'▲' if d > 0 else '▼'} {_num(abs(d), idioma)}"}
+
+
+def anterior(inf):
+    """El último informe validado del jugador antes de este."""
+    from .models import Informe
+
+    qs = inf.jugador.informes.filter(estado=Informe.Estado.VALIDADO, validado_en__isnull=False).exclude(pk=inf.pk)
+    if inf.validado_en:
+        qs = qs.filter(validado_en__lt=inf.validado_en)
+    return qs.order_by("-validado_en").select_related("tenis", "fisica").first()
+
+
+def datos_fisico(inf, idioma):
+    ev = inf.fisica
+    en = idioma == "EN"
+    previo = anterior(inf)
+    prev_p = previo.fisica.puntuaciones if previo and previo.fisica else None
+    bloques = []
+    for b in catalogo.BLOQUES_FISICO:
+        claves = [c[0] for c in b["criterios"]]
+        media = _media(ev.puntuaciones, claves)
+        bloques.append({
+            "titulo": catalogo.FISICO_EN[b["clave"]] if en else b["titulo"],
+            "corto": catalogo.CORTO_FISICO[b["clave"]][1 if en else 0],
+            "media": _num(media, idioma),
+            "arco": f"{(media or 0) / 5 * PERIMETRO:.2f}",
+            "evol": _evol(media, _media(prev_p, claves) if prev_p else None, idioma),
+            "criterios": [{
+                "etiqueta": catalogo.FISICO_EN[k] if en else e,
+                "nota": ev.puntuaciones.get(k) or "—",
+                "segmentos": [bool(ev.puntuaciones.get(k)) and i < ev.puntuaciones.get(k) for i in range(5)],
+            } for k, e, _ in b["criterios"]],
+        })
+    textos = inf.textos_fisico_traducidos if en and inf.textos_fisico_traducidos else ev.textos
+    t = TEXTOS[idioma]
+    return {
+        "evaluador": ev.nombre_evaluador,
+        "bloques": bloques,
+        "textos": [{"etiqueta": catalogo.FISICO_EN[k] if en else e, "texto": textos.get(k, "")}
+                   for k, e in catalogo.TEXTOS_FISICO],
+        "sin_observaciones": t["sin_observaciones"],
+    }
+
+
+def datos_informe(inf):
+    d = datos(inf.tenis)
+    idioma = inf.tenis.idioma
+    d["t"] = {**d["t"], "academia": d["t"]["academia_tardes"]}
+    previo = anterior(inf)
+    if previo and previo.tenis:
+        for b, cat in zip(d["bloques"], catalogo.BLOQUES):
+            claves = [c[0] for c in cat["criterios"]]
+            b["evol"] = _evol(b["media_num"], _media(previo.tenis.puntuaciones, claves), idioma)
+        actual = _media(inf.tenis.puntuaciones, catalogo.CRITERIOS)
+        d["evol_media"] = _evol(actual, _media(previo.tenis.puntuaciones, catalogo.CRITERIOS), idioma)
+    d["fisico"] = datos_fisico(inf, idioma) if inf.fisica else None
+    d["foto"] = _foto_subida(inf.jugador) or d["foto"]
+    if inf.validado_en:
+        d["fecha"] = _fecha(timezone.localtime(inf.validado_en).date(), d["t"])
+    return d
+
+
+def nombre_informe(inf):
+    jugador = re.sub(r'[\\/:*?"<>|]', "", inf.jugador.nombre).strip()
+    fecha = timezone.localtime(inf.validado_en).date() if inf.validado_en else timezone.localdate()
+    return f"{jugador}-{fecha:%d-%m-%Y}-{inf.tenis.idioma}.pdf"
+
+
+def html_informe(inf):
+    plantilla = Template((CARPETA / "informe.html").read_text(encoding="utf-8"))
+    return plantilla.render(Context(datos_informe(inf)))
+
+
+def generar_informe(inf):
+    from weasyprint import HTML
+
+    return HTML(string=html_informe(inf), base_url=str(CARPETA)).write_pdf()

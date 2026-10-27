@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import AsistenteEvaluacion from "../../../../components/AsistenteEvaluacion";
+import InformeDeLaEvaluacion from "../../../../components/InformeDeLaEvaluacion";
 import {
   borrarEvaluacion, descargarPdfEvaluacion, getCatalogoEvaluacion, getEvaluacion, guardarEvaluacionEnDrive,
 } from "../../../../lib/api";
@@ -100,18 +101,19 @@ export default function EvaluacionPage() {
       {editando ? (
         <AsistenteEvaluacion evaluacion={ev} bloques={catalogo.bloques} ia={catalogo.ia}
           pasoInicio={ev.estado === "TERMINADA" ? 1 : undefined}
-          onCambio={setEv} onTerminada={(e) => { setEv(e); setEditando(false); if (catalogo.drive) subirADrive(); }} />
+          onCambio={setEv} onTerminada={(e) => { setEv(e); setEditando(false); if (catalogo.drive && !e.informe) subirADrive(); }} />
       ) : (
         <>
           <p className="eval-cabecera">
             {fmtLarga(ev.fecha)} · evaluado por <b>{ev.nombre_evaluador}</b> · {ev.idioma === "EN" ? "en inglés" : "en español"}
             {ev.estado === "BORRADOR" && <span className="pill pend"> A medias · {ev.puntuados}/34</span>}
           </p>
+          <InformeDeLaEvaluacion informe={ev.informe} parte="tenis" />
           <div className="eval-acciones">
             {ev.puede_editar && <button type="button" className="btn" onClick={() => setEditando(true)}>
               {ev.estado === "BORRADOR" ? "Seguir" : "Editar"}</button>}
             {ev.drive_url && <a className="btn ghost" href={ev.drive_url} target="_blank" rel="noreferrer">Abrir en Drive</a>}
-            {ev.estado === "TERMINADA" && catalogo.drive && ev.puede_editar && !ev.drive_url && (
+            {ev.estado === "TERMINADA" && catalogo.drive && ev.puede_editar && !ev.drive_url && !ev.informe && (
               <button type="button" className="btn ghost" disabled={drive === "subiendo"} onClick={subirADrive}>Guardar en Drive</button>
             )}
             {ev.estado === "TERMINADA" && <button type="button" className="btn ghost" onClick={descargar}>Descargar PDF</button>}

@@ -117,3 +117,74 @@ def subir(ev):
     except Exception as e:  # red, credenciales mal copiadas…: el informe no se pierde
         log.exception("Fallo al subir a Drive")
         raise DriveNoDisponible("No se ha podido guardar en Drive.") from e
+
+
+# --- Informes de Competición de tardes (27/10/2026) -------------------------
+# Unidad › Escuela › Jugador › «Pendientes de validar» | «Validados y enviados».
+SUBCARPETA = {"pendientes": "Pendientes de validar", "validados": "Validados y enviados"}
+
+
+def _escapar(nombre):
+    return nombre.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _carpeta_ruta(s, partes):
+    """ID de la carpeta `partes` (lista de nombres desde la raíz de la unidad);
+    crea la que falte y recuerda cada tramo en `CarpetaDrive`."""
+    from .models import CarpetaDrive
+
+    raiz = settings.DRIVE_INFORMES_ID
+    padre = raiz
+    for i in range(len(partes)):
+        ruta = "/".join(partes[: i + 1])
+        nombre = partes[i].strip()
+        guardada = CarpetaDrive.objects.filter(ruta=ruta).first()
+        if guardada and _sigue_ahi(s, guardada.folder_id):
+            padre = guardada.folder_id
+            continue
+        r = s.get(API, params={
+            **COMUN, "includeItemsFromAllDrives": "true", "corpora": "drive", "driveId": raiz,
+            "q": f"name = '{_escapar(nombre)}' and mimeType = '{CARPETA}' and '{padre}' in parents and trashed = false",
+            "fields": "files(id)", "pageSize": 1,
+        })
+        encontradas = _ok(r, "buscar una carpeta").get("files", [])
+        if encontradas:
+            folder_id = encontradas[0]["id"]
+        else:
+            folder_id = _ok(s.post(API, params={**COMUN, "fields": "id"},
+                                   json={"name": nombre, "mimeType": CARPETA, "parents": [padre]}),
+                            "crear una carpeta")["id"]
+        CarpetaDrive.objects.update_or_create(ruta=ruta, defaults={"folder_id": folder_id})
+        padre = folder_id
+    return padre
+
+
+def subir_informe(inf):
+    """Deja el PDF conjunto del informe en la carpeta que le toca por su estado
+    (validado → «Validados y enviados»; si no, «Pendientes de validar»).
+    Reescribe el mismo fichero: solo se guarda la última versión."""
+    try:
+        s = _sesion()
+        destino = "validados" if inf.estado == inf.Estado.VALIDADO else "pendientes"
+        escuela = inf.jugador.escuela.nombre if inf.jugador.escuela_id else "Sin escuela"
+        carpeta = _carpeta_ruta(s, [escuela, inf.jugador.nombre.strip(), SUBCARPETA[destino]])
+        nombre, contenido = pdf.nombre_informe(inf), pdf.generar_informe(inf)
+        params = {**COMUN, "uploadType": "multipart", "fields": "id,webViewLink,parents"}
+        if inf.drive_file_id and _sigue_ahi(s, inf.drive_file_id):
+            actual = _ok(s.get(f"{API}/{inf.drive_file_id}", params={**COMUN, "fields": "parents"}), "leer el informe")
+            cuerpo, cab = _multipart({"name": nombre}, contenido)
+            mover = {}
+            antiguos = [p for p in actual.get("parents", []) if p != carpeta]
+            if antiguos or carpeta not in actual.get("parents", []):
+                mover = {"addParents": carpeta, "removeParents": ",".join(antiguos)}
+            datos = _ok(s.patch(f"{SUBIDA}/{inf.drive_file_id}", params={**params, **mover}, data=cuerpo, headers=cab),
+                        "actualizar el informe")
+        else:
+            cuerpo, cab = _multipart({"name": nombre, "parents": [carpeta], "mimeType": "application/pdf"}, contenido)
+            datos = _ok(s.post(SUBIDA, params=params, data=cuerpo, headers=cab), "guardar el informe")
+        inf.drive_file_id, inf.drive_url, inf.drive_carpeta = datos["id"], datos.get("webViewLink", ""), destino
+    except DriveNoDisponible:
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.exception("Fallo al subir el informe a Drive")
+        raise DriveNoDisponible("No se ha podido guardar en Drive.") from e

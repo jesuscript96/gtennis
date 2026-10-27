@@ -37,10 +37,14 @@ class TenisCompeticionTardesTests(TestCase):
         for u in (self.alvaro, self.mico, self.dani):
             nombres = [j["nombre"] for j in self.api(u).get("/api/evaluaciones/jugadores/").data]
             self.assertIn("Asier", nombres, u.username)
-            r = self.api(u).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
-            self.assertEqual(r.status_code, 201, (u.username, r.data))
-        # Cada uno ve las tres (todos evalúan a todos de momento).
-        self.assertEqual(len(self.api(self.alvaro).get("/api/evaluaciones/").data), 3)
+        r = self.api(self.alvaro).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        # Una sola evaluación de tenis por informe: los demás siguen con esa y la pueden corregir.
+        for u in (self.mico, self.dani):
+            r2 = self.api(u).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
+            self.assertEqual((r2.status_code, int(r2.data["existente"])), (400, r.data["id"]), u.username)
+            self.assertEqual(self.api(u).patch(f"/api/evaluaciones/{r.data['id']}/", {"idioma": "EN"},
+                                               format="json").status_code, 200, u.username)
 
     def test_jorge_milla_ya_no(self):
         # 27/10: «Jorge Mico» no era Jorge Milla; Milla no evalúa Competición de tardes.

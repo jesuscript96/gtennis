@@ -375,6 +375,43 @@ export async function descargarPdfEvaluacion(id) {
   return { blob: await res.blob(), nombre: m ? decodeURIComponent(m[1]) : `informe-${id}.pdf` };
 }
 
+// --- Informes de Competición de tardes (tenis + físico, validación) -------
+export const getPanelInformes = () => req("/informes/panel/");
+export const getInformes = async (params = {}) => {
+  const s = new URLSearchParams(params).toString();
+  return rows(await req(`/informes/${s ? `?${s}` : ""}`));
+};
+export const getInforme = (id) => req(`/informes/${id}/`);
+export const aprobarInforme = (id, destinatarios) =>
+  req(`/informes/${id}/aprobar/`, { method: "POST", body: JSON.stringify({ destinatarios }) });
+export const devolverInforme = (id, partes, nota) =>
+  req(`/informes/${id}/devolver/`, { method: "POST", body: JSON.stringify({ partes, nota }) });
+export const guardarInformeEnDrive = (id) => req(`/informes/${id}/guardar-drive/`, { method: "POST", body: "{}" });
+async function fichero(path, porDefecto) {
+  const res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Token ${getToken()}` }, cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`No se ha podido descargar (${res.status}).`);
+  const disp = res.headers.get("Content-Disposition") || "";
+  const m = disp.match(/filename\*=utf-8''([^;]+)/i) || disp.match(/filename="?([^";]+)"?/i);
+  return { blob: await res.blob(), nombre: m ? decodeURIComponent(m[1]) : porDefecto };
+}
+export const descargarPdfInforme = (id) => fichero(`/informes/${id}/pdf/`, `informe-${id}.pdf`);
+// La foto del jugador para el informe (null si no tiene).
+export const getFotoJugador = (jugadorId) => fichero(`/informes/foto/${jugadorId}/`, "foto.jpg");
+export async function subirFotoJugador(jugadorId, file) {
+  const datos = new FormData();
+  datos.append("foto", file);
+  const res = await fetch(`${BASE}/informes/foto/${jugadorId}/`, {
+    method: "POST", body: datos, headers: { Authorization: `Token ${getToken()}` },
+  });
+  if (!res.ok) {
+    let msg = `No se ha podido subir la foto (${res.status}).`;
+    try { const j = await res.json(); msg = j.foto || j.detail || msg; } catch { /* sin cuerpo */ }
+    throw new Error(Array.isArray(msg) ? msg.join(" ") : msg);
+  }
+  return res.json();
+}
+
 // --- Evaluaciones físicas (preparador físico y gestión deportiva) ----------
 export const getCatalogoFisico = () => req("/evaluaciones-fisicas/catalogo/");
 export const getJugadoresFisico = () => req("/evaluaciones-fisicas/jugadores/");

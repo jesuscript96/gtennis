@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import InformeDeLaEvaluacion from "../../../../../components/InformeDeLaEvaluacion";
 import AsistenteFisico from "../../../../../components/AsistenteFisico";
 import { borrarEvaluacionFisica, getCatalogoFisico, getEvaluacionFisica, getUser } from "../../../../../lib/api";
 import { fmtLarga } from "../../../../../lib/torneos";
@@ -83,6 +84,7 @@ export default function EvaluacionFisicaPage() {
             {fmtLarga(ev.fecha)} · evaluado por <b>{ev.nombre_evaluador}</b>
             {ev.estado === "BORRADOR" && <span className="pill pend"> A medias · {ev.puntuados}/11</span>}
           </p>
+          <InformeDeLaEvaluacion informe={ev.informe} parte="fisico" />
           <div className="eval-acciones">
             {ev.puede_editar && <button type="button" className="btn" onClick={() => setEditando(true)}>
               {ev.estado === "BORRADOR" ? "Seguir" : "Editar"}</button>}

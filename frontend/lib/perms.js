@@ -14,8 +14,8 @@ export function navRole(user = getUser()) {
   return user?.is_superadmin ? "direccion" : user?.is_coach ? "coach" : "entrenador";
 }
 
-// El preparador físico (21/10/2026) solo entra en Evaluaciones y en su cuenta.
-const RUTAS_PREPARADOR = ["/evaluaciones", "/mi-cuenta"];
+// El preparador físico (21/10/2026) solo entra en Evaluaciones, Informes, sus avisos y su cuenta.
+const RUTAS_PREPARADOR = ["/evaluaciones", "/informes", "/avisos", "/mi-cuenta"];
 
 /** A dónde va cada uno al entrar o si pide una ruta que no le toca. */
 export function inicio(user = getUser()) {

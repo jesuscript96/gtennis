@@ -1704,3 +1704,49 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
   .fis-respuesta { justify-items: stretch; width: 100%; }
   .fis-elegida { text-align: center; }
 }
+
+/* --- Informes de Competición de tardes (27/10/2026) --- */
+.informe-de-eval { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); font-size: 14px; }
+.informe-de-eval.devuelta { border-color: #e7b9a4; background: #fbf0ea; }
+.informe-nota { flex-basis: 100%; margin: 4px 0 0; padding: 10px 12px; border-radius: var(--r); background: #fbf0ea; color: #7a3b1f; font-size: 14px; line-height: 1.45; }
+.inf-filtros { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 4px; }
+.inf-filtros .eval-busca { margin-bottom: 0; flex: 1 1 220px; }
+.inf-filtros .tabs-inv { margin: 0; flex-wrap: wrap; }
+.inf-lista { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.inf-fila { padding: 12px 16px; display: grid; gap: 10px; }
+.inf-fila-cab { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+.inf-fila-cab .pill:last-child { margin-left: auto; }
+.inf-fila-partes { display: flex; gap: 8px 24px; flex-wrap: wrap; }
+.inf-parte { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inf-parte-nombre { font-size: 13px; color: var(--muted); min-width: 44px; }
+.inf-fila-pie { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 10px; }
+.inf-fila-pie .eval-nota { margin: 0; }
+.inf-ultimo { margin-left: auto; font-size: 13px; color: var(--muted); }
+.tabs-inv .chip .nav-badge { margin-left: 6px; }
+.inf-cabecera { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 16px; }
+.inf-foto { display: grid; gap: 8px; justify-items: center; width: 140px; }
+.inf-foto img, .inf-foto-vacia { width: 140px; height: 170px; object-fit: cover; border-radius: var(--r); border: 1px solid var(--border); }
+.inf-foto-vacia { display: grid; place-items: center; background: var(--surface-2); color: var(--muted); font-size: 13px; }
+.inf-foto .eval-nota { margin: 0; text-align: center; }
+.inf-resumen { flex: 1 1 280px; min-width: 0; }
+.inf-resumen > p:first-child { margin-top: 0; }
+.inf-partes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.inf-parte-card { padding: 14px 16px; display: grid; gap: 6px; justify-items: start; }
+.inf-parte-card h2 { font-family: var(--font-serif); font-weight: 500; font-size: 18px; margin: 0; }
+.inf-parte-card .eval-nota { margin: 0; }
+.inf-validar { padding: 16px; margin-bottom: 16px; max-width: 680px; }
+.inf-validar h2 { font-family: var(--font-serif); font-weight: 500; font-size: 20px; margin: 0 0 4px; }
+.inf-form { display: grid; gap: 8px; }
+.inf-form > label { font-weight: 500; font-size: 14px; margin-top: 6px; }
+.inf-dest { display: flex; gap: 6px; flex-wrap: wrap; }
+.inf-dest input { flex: 1 1 180px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--r); font: inherit; background: var(--surface); }
+.inf-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--r); font: inherit; background: var(--surface); }
+.inf-form > .btn { justify-self: start; }
+.inf-checks { display: flex; gap: 16px; flex-wrap: wrap; }
+.inf-checks label { display: inline-flex; gap: 6px; align-items: center; }
+.inf-pdf { width: 100%; height: 80vh; border: 1px solid var(--border); border-radius: var(--r); }
+@media (max-width: 640px) {
+  .inf-foto { width: 100%; grid-template-columns: 96px 1fr; justify-items: start; align-items: center; }
+  .inf-foto img, .inf-foto-vacia { width: 96px; height: 116px; grid-row: span 2; }
+  .inf-fila-cab .pill:last-child, .inf-ultimo { margin-left: 0; }
+}

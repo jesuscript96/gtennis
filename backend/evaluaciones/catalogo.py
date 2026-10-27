@@ -189,3 +189,29 @@ def fisico_para_api():
         ],
         "textos": [{"clave": k, "etiqueta": e} for k, e in TEXTOS_FISICO],
     }
+
+# Nombres en inglés de la parte física, para los informes que van en inglés.
+FISICO_EN = {
+    "desplazamiento": "Movement and specific physical performance",
+    "prevencion": "Prevention, physiotherapy and body care",
+    "actitud": "Attitude, commitment and work habits",
+    "fis_aceleracion": "Acceleration and braking (specific footwork)",
+    "fis_apoyos": "Strength endurance in stances",
+    "fis_agilidad": "Reactive agility and changes of direction",
+    "fis_resistencia": "Specific endurance and recovery between points",
+    "fis_potencia": "Power through the kinetic chain",
+    "fis_fisioterapia": "Weekly preventive physiotherapy",
+    "fis_rutinas": "Independent prevention and mobility routines",
+    "fis_dolor": "Communication and body awareness of pain",
+    "fis_intensidad": "Intensity, focus and work ethic",
+    "fis_autonomia": "Autonomy and habits (warm-up and cool-down)",
+    "fis_fatiga": "Performance and attitude under fatigue",
+    "puntos_fuertes": "Strengths this term",
+    "a_mejorar": "Physical priorities for the next cycle",
+    "notas_fisio": "Prevention and physiotherapy notes",
+}
+CORTO_FISICO = {
+    "desplazamiento": ("Desplazamiento", "Movement"),
+    "prevencion": ("Prevención", "Prevention"),
+    "actitud": ("Actitud", "Attitude"),
+}

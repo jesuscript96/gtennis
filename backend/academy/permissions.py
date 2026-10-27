@@ -92,3 +92,31 @@ def evalua_tenis_solo_informes(user):
     """Hace la evaluación de tenis de los alumnos de escuelas «solo informes»."""
     return gestion_deportiva(user) or bool(
         user and user.is_authenticated and user.username in EVALUAN_COMPETICION_TARDES)
+
+
+# Además de gestión deportiva, valida Iván Gallego (coach, como Dani: «validan
+# Sergio, Iván, Dani Gimeno o admin», 27/10/2026).
+VALIDAN_INFORMES = {"ivan.gallego"}
+
+
+def valida_informes(user):
+    """Valida (aprueba, corrige o devuelve) los informes: gestión deportiva
+    (Sergio, Iván, Dani Gimeno, admin y el resto de dirección)."""
+    return gestion_deportiva(user) or bool(
+        user and user.is_authenticated and user.username in VALIDAN_INFORMES)
+
+
+def ve_informes(user):
+    """Ve los informes de Competición de tardes: quien evalúa tenis o físico
+    de esos alumnos y quien valida."""
+    return evalua_tenis_solo_informes(user) or evalua_fisico(user) or valida_informes(user)
+
+
+def usuarios_valida_informes():
+    """Usuarios activos que validan, para avisarles."""
+    from django.contrib.auth import get_user_model
+
+    from django.db.models import Q
+    User = get_user_model()
+    return [u for u in User.objects.filter(is_active=True).filter(
+        Q(role="SUPERADMIN") | Q(is_superuser=True) | Q(username__in=GESTION_DEPORTIVA | VALIDAN_INFORMES))]

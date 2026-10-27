@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { getAvisos, getUser, logout } from "../lib/api";
+import { getAvisos, getUser, logout, refrescarUsuario } from "../lib/api";
 import { roleRank } from "../lib/perms";
 import SettingsMenu from "./SettingsMenu";
 
@@ -40,6 +40,7 @@ const SECTIONS = [
   ] },
   { title: "Rendimiento", items: [
     ["/evaluaciones", "Evaluaciones"],
+    ["/informes", "Informes", "informes"],
   ] },
   { title: "Gestión", items: [
     ["/invitados", "Invitados"],
@@ -74,6 +75,7 @@ const SECTIONS_ENTRENADOR = [
   ] },
   { title: "Rendimiento", items: [
     ["/evaluaciones", "Evaluaciones"],
+    ["/informes", "Informes", "informes"],
   ] },
   { items: [
     ["/mi-cuenta", "Mi cuenta"],
@@ -82,8 +84,12 @@ const SECTIONS_ENTRENADOR = [
 
 // El preparador físico (21/10/2026): solo la parte física de los informes.
 const SECTIONS_PREPARADOR = [
+  { items: [
+    ["/avisos", "Avisos"],
+  ] },
   { title: "Rendimiento", items: [
     ["/evaluaciones", "Evaluaciones físicas"],
+    ["/informes", "Informes", "informes"],
   ] },
   { items: [
     ["/mi-cuenta", "Mi cuenta"],
@@ -93,7 +99,10 @@ const SECTIONS_PREPARADOR = [
 export default function Sidebar({ onNavigate }) {
   const pathname = usePathname();
   const router = useRouter();
-  const user = getUser();
+  const [user, setUser] = useState(getUser);
+  // Al abrir la app se piden otra vez los permisos: quien entró antes de un
+  // permiso nuevo (Informes, 27/10/2026) lo ve sin tener que volver a entrar.
+  useEffect(() => { refrescarUsuario().then(setUser).catch(() => {}); }, []);
   const secciones = user?.is_preparador ? SECTIONS_PREPARADOR
     : roleRank(user) === 1 ? SECTIONS_ENTRENADOR : SECTIONS;
   // Avisos sin leer (faltas tras el corte, generación del día…): se miran al
@@ -116,9 +125,11 @@ export default function Sidebar({ onNavigate }) {
           <div key={i} className="nav-section">
             {section.title && <div className="nav-section-title">{section.title}</div>}
             {section.items
-              .filter(([, , role]) => !role || roleRank(user) >= NEED[role])
+              // «informes»: quien evalúa Competición de tardes o valida (permiso, no rango).
+              .filter(([, , role]) => role === "informes" ? user?.ve_informes
+                : !role || roleRank(user) >= NEED[role])
               .map(([href, label]) => (
-                <Link key={href} href={href} className={pathname === href || (href === "/torneos" && /^\/torneos\/\d+/.test(pathname)) || (href === "/evaluaciones" && pathname.startsWith("/evaluaciones/")) ? "active" : ""} onClick={onNavigate}>
+                <Link key={href} href={href} className={pathname === href || (href === "/torneos" && /^\/torneos\/\d+/.test(pathname)) || (href === "/evaluaciones" && pathname.startsWith("/evaluaciones/")) || (href === "/informes" && pathname.startsWith("/informes/")) ? "active" : ""} onClick={onNavigate}>
                   {label}
                   {href === "/avisos" && sinLeer > 0 && <span className="nav-badge">{sinLeer}</span>}
                 </Link>

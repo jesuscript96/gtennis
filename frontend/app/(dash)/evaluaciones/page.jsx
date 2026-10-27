@@ -29,7 +29,11 @@ function Tenis({ pestanas }) {
     try {
       const ev = await crearEvaluacion({ jugador: Number(elegido) });
       router.push(`/evaluaciones/${ev.id}`);
-    } catch (e) { setError(e.message); setCreando(false); }
+    } catch (e) {
+      // Competición de tardes: ya hay una de tenis en su informe en curso → a esa.
+      if (e.cuerpo?.existente) { router.push(`/evaluaciones/${e.cuerpo.existente}`); return; }
+      setError(e.message); setCreando(false);
+    }
   }
 
   const q = busca.trim().toLowerCase();
@@ -123,7 +127,10 @@ function Fisico({ pestanas, soloFisico }) {
     try {
       const ev = await crearEvaluacionFisica({ jugador: Number(elegido) });
       router.push(`/evaluaciones/fisica/${ev.id}`);
-    } catch (e) { setError(e.message); setCreando(false); }
+    } catch (e) {
+      if (e.cuerpo?.existente) { router.push(`/evaluaciones/fisica/${e.cuerpo.existente}`); return; }
+      setError(e.message); setCreando(false);
+    }
   }
 
   const q = busca.trim().toLowerCase();
