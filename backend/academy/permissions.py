@@ -85,7 +85,7 @@ def evalua_fisico(user):
 
 # Entrenadores de tenis de Competición de tardes (27/10/2026): de momento los
 # tres evalúan a todos los jugadores de la escuela. Gestión deportiva también.
-EVALUAN_COMPETICION_TARDES = {"alvaro.mantoan", "alberto.sanz", "jorge.milla"}
+EVALUAN_COMPETICION_TARDES = {"alvaro.mantoan", "alberto.sanz", "jorge.mico"}
 
 
 def evalua_tenis_solo_informes(user):

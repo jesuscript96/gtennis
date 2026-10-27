@@ -1,5 +1,5 @@
 """Tenis de Competición de tardes: lo evalúan Álvaro Mantoan, Alberto Sanz,
-Jorge Milla y gestión deportiva, a todos los alumnos de la escuela (27/10/2026)."""
+Jorge Mico y gestión deportiva, a todos los alumnos de la escuela (27/10/2026)."""
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -20,6 +20,7 @@ class TenisCompeticionTardesTests(TestCase):
             Entrenador.objects.create(nombre=nombre, user=u)
             return u
         self.alvaro = entrenador("alvaro.mantoan", "Alvaro Mantoan")
+        self.mico = entrenador("jorge.mico", "Jorge Mico")
         self.milla = entrenador("jorge.milla", "Jorge Milla")
         self.blas = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
         self.blas_e.user = self.blas
@@ -33,13 +34,18 @@ class TenisCompeticionTardesTests(TestCase):
         return c
 
     def test_los_de_tarde_y_gestion_evaluan_a_los_de_competicion(self):
-        for u in (self.alvaro, self.milla, self.dani):
+        for u in (self.alvaro, self.mico, self.dani):
             nombres = [j["nombre"] for j in self.api(u).get("/api/evaluaciones/jugadores/").data]
             self.assertIn("Asier", nombres, u.username)
             r = self.api(u).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
             self.assertEqual(r.status_code, 201, (u.username, r.data))
         # Cada uno ve las tres (todos evalúan a todos de momento).
         self.assertEqual(len(self.api(self.alvaro).get("/api/evaluaciones/").data), 3)
+
+    def test_jorge_milla_ya_no(self):
+        # 27/10: «Jorge Mico» no era Jorge Milla; Milla no evalúa Competición de tardes.
+        self.assertEqual(self.api(self.milla).post("/api/evaluaciones/", {"jugador": self.nino.id},
+                                                   format="json").status_code, 403)
 
     def test_otro_entrenador_no(self):
         nombres = [j["nombre"] for j in self.api(self.blas).get("/api/evaluaciones/jugadores/").data]
