@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   crearEvaluacion, crearEvaluacionFisica, getEvaluaciones, getEvaluacionesFisicas, getJugadoresFisico,
-  getUser, refrescarUsuario, resource,
+  getJugadoresTenis, getUser, refrescarUsuario,
 } from "../../../lib/api";
 import { fmtLarga } from "../../../lib/torneos";
 
@@ -21,7 +21,7 @@ function Tenis({ pestanas }) {
 
   useEffect(() => {
     getEvaluaciones().then(setEvaluaciones).catch((e) => setError(e.message));
-    resource("jugadores").list().then(setJugadores).catch(() => {});
+    getJugadoresTenis().then(setJugadores).catch(() => {});
   }, []);
 
   async function empezar() {
@@ -35,7 +35,12 @@ function Tenis({ pestanas }) {
   const q = busca.trim().toLowerCase();
   const lista = (evaluaciones || []).filter((e) =>
     !q || e.jugador_nombre.toLowerCase().includes(q) || e.nombre_evaluador.toLowerCase().includes(q));
-  const ordenados = [...jugadores].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  // Competición de tardes va aparte en el desplegable (27/10/2026).
+  const tardes = jugadores.filter((j) => j.solo_informes);
+  const resto = jugadores.filter((j) => !j.solo_informes);
+  const opcion = (j) => (
+    <option key={j.id} value={j.id}>{j.nombre}{j.ultima ? ` · última ${fmtLarga(j.ultima)}` : ""}</option>
+  );
 
   return (
     <div>
@@ -53,7 +58,12 @@ function Tenis({ pestanas }) {
         <div className="eval-nueva-fila">
           <select id="eval-jugador" value={elegido} onChange={(e) => setElegido(e.target.value)}>
             <option value="">Elige jugador…</option>
-            {ordenados.map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+            {tardes.length > 0 && resto.length > 0 ? (
+              <>
+                <optgroup label="Competición de tardes">{tardes.map(opcion)}</optgroup>
+                <optgroup label="Alto rendimiento">{resto.map(opcion)}</optgroup>
+              </>
+            ) : jugadores.map(opcion)}
           </select>
           <button type="button" className="btn" disabled={!elegido || creando} onClick={empezar}>
             {creando ? "Creando…" : "Empezar"}

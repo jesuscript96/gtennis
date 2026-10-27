@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.db.models import Q
 from django.http import HttpResponse
 from django.utils.http import content_disposition_header
 from django.utils import timezone
@@ -9,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from academy.models import Jugador
-from academy.permissions import evalua_fisico
+from academy.permissions import evalua_fisico, evalua_tenis_solo_informes
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
 from . import catalogo, drive, fichero, ia, pdf
@@ -36,9 +37,23 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = None
 
+    def _jugadores(self):
+        """A quién puede evaluar de tenis: los suyos de siempre y, si es de los
+        entrenadores de Competición de tardes o de gestión deportiva, también
+        los alumnos de las escuelas «solo informes» (que están inactivos)."""
+        user = self.request.user
+        filtro = Q(pk__in=jugadores_visibles(user).values("pk"))
+        if evalua_tenis_solo_informes(user):
+            filtro |= Q(pk__in=jugadores_evaluables_fisico().values("pk"))
+        return Jugador.objects.filter(filtro)
+
     def get_queryset(self):
-        visibles = jugadores_visibles(self.request.user, base=Jugador.objects.all())
-        qs = Evaluacion.objects.filter(jugador__in=visibles).select_related("jugador")
+        user = self.request.user
+        visibles = jugadores_visibles(user, base=Jugador.objects.all())
+        filtro = Q(jugador__in=visibles)
+        if evalua_tenis_solo_informes(user):
+            filtro |= Q(jugador__escuela__solo_informes=True)
+        qs = Evaluacion.objects.filter(filtro).select_related("jugador").distinct()
         p = self.request.query_params
         if p.get("jugador"):
             qs = qs.filter(jugador_id=p["jugador"])
@@ -48,9 +63,21 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        if not puede_ver_jugador(user, serializer.validated_data["jugador"]):
+        if not self._jugadores().filter(pk=serializer.validated_data["jugador"].pk).exists():
             raise PermissionDenied("Ese jugador no está entre los tuyos.")
         serializer.save(evaluador=user, nombre_evaluador=_nombre_evaluador(user))
+
+    @action(detail=False)
+    def jugadores(self, request):
+        """Los jugadores que puede evaluar de tenis, con su escuela y la fecha
+        de su última evaluación de tenis."""
+        ultimas = dict(Evaluacion.objects.order_by("fecha").values_list("jugador_id", "fecha"))
+        return Response([{
+            "id": j.id, "nombre": j.nombre,
+            "escuela": j.escuela.nombre if j.escuela_id else "",
+            "solo_informes": bool(j.escuela_id and j.escuela.solo_informes),
+            "ultima": str(ultimas[j.id]) if j.id in ultimas else None,
+        } for j in self._jugadores().select_related("escuela").order_by("nombre")])
 
     def _editable(self, ev):
         if not ev.puede_editar(self.request.user):

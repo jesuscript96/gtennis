@@ -81,3 +81,14 @@ def es_preparador(user):
 def evalua_fisico(user):
     """Ve y hace evaluaciones físicas: el preparador físico y gestión deportiva."""
     return es_preparador(user) or gestion_deportiva(user)
+
+
+# Entrenadores de tenis de Competición de tardes (27/10/2026): de momento los
+# tres evalúan a todos los jugadores de la escuela. Gestión deportiva también.
+EVALUAN_COMPETICION_TARDES = {"alvaro.mantoan", "alberto.sanz", "jorge.milla"}
+
+
+def evalua_tenis_solo_informes(user):
+    """Hace la evaluación de tenis de los alumnos de escuelas «solo informes»."""
+    return gestion_deportiva(user) or bool(
+        user and user.is_authenticated and user.username in EVALUAN_COMPETICION_TARDES)

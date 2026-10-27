@@ -346,6 +346,8 @@ export const getEvaluaciones = async (params = {}) => {
   return rows(await req(`/evaluaciones/${s ? `?${s}` : ""}`));
 };
 export const getEvaluacion = (id) => req(`/evaluaciones/${id}/`);
+// Jugadores que puede evaluar de tenis quien pregunta (incluye Competición de tardes si le toca).
+export const getJugadoresTenis = () => req("/evaluaciones/jugadores/");
 export const crearEvaluacion = (body) => req("/evaluaciones/", { method: "POST", body: JSON.stringify(body) });
 export const guardarEvaluacion = (id, body) =>
   req(`/evaluaciones/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
