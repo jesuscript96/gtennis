@@ -1238,6 +1238,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
             if v is None:
                 v = VisitaInvitado(invitado=inv, fecha=dia)
             v.manana, v.tarde = fila.get("manana"), fila.get("tarde")
+            v.superficie = fila.get("superficie", "")
             v.solicitante = solicitante
             if v.estado != VisitaInvitado.Estado.APROBADA:
                 v.estado = VisitaInvitado.Estado.PENDIENTE

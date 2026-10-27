@@ -52,14 +52,32 @@ const fecha = (f) => (f ? new Date(`${f}T12:00`).toLocaleDateString("es-ES",
   { day: "numeric", month: "short" }) : "—");
 
 const ESTADO_VISITA = { PENDIENTE: "Pendiente", APROBADA: "Aprobada", RECHAZADA: "Rechazada" };
+// Tipo de pista (27/10/2026): en la ficha, la de siempre; en cada día, la que
+// necesita ese día ("" = la de su ficha).
+const PISTA = { TIERRA: "tierra", RESINA: "resina" };
+const tieneBloque = (fila) => fila.manana !== undefined || fila.tarde !== undefined;
 const CLASE_VISITA = { PENDIENTE: "pend", APROBADA: "ok", RECHAZADA: "no" };
 
-// "M2", "mañana", "M1+T1"… de una visita.
+// "M2", "mañana", "M1+T1 · tierra"… de una visita.
 function franjaTexto(v) {
   const b = [];
   if (v.manana != null) b.push(v.manana || "mañana");
   if (v.tarde != null) b.push(v.tarde || "tarde");
-  return b.join("+");
+  return b.join("+") + (v.superficie ? ` · ${PISTA[v.superficie]}` : "");
+}
+
+// El tipo de pista de un día: "" es el de su ficha, y se dice cuál es.
+function SelectorPista({ valor, onSel, ficha, disabled, conVacio = false }) {
+  return (
+    <select value={valor} disabled={disabled} onChange={(e) => onSel(e.target.value)}
+      title="Tipo de pista que necesita ese día">
+      {conVacio && <option value="-">—</option>}
+      <option value="">{ficha === undefined ? "Pista · la de su ficha"
+        : ficha ? `Pista · ${PISTA[ficha]} (ficha)` : "Pista · cualquiera"}</option>
+      <option value="TIERRA">Tierra batida</option>
+      <option value="RESINA">Resina</option>
+    </select>
+  );
 }
 
 export default function InvitadosPage() {
@@ -141,7 +159,7 @@ function CalendarioInvitados({ items, cat, esAdmin, user, accion, franjas, divNo
   const [mes, setMes] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [dia, setDia] = useState(hoy);
   const [nuevo, setNuevo] = useState(false);
-  const [conocido, setConocido] = useState({ invitado: "", manana: "", tarde: "no" });
+  const [conocido, setConocido] = useState({ invitado: "", manana: "", tarde: "no", superficie: "" });
 
   const porDia = {};
   for (const i of items) {
@@ -164,7 +182,9 @@ function CalendarioInvitados({ items, cat, esAdmin, user, accion, franjas, divNo
   const bloques = (b) => ({
     manana: b.manana === "no" ? undefined : b.manana,
     ...(!tardeCerrada && b.tarde !== "no" ? { tarde: b.tarde } : {}),
+    ...(b.superficie ? { superficie: b.superficie } : {}),
   });
+  const elegido = items.find((i) => String(i.id) === conocido.invitado);
   const selector = (bloque, valor, onSel, disabled) => (
     <select value={valor} disabled={disabled} onChange={(e) => onSel(e.target.value)}>
       <option value="no">No viene</option>
@@ -227,6 +247,9 @@ function CalendarioInvitados({ items, cat, esAdmin, user, accion, franjas, divNo
                         : selector("tarde", v.tarde ?? "no",
                           (x) => accion(() => editarVisita(v.id, { tarde: x === "no" ? null : x })),
                           !puedeTocar(v))}
+                      <SelectorPista valor={v.superficie || ""} ficha={v.inv.superficie_pref}
+                        disabled={!puedeTocar(v)}
+                        onSel={(x) => accion(() => editarVisita(v.id, { superficie: x }))} />
                     </div>
                     <span className={`pill ${CLASE_VISITA[v.estado]}`}>{ESTADO_VISITA[v.estado]}</span>
                     <div className="row-actions">
@@ -259,10 +282,14 @@ function CalendarioInvitados({ items, cat, esAdmin, user, accion, franjas, divNo
                 {!tardeCerrada && (
                   <label>Tarde{selector("tarde", conocido.tarde, (x) => setConocido((c) => ({ ...c, tarde: x })))}</label>
                 )}
+                <label>Tipo de pista
+                  <SelectorPista valor={conocido.superficie} ficha={elegido?.superficie_pref}
+                    onSel={(x) => setConocido((c) => ({ ...c, superficie: x }))} />
+                </label>
                 <button className="btn sm" type="button" disabled={!conocido.invitado}
                   onClick={() => accion(async () => {
                     await anadirDiasInvitado(Number(conocido.invitado), { [dia]: bloques(conocido) });
-                    setConocido({ invitado: "", manana: "", tarde: "no" });
+                    setConocido({ invitado: "", manana: "", tarde: "no", superficie: "" });
                   })}>Añadir</button>
               </div>
             </div>
@@ -331,6 +358,7 @@ function ListaInvitados({ items, cat, esAdmin, user, accion, franjas, divNombre,
                       <div className="sub-inv">
                         {divNombre(i.division)}{i.edad ? ` · ${i.edad} años` : ""}
                         {i.sexo ? ` · ${i.sexo === "CHICA" ? "chica" : "chico"}` : ""}
+                        {i.superficie_pref ? ` · ${PISTA[i.superficie_pref]}` : ""}
                       </div>
                     </td>
                     <td>{i.entrenador_nombre || "—"}</td>
@@ -416,7 +444,7 @@ function AnadirDias({ i, franjas, onCancelar, onGuardar }) {
       <p className="hint">Su ficha se queda como está. Los días nuevos los aprueba dirección
         {getUser()?.aprueba_invitados ? " (los tuyos quedan aprobados al guardar)" : ""}.</p>
       <Calendario fechas={fechas} onChange={(cambio) => setFechas((x) => cambio(x))}
-        franjas={franjas} marcadas={marcadas} />
+        franjas={franjas} marcadas={marcadas} ficha={i.superficie_pref} />
       {error && <p className="err">{error}</p>}
       <div className="row-actions">
         <button className="btn" disabled={guardando || !Object.keys(fechas).length}
@@ -521,7 +549,8 @@ function FormInvitado({ cat, esAdmin, inicial, existente, soloLectura, onCancela
       {!existente && (
         <fieldset>
           <legend>Qué días viene</legend>
-          <Calendario fechas={f.fechas} onChange={setFechas} franjas={franjas} />
+          <Calendario fechas={f.fechas} onChange={setFechas} franjas={franjas}
+            ficha={f.superficie_pref} />
         </fieldset>
       )}
 
@@ -551,14 +580,10 @@ function FormInvitado({ cat, esAdmin, inicial, existente, soloLectura, onCancela
             </select>
           </label>
         </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Lo que tiene en cuenta el motor</legend>
         <div className="fila-form">
-          <label>Superficie
+          <label>Tipo de pista
             <select value={f.superficie_pref} onChange={set("superficie_pref")}>
-              <option value="">Indiferente</option>
+              <option value="">Cualquiera</option>
               <option value="TIERRA">Tierra batida</option>
               <option value="RESINA">Resina (rápida)</option>
             </select>
@@ -566,9 +591,16 @@ function FormInvitado({ cat, esAdmin, inicial, existente, soloLectura, onCancela
           {f.superficie_pref && (
             <label className="inv-check"><span>
               <input type="checkbox" checked={f.superficie_estricta} onChange={set("superficie_estricta")} />
-              {" "}Solo en esa superficie</span>
+              {" "}Solo en esa pista</span>
             </label>
           )}
+          <span className="hint">La de siempre. Si un día necesita otra, se cambia en ese día.</span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Lo que tiene en cuenta el motor</legend>
+        <div className="fila-form">
           <label>Máx. sesiones al día
             <input type="number" min="1" max="3" value={f.sesiones_dia_max}
               onChange={set("sesiones_dia_max")} style={{ width: "5rem" }} />
@@ -656,7 +688,7 @@ function Multiple({ titulo, opciones, valor, onChange }) {
  * con su mañana y su tarde (de entrada, las dos y la franja que encaje). El
  * domingo no se entrena y el miércoles y el sábado por la tarde, tampoco.
  */
-function Calendario({ fechas, onChange, franjas, marcadas = {} }) {
+function Calendario({ fechas, onChange, franjas, marcadas = {}, ficha }) {
   const primera = Object.keys(fechas).sort()[0];
   const [mes, setMes] = useState(() => {
     const d = primera ? deIso(primera) : new Date();
@@ -680,17 +712,20 @@ function Calendario({ fechas, onChange, franjas, marcadas = {} }) {
     const fila = { ...actuales[clave] };
     if (valor === "no") delete fila[bloque]; else fila[bloque] = valor;
     const nuevas = { ...actuales };
-    if (Object.keys(fila).length) nuevas[clave] = fila; else delete nuevas[clave];
+    if (tieneBloque(fila)) nuevas[clave] = fila; else delete nuevas[clave];
     return nuevas;
   });
+  const setPista = (clave, valor) => onChange((actuales) => (
+    { ...actuales, [clave]: { ...actuales[clave], superficie: valor } }));
   // Lo mismo para todos los días marcados (donde se pueda).
   const paraTodos = (bloque, valor) => onChange((actuales) => {
     const nuevas = {};
     for (const [clave, fila] of Object.entries(actuales)) {
       const f2 = { ...fila };
       const cerrado = bloque === "tarde" && TARDE_CERRADA.has(diaSemana(deIso(clave)));
-      if (valor === "no" || cerrado) delete f2[bloque]; else f2[bloque] = valor;
-      if (Object.keys(f2).length) nuevas[clave] = f2;
+      if (bloque === "superficie") f2.superficie = valor;
+      else if (valor === "no" || cerrado) delete f2[bloque]; else f2[bloque] = valor;
+      if (tieneBloque(f2)) nuevas[clave] = f2;
     }
     return nuevas;
   });
@@ -739,13 +774,15 @@ function Calendario({ fechas, onChange, franjas, marcadas = {} }) {
           <p className="hint">Toca en el calendario los días que viene.</p>
         ) : (
           <table className="data dias-invitado">
-            <thead><tr><th>Día</th><th>Mañana</th><th>Tarde</th><th /></tr></thead>
+            <thead><tr><th>Día</th><th>Mañana</th><th>Tarde</th><th>Tipo de pista</th><th /></tr></thead>
             <tbody>
               {elegidas.length > 1 && (
                 <tr className="para-todos">
                   <td>Todos</td>
                   <td>{selector("manana", "-", (v) => v !== "-" && paraTodos("manana", v), true)}</td>
                   <td>{selector("tarde", "-", (v) => v !== "-" && paraTodos("tarde", v), true)}</td>
+                  <td><SelectorPista valor="-" ficha={ficha} conVacio
+                    onSel={(v) => v !== "-" && paraTodos("superficie", v)} /></td>
                   <td />
                 </tr>
               )}
@@ -758,6 +795,8 @@ function Calendario({ fechas, onChange, franjas, marcadas = {} }) {
                     <td>{selector("manana", fila.manana ?? "no", (v) => setBloque(clave, "manana", v))}</td>
                     <td>{TARDE_CERRADA.has(diaSemana(d)) ? <span className="msg">Cerrado</span>
                       : selector("tarde", fila.tarde ?? "no", (v) => setBloque(clave, "tarde", v))}</td>
+                    <td><SelectorPista valor={fila.superficie || ""} ficha={ficha}
+                      onSel={(v) => setPista(clave, v)} /></td>
                     <td><button type="button" className="btn ghost sm" title="Quitar este día"
                       onClick={() => alternar(d)}>✕</button></td>
                   </tr>

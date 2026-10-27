@@ -411,8 +411,19 @@ def fechas_validas(fechas):
             raise serializers.ValidationError(f"Fecha no válida: {clave}.")
         fila = bloques_del_dia(dia, bloques)
         if fila:
+            superficie = superficie_valida(bloques.get("superficie"))
+            if superficie:
+                fila["superficie"] = superficie
             limpio[dia.isoformat()] = fila
     return dict(sorted(limpio.items()))
+
+
+def superficie_valida(valor):
+    """El tipo de pista de un día de invitado: "" = la de su ficha."""
+    valor = valor or ""
+    if valor and valor not in Pista.Superficie.values:
+        raise serializers.ValidationError(f"Tipo de pista no válido: {valor}.")
+    return valor
 
 
 class VisitaInvitadoSerializer(serializers.ModelSerializer):
@@ -426,7 +437,7 @@ class VisitaInvitadoSerializer(serializers.ModelSerializer):
         model = VisitaInvitado
         fields = [
             "id", "invitado", "invitado_nombre", "invitado_estado", "division",
-            "fecha", "manana", "tarde", "solicitante", "solicitante_nombre",
+            "fecha", "manana", "tarde", "superficie", "solicitante", "solicitante_nombre",
             "estado", "estado_display", "created_at",
         ]
         read_only_fields = ["invitado", "fecha", "solicitante", "estado", "created_at"]
@@ -439,7 +450,10 @@ class VisitaInvitadoSerializer(serializers.ModelSerializer):
         })
         if not fila:
             raise serializers.ValidationError("Tiene que venir por la mañana o por la tarde.")
-        return {"manana": fila.get("manana"), "tarde": fila.get("tarde")}
+        limpio = {"manana": fila.get("manana"), "tarde": fila.get("tarde")}
+        if "superficie" in attrs:
+            limpio["superficie"] = superficie_valida(attrs["superficie"])
+        return limpio
 
 
 class InvitadoSerializer(serializers.ModelSerializer):
@@ -474,7 +488,8 @@ class InvitadoSerializer(serializers.ModelSerializer):
     def get_visitas(self, inv):
         return [
             {"id": v.id, "fecha": v.fecha.isoformat(), "manana": v.manana,
-             "tarde": v.tarde, "estado": v.estado, "solicitante": v.solicitante_id}
+             "tarde": v.tarde, "superficie": v.superficie, "estado": v.estado,
+             "solicitante": v.solicitante_id}
             for v in inv.visitas.all()
         ]
 

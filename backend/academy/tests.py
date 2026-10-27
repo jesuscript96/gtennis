@@ -1318,6 +1318,28 @@ class InvitadoComoJugadorTests(TestCase):
         self.assertEqual(Contrato.objects.get(jugador=j).entrenador, self.ivan)
         self.assertEqual(VetoEntrenador.objects.get(jugador=j).entrenador, self.otro)
 
+    def test_cada_dia_lleva_su_tipo_de_pista(self):
+        """27/10/2026: el tipo de pista se pone por día; vacío = el de su ficha."""
+        from academy.models import VisitaInvitado
+
+        r = self._meter(fechas={
+            "2026-10-19": {"manana": "M1", "superficie": "RESINA"},
+            "2026-10-20": {"manana": ""},
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        inv = r.json()
+        self.assertEqual({v["fecha"]: v["superficie"] for v in inv["visitas"]},
+                         {"2026-10-19": "RESINA", "2026-10-20": ""})
+        v = VisitaInvitado.objects.get(invitado_id=inv["id"], fecha=date(2026, 10, 20))
+        r = self.dir.patch(f"/api/visitas-invitado/{v.id}/", {"superficie": "TIERRA"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        v.refresh_from_db()
+        self.assertEqual((v.superficie, v.manana), ("TIERRA", ""))
+        r = self.dir.patch(f"/api/visitas-invitado/{v.id}/", {"superficie": "HIERBA"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        r = self._meter(nombre="Otro", fechas={"2026-10-19": {"manana": "M1", "superficie": "HIERBA"}})
+        self.assertEqual(r.status_code, 400)
+
     def test_volver_a_invitar_solo_anade_dias(self):
         from academy.models import VisitaInvitado
 
@@ -1471,6 +1493,37 @@ class InvitadoEnElMotorTests(TestCase):
         generate(semana, dias=[0, 1, 2], bloques=["MANANA"])
         dias = set(Asignacion.objects.filter(semana=semana, jugador=kira).values_list("dia", flat=True))
         self.assertEqual(dias, {2})
+
+    def test_el_tipo_de_pista_del_dia_manda_sobre_su_ficha(self):
+        """27/10/2026: su ficha dice tierra, pero ese día viene a resina."""
+        from academy.models import Division, PreferenciaSuperficie, VisitaInvitado
+
+        Jugador.objects.update(activo=False)
+        Entrenador.objects.update(activo=False)
+        Pista.objects.update(activa=False)
+        sede = Sede.objects.create(nombre="Prueba pista invitado")
+        Pista.objects.create(sede=sede, numero=1, superficie="TIERRA")
+        Pista.objects.create(sede=sede, numero=2, superficie="RESINA")
+        ent = Entrenador.objects.create(nombre="Uno")
+        Entrenador.objects.create(nombre="Dos")
+        d5, _ = Division.objects.get_or_create(nivel=5)
+        kira = Jugador.objects.create(nombre="Kira (invitado)", activo=True, division=d5,
+                                      fecha_alta=LUNES, fecha_baja=LUNES + timedelta(days=1))
+        for d in range(6):
+            HorarioJugador.objects.create(jugador=kira, dia=d, entrena_manana=False,
+                                          entrena_tarde=False)
+        PreferenciaSuperficie.objects.create(jugador=kira, superficie="TIERRA", estricta=True)
+        inv = Invitado.objects.create(nombre="Kira", entrenador_solicitante=ent,
+                                      estado="APROBADO", jugador_creado=kira)
+        VisitaInvitado.objects.create(invitado=inv, fecha=LUNES, manana="M1",
+                                      estado="APROBADA")
+        VisitaInvitado.objects.create(invitado=inv, fecha=LUNES + timedelta(days=1),
+                                      manana="M1", superficie="RESINA", estado="APROBADA")
+        semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
+        generate(semana, dias=[0, 1], bloques=["MANANA"])
+        pistas = dict(Asignacion.objects.filter(semana=semana, jugador=kira)
+                      .values_list("dia", "pista__superficie"))
+        self.assertEqual(pistas, {0: "TIERRA", 1: "RESINA"})
 
 
 class RellenoForzadoTests(TestCase):

@@ -1153,6 +1153,11 @@ class VisitaInvitado(models.Model):
     # o el código de la franja (M1/M2, T1/T2).
     manana = models.CharField(max_length=2, null=True, blank=True)
     tarde = models.CharField(max_length=2, null=True, blank=True)
+    # Tipo de pista que necesita ese día (27/10/2026): vacío = la de su ficha.
+    # Manda sobre la ficha solo ese día, y es estricta: «viene a preparar un
+    # torneo en tierra».
+    superficie = models.CharField(
+        max_length=10, choices=Pista.Superficie.choices, blank=True)
     solicitante = models.ForeignKey(
         Entrenador, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.PENDIENTE)

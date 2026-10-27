@@ -1302,11 +1302,11 @@ ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6
 
 /* Invitados como alta de jugador (14/10/2026) */
 .form-invitado h3 { margin: 0 0 .5rem; font-size: 1rem; }
-.form-invitado fieldset { border: 1px solid var(--border); border-radius: var(--r); padding: .4rem .8rem .6rem; margin: 0 0 .8rem; }
+.form-invitado fieldset { border: 1px solid var(--border); border-radius: var(--r); padding: .4rem .8rem .6rem; margin: 0 0 .8rem; min-width: 0; }
 .form-invitado legend { font-size: .78rem; font-weight: 600; color: var(--muted); padding: 0 .3rem; }
 .form-invitado .fila-form { margin: .5rem 0; }
 .form-invitado .inv-check span { display: flex; align-items: center; gap: .3rem; color: var(--text); padding-bottom: .4rem; }
-.form-invitado table.dias-invitado { max-width: 34rem; margin: .3rem 0; }
+.form-invitado table.dias-invitado { max-width: 46rem; margin: .3rem 0; }
 .form-invitado table.dias-invitado select { width: 100%; }
 .multiple-inv { margin: .5rem 0; }
 .multiple-inv .etiqueta { font-size: .8rem; color: var(--muted); display: block; margin-bottom: .25rem; }
@@ -1335,8 +1335,22 @@ ul.semana-jugador.habitual > li.distinto { background: #fdf8ec; border-radius: 6
 .cal-dia.hoy { border-color: var(--border-strong); font-weight: 700; }
 .cal-dia.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cal-dia:disabled { opacity: .35; cursor: default; }
-.cal-elegidas { flex: 1 1 24rem; min-width: 0; }
-.cal-elegidas select { min-width: 9rem; }
+.cal-elegidas { flex: 1 1 24rem; min-width: 0; container-type: inline-size; }
+.cal-elegidas select { min-width: 6.5rem; width: 100%; }
+.cal-elegidas table.dias-invitado th, .cal-elegidas table.dias-invitado td { padding: 6px 8px; }
+/* En el panel del día no caben cuatro columnas: cada día, en dos líneas. */
+@container (max-width: 34rem) {
+  .cal-elegidas table.dias-invitado thead { display: none; }
+  .cal-elegidas table.dias-invitado tr {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .3rem;
+    padding: .45rem 0; border-bottom: 1px solid var(--border);
+  }
+  .cal-elegidas table.dias-invitado td { display: block; padding: 0; border: 0; width: auto; }
+  .cal-elegidas table.dias-invitado td { grid-row: 2; }
+  .cal-elegidas table.dias-invitado td:first-child { grid-row: 1; grid-column: 1 / 3; align-self: center; font-weight: 600; }
+  .cal-elegidas table.dias-invitado td:last-child { grid-row: 1; grid-column: 3; justify-self: end; }
+  .cal-elegidas select { min-width: 0; }
+}
 .cal-elegidas td:first-child { white-space: nowrap; }
 .form-invitado label.inv-check span { white-space: nowrap; }
 .cal-elegidas tr.para-todos td { background: var(--surface-2); font-size: .78rem; }
@@ -1381,8 +1395,15 @@ ul.lista-dia li {
   border: 1px solid var(--border); border-radius: var(--r); padding: .45rem .55rem;
 }
 ul.lista-dia .quien { flex: 1 1 9rem; display: flex; flex-direction: column; min-width: 0; }
-ul.lista-dia .franjas { display: flex; gap: .3rem; align-items: center; }
-ul.lista-dia .franjas select { min-width: 7.5rem; }
+ul.lista-dia .franjas {
+  flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .3rem; align-items: center;
+}
+ul.lista-dia .franjas select { min-width: 0; width: 100%; }
+@media (max-width: 640px) {
+  ul.lista-dia .franjas { grid-template-columns: 1fr 1fr; }
+  ul.lista-dia .franjas > :last-child { grid-column: 1 / -1; }
+}
 .anadir-conocido { border-top: 1px solid var(--border); padding-top: .6rem; margin-bottom: .6rem; }
 .anadir-conocido .etiqueta, .historial-inv .etiqueta { font-size: .8rem; color: var(--muted); }
 .anadir-conocido .fila-form { margin: .3rem 0; }

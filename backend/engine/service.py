@@ -1945,6 +1945,17 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
         surface_prefs[ps.jugador_id].append(
             (ps.superficie, ps.fecha_desde, ps.fecha_hasta)
         )
+    # El tipo de pista de un día de invitado va delante de todo: es solo ese
+    # día y lo ha pedido quien le invita (27/10/2026).
+    from academy.models import VisitaInvitado
+
+    for jid, fecha, sup in VisitaInvitado.objects.filter(
+        estado=VisitaInvitado.Estado.APROBADA,
+        invitado__jugador_creado__isnull=False,
+    ).exclude(superficie="").values_list(
+        "invitado__jugador_creado_id", "fecha", "superficie"
+    ):
+        surface_prefs[jid].insert(0, (sup, fecha, fecha))
 
     # Parejas preferidas (#5): HARD misma pista, SOFT bonus.
     from academy.models import PreferenciaPareja
