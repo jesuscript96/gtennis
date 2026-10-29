@@ -51,6 +51,7 @@ export default function ConfiguracionPage() {
         max_dias_misma_pista: Number(cfg.max_dias_misma_pista),
         time_limit_s: Number(cfg.time_limit_s),
         aplicar_vecindad: !!cfg.aplicar_vecindad,
+        edad_obligatoria: !!cfg.edad_obligatoria,
       });
       setCfg(saved);
       setMsg("Guardado. Se aplicará en la próxima generación del cuadrante.");
@@ -109,6 +110,19 @@ export default function ConfiguracionPage() {
           />
           Aplicar regla de vecindad de división (N±1)
         </label>
+
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={!!cfg.edad_obligatoria}
+            onChange={(e) => setCfg({ ...cfg, edad_obligatoria: e.target.checked })}
+          />
+          La edad es regla dura (10-14 años ±2, 15-18 ±3)
+        </label>
+        <span style={{ display: "block", marginTop: -4, marginBottom: 12, fontSize: 11 }}>
+          Apagado (lo normal desde el 29/10): la edad nunca impide juntar a dos alumnos; a igualdad,
+          el motor prefiere a los de edad parecida.
+        </span>
 
         {msg && <p style={{ color: "var(--st-disponible)", fontSize: 13 }}>{msg}</p>}
         {error && <p className="err">{error}</p>}

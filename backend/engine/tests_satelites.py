@@ -181,3 +181,26 @@ class DirectivaNoVaASantaBarbaraTests(SatelitesDeRescateTests):
         self.assertEqual((self.de(nik).pista, self.de(nik).entrenador),
                          (self.sb[0], self.pablo))
         self.assertTrue(rep["directiva_arriba"])
+
+
+class EdadComoPreferenciaTests(SatelitesDeRescateTests):
+    """29/10/2026: «las diferencias de edad no son tan relevantes». Con
+    `edad_obligatoria` apagado (lo normal), la edad no impide una pareja ni
+    la marca como forzada; encendido, vuelven las bandas de edad."""
+
+    def test_un_adulto_y_uno_de_quince_van_juntos_sin_marca(self):
+        a, b = self.jugador("Adulta", 5, edad=21), self.jugador("Cadete", 5, edad=15)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual(self.de(a).pista, self.de(b).pista)
+        self.assertFalse(self.de(a).forzada or self.de(b).forzada)
+
+    def test_con_la_regla_encendida_se_marca_como_forzada(self):
+        self.cfg.edad_obligatoria = True
+        self.cfg.save()
+        a, b = self.jugador("Adulta", 5, edad=21), self.jugador("Cadete", 5, edad=15)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        # Una sola pista en el Resort: quien no cabe se mete forzado, con aviso.
+        self.assertEqual(self.de(a).pista, self.de(b).pista)
+        marcada = self.de(a) if self.de(a).forzada else self.de(b)
+        self.assertTrue(marcada.forzada)
+        self.assertIn("edad", marcada.motivo_forzado)

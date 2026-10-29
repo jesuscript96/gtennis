@@ -35,9 +35,22 @@ from scheduling.models import (
 )
 
 from .pairing import (
-    NIVEL_MAX, Court, PairingInput, Player, _normalise, emparejamiento_maximo,
-    pueden_juntos, solve_pairing,
+    EDAD_LIBRE, NIVEL_MAX, Court, PairingInput, Player, _normalise, años_fuera_de_banda,
+    emparejamiento_maximo, pueden_juntos, solve_pairing,
 )
+
+
+def edad_obligatoria(cfg) -> bool:
+    """¿La edad es regla dura? Desde el 29/10/2026, no por defecto."""
+    return bool(getattr(cfg, "edad_obligatoria", False))
+
+
+def estiron_edad(cfg, es_tarde) -> int:
+    """Los años que se pueden estirar las bandas de edad: si la edad no es
+    regla dura, tantos que nunca bloquea; si lo es, el estirón de la tarde."""
+    if not edad_obligatoria(cfg):
+        return EDAD_LIBRE
+    return cfg.estiron_edad if es_tarde else 0
 
 
 def _build_courts(usar_satelites: bool = True) -> list[Court]:
@@ -1036,14 +1049,14 @@ def _player_basico(j):
     )
 
 
-def _reglas_de_pista(yo, otros, span):
+def _reglas_de_pista(yo, otros, span, edad=True):
     """Las reglas base que rompe `yo` metiéndose con `otros`, una vez cada
     una: «división D1–D6», «chico/chica», «edad (14 a 26 años)»."""
     from .pairing import reglas_rotas
 
     tipos = set()
     for o in otros:
-        for r in reglas_rotas(yo, o, span):
+        for r in reglas_rotas(yo, o, span, edad):
             tipos.add(r.split(" ")[0])
     rotas = []
     if "división" in tipos:
@@ -1082,13 +1095,14 @@ def _motivo_forzado(miembros, por_id, cfg, es_tarde, vetoes, declaradas):
                 continue
             if _motivo(a, b, vetoes, cfg.aplicar_vecindad, cfg.vecindad_max,
                        cfg.estiron_division if es_tarde else 0,
-                       cfg.estiron_edad if es_tarde else 0) == DURO:
+                       estiron_edad(cfg, es_tarde)) == DURO:
                 rota = True
     if not rota:
         return ""
-    reglas = _reglas_de_pista(gente[0], gente[1:], cfg.vecindad_max)
+    con_edad = edad_obligatoria(cfg)
+    reglas = _reglas_de_pista(gente[0], gente[1:], cfg.vecindad_max, con_edad)
     for k in range(1, len(gente)):
-        for r in _reglas_de_pista(gente[k], gente[k + 1:], cfg.vecindad_max):
+        for r in _reglas_de_pista(gente[k], gente[k + 1:], cfg.vecindad_max, con_edad):
             if r.split(" ")[0] not in {x.split(" ")[0] for x in reglas}:
                 reglas.append(r)
     return ("Forzada para que entrene: " + ", ".join(reglas))[:200] if reglas else ""
@@ -1170,7 +1184,8 @@ def _rellenar_huecos(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
                 if coach in solo_con and jid not in solo_con[coach]:
                     continue
                 rotas = _reglas_de_pista(
-                    yo, [player(a.jugador_id, a.jugador) for a in filas], cfg.vecindad_max)
+                    yo, [player(a.jugador_id, a.jugador) for a in filas], cfg.vecindad_max,
+                    edad_obligatoria(cfg))
                 distancia = max((abs((yo.division or 0) - (player(o).division or 0))
                                  for o in otros), default=0)
                 opciones.append((len(rotas), distancia, c.number or 0, t, pid, coach, rotas))
@@ -1356,7 +1371,8 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
                         impide.add("no puede entrenar con el entrenador de la pista libre")
                         continue
                     rotas = _reglas_de_pista(
-                        yo, [player(a.jugador_id, a.jugador) for a in filas], cfg.vecindad_max)
+                        yo, [player(a.jugador_id, a.jugador) for a in filas], cfg.vecindad_max,
+                        edad_obligatoria(cfg))
                     clase = 5 if rotas else 0
                     opciones.append((clase, len(rotas), en_franja(tid), n, tid, c, coach, rotas))
                     continue
@@ -1454,6 +1470,10 @@ PESO_RANKING = 2000
 # esto; del lado contrario, la mitad en contra. Media división de ranking.
 PESO_PREF_DIVISION = 1000
 BONUS_COMPACTAR_COLOR = 30
+# Edad como preferencia (29/10/2026): cada año que la pareja se pasa de su
+# banda (10-14 ±2, 15-18 ±3) resta esto. Poco: un adulto con uno de 17 resta
+# 100; uno de 14 con uno de 22, 600 (menos de un tercio de división de ranking).
+PESO_EDAD = 100
 # Desempate: a igualdad, se quedan las parejas que ya hizo el solver.
 BONUS_COMPACTAR_MISMA = 10
 
@@ -1502,6 +1522,7 @@ def puntos_pareja(a, b, finos, declaradas, recent, color_jugador, cfg,
     w -= cfg.peso_repeticion * recent.get(par, 0)
     if color_jugador.get(a.id) and color_jugador.get(a.id) == color_jugador.get(b.id):
         w += BONUS_COMPACTAR_COLOR
+    w -= PESO_EDAD * años_fuera_de_banda(a, b)
     if misma_pista:
         w += BONUS_COMPACTAR_MISMA
     return w
@@ -2245,7 +2266,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     # El estirón (una división o un año de más) solo por la
                     # tarde, cuando falta gente: por la mañana ±1 estricto.
                     span_extra=cfg.estiron_division if es_tarde else 0,
-                    edad_extra=cfg.estiron_edad if es_tarde else 0,
+                    edad_extra=estiron_edad(cfg, es_tarde),
                     w_relajar=cfg.peso_relajar_vecindad,
                     ocupadas=ocupadas,
                     # Sin entrenadores en todo el bloque no se mira: se coloca
@@ -2334,7 +2355,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 pairs_declaradas=pairs_declaradas_dia,
                 apply_neighbor=cfg.aplicar_vecindad, neighbor_span=cfg.vecindad_max,
                 span_extra=cfg.estiron_division if es_tarde else 0,
-                edad_extra=cfg.estiron_edad if es_tarde else 0)
+                edad_extra=estiron_edad(cfg, es_tarde))
             colores_bloque = {pid: color_del_jugador(pid, responsable_de, color_de)
                               for pid in por_id_bloque}
             declaradas_bloque = pairs_soft_dia | pairs_declaradas_dia | (

@@ -438,6 +438,9 @@ def emparejamiento_maximo(players: list[Player], data: PairingInput,
 NIVEL_MAX = 9
 
 BANDAS_EDAD = ((10, 12, 2), (13, 14, 2), (15, 18, 3))
+# Años de estirón que equivalen a «la edad no cuenta» (29/10/2026: con la edad
+# como preferencia, se pasa esto como `edad_extra` y nunca bloquea una pareja).
+EDAD_LIBRE = 99
 # Por debajo de esto la edad no es de un alumno, es un error de tecleo: se
 # trata como si no estuviera declarada en vez de dejar a nadie sin compañero.
 EDAD_MINIMA_CREIBLE = 8
@@ -524,9 +527,10 @@ def _motivo(
             if chica.division > chico.division:
                 return DURO
     # Edad: manda el más estricto de los dos, y hacen falta las dos edades para
-    # poder compararlas.
+    # poder compararlas. Con EDAD_LIBRE (la edad como preferencia, 29/10/2026)
+    # no cuenta en absoluto: ni bloquea ni se paga como estirón.
     edad_p, edad_q = _edad_creible(p.edad), _edad_creible(q.edad)
-    if edad_p is not None and edad_q is not None:
+    if edad_extra < EDAD_LIBRE and edad_p is not None and edad_q is not None:
         topes = [t for t in (_tope_edad(edad_p), _tope_edad(edad_q)) if t is not None]
         if topes:
             tope = min(topes)
@@ -538,7 +542,17 @@ def _motivo(
     return RELAJABLE if blando else None
 
 
-def reglas_rotas(p: Player, q: Player, span: int = 1) -> list[str]:
+def años_fuera_de_banda(p: Player, q: Player) -> int:
+    """Años que se pasa la pareja de lo que admite el más estricto de los dos
+    (BANDAS_EDAD). 0 si encaja o si falta alguna edad."""
+    edad_p, edad_q = _edad_creible(p.edad), _edad_creible(q.edad)
+    if edad_p is None or edad_q is None:
+        return 0
+    topes = [t for t in (_tope_edad(edad_p), _tope_edad(edad_q)) if t is not None]
+    return max(0, abs(edad_p - edad_q) - min(topes)) if topes else 0
+
+
+def reglas_rotas(p: Player, q: Player, span: int = 1, edad: bool = True) -> list[str]:
     """Las reglas base que se rompen juntando a `p` y `q`, en palabras: para
     avisar de una pista forzada (14/10/2026). Las rencillas no van aquí: esas
     no se rompen nunca."""
@@ -556,7 +570,7 @@ def reglas_rotas(p: Player, q: Player, span: int = 1) -> list[str]:
             if chica.division > chico.division:
                 rotas.append("chico/chica")
     edad_p, edad_q = _edad_creible(p.edad), _edad_creible(q.edad)
-    if edad_p is not None and edad_q is not None:
+    if edad and edad_p is not None and edad_q is not None:
         topes = [t for t in (_tope_edad(edad_p), _tope_edad(edad_q)) if t is not None]
         if topes and abs(edad_p - edad_q) > min(topes):
             menor, mayor = sorted((edad_p, edad_q))

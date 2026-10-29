@@ -545,6 +545,14 @@ class ConfiguracionMotor(models.Model):
     estiron_edad = models.PositiveSmallIntegerField(
         default=1, verbose_name="Años de edad que se pueden estirar",
     )
+    # 29/10/2026: «las diferencias de edad no son tan relevantes». Apagado, la
+    # edad no impide juntar a nadie: solo es preferencia (a igualdad, el motor
+    # junta a los de edad parecida). Encendido, vuelven las bandas de edad
+    # como regla dura (10-14 años ±2, 15-18 ±3).
+    edad_obligatoria = models.BooleanField(
+        default=False, verbose_name="La edad es regla dura",
+        help_text="Apagado: la edad solo es preferencia y nunca impide una pareja.",
+    )
 
     peso_equilibrio_franjas = models.PositiveIntegerField(
         default=200,

@@ -1656,3 +1656,29 @@ class RankingEnLasParejasTests(SimpleTestCase):
         self.assertEqual({tuple(sorted(m)) for m in res.values()}, {(1, 2, 3), (4, 5, 6)})
         # Cada pista sigue con tres.
         self.assertEqual([len(m) for m in res.values()], [3, 3])
+
+
+class EdadPreferenciaTests(SimpleTestCase):
+    """29/10/2026: la edad, de regla dura a preferencia."""
+
+    class _Cfg:
+        peso_pareja, peso_repeticion = 5000, 50
+
+    def test_la_edad_resta_poco_y_nunca_bloquea(self):
+        from .pairing import EDAD_LIBRE, _motivo
+        from .service import puntos_pareja
+
+        adulto, chaval, otro = (Player(id=1, division=5, edad=21),
+                                Player(id=2, division=5, edad=15),
+                                Player(id=3, division=5, edad=16))
+        self.assertIsNone(_motivo(adulto, chaval, set(), edad_extra=EDAD_LIBRE))
+        cerca = puntos_pareja(chaval, otro, {}, set(), {}, {}, self._Cfg())
+        lejos = puntos_pareja(chaval, adulto, {}, set(), {}, {}, self._Cfg())
+        self.assertEqual(cerca - lejos, 300)  # 6 años con banda de 3: 3 de más
+
+    def test_las_reglas_rotas_sin_edad(self):
+        from .pairing import reglas_rotas
+
+        a, b = Player(id=1, division=5, edad=22), Player(id=2, division=5, edad=14)
+        self.assertEqual(reglas_rotas(a, b), ["edad (14 y 22 años)"])
+        self.assertEqual(reglas_rotas(a, b, edad=False), [])
