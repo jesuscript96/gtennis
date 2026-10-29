@@ -11,7 +11,7 @@ from academy.models import Aviso, Coach, Entrenador, Escuela, Jugador
 from users.models import User
 
 from . import catalogo, recordatorios
-from .models import Evaluacion, EvaluacionFisica, Informe, RecordatorioInforme
+from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, RecordatorioInforme
 from .tests import SIN_CAPTURA_DE_PLANTILLAS
 
 TENIS = {k: 3 for k in catalogo.CRITERIOS}
@@ -31,6 +31,7 @@ class InformeTests(TestCase):
             return u
         self.alvaro = entrenador("alvaro.mantoan", "Alvaro Mantoan")
         self.alberto = entrenador("alberto.sanz", "Alberto Sanz")
+        self.salva = entrenador("salva.barcala", "Salva Barcala")
         self.mico = entrenador("jorge.mico", "Jorge Mico")
         self.blas = entrenador("blas", "Blas")
         self.josep = User.objects.create_user(username="josep.mari", password="x", role=User.Role.PREPARADOR)
@@ -79,7 +80,7 @@ class InformeTests(TestCase):
                                                     format="json").status_code, 403)
 
         # No hay dos evaluaciones de tenis en el mismo informe: se sigue con la que hay.
-        r = self.api(self.mico).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
+        r = self.api(self.salva).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(int(r.data["existente"]), t)
 
@@ -115,7 +116,7 @@ class InformeTests(TestCase):
         self.assertTrue(Aviso.objects.filter(usuario=self.josep, titulo__contains="validado").exists())
 
         # El trimestre siguiente empieza un informe nuevo.
-        t2 = self._tenis(self.mico)
+        t2 = self._tenis(self.salva)
         self.assertEqual(Informe.objects.count(), 2)
         self.assertEqual(Evaluacion.objects.get(pk=t2).informe.estado, "EN_CURSO")
 
@@ -162,6 +163,43 @@ class InformeTests(TestCase):
         self.assertEqual(fila["informe"]["estado"], "EN_CURSO")
         self.assertIsNone(fila["informe"]["fisica"])
 
+    def test_el_coordinador_reparte(self):
+        c = self.api(self.alberto)
+        r = c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.salva.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        fila = next(j for j in r.data["jugadores"] if j["id"] == self.nino.id)
+        self.assertEqual(fila["evaluador"]["nombre"], "Salva Barcala")
+        self.assertTrue(r.data["puede_asignar"])
+        self.assertEqual({e["nombre"] for e in r.data["evaluadores"]}, {"Alvaro Mantoan", "Alberto Sanz", "Salva Barcala"})
+        a = Aviso.objects.get(usuario=self.salva)
+        self.assertIn("Asier Pérez", a.mensaje)
+        # Reasignar al mismo no vuelve a avisar; quitarlo lo deja sin entrenador.
+        c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.salva.id}, format="json")
+        self.assertEqual(Aviso.objects.filter(usuario=self.salva).count(), 1)
+        c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": None}, format="json")
+        self.assertFalse(AsignacionInforme.objects.exists())
+        # Jorge Mico (pádel) no está entre los que pueden hacerlo, y un entrenador no reparte.
+        r = c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.mico.id}, format="json")
+        self.assertEqual(r.status_code, 400)
+        r = self.api(self.alvaro).post("/api/informes/asignar/", {"jugadores": [self.nino.id],
+                                                                  "evaluador": self.alvaro.id}, format="json")
+        self.assertEqual(r.status_code, 403)
+        self.assertFalse(self.api(self.alvaro).get("/api/informes/panel/").data["puede_asignar"])
+        # Los demás siguen pudiendo evaluarle.
+        c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.salva.id}, format="json")
+        self._tenis(self.alvaro)
+
+    def test_administracion_no_valida(self):
+        adm = User.objects.create_user(username="administracion", password="x", role=User.Role.SUPERADMIN)
+        t = self._tenis()
+        self.api(self.alvaro).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        f = self._fisico()
+        self.api(self.josep).post(f"/api/evaluaciones-fisicas/{f}/terminar/", {}, format="json")
+        inf = Informe.objects.get()
+        self.assertFalse(Aviso.objects.filter(usuario=adm, titulo__contains="listo para validar").exists())
+        self.assertFalse(self.api(adm).get("/api/informes/panel/").data["puede_validar"])
+        self.assertEqual(self.api(adm).post(f"/api/informes/{inf.id}/aprobar/", {}, format="json").status_code, 403)
+
     def test_foto(self):
         from PIL import Image
         buf = BytesIO()
@@ -194,11 +232,23 @@ class RecordatoriosTests(TestCase):
         self.assertEqual(recordatorios.revisar(self.hoy), 0)
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=7)), 1)
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=8)), 0)
-        a = Aviso.objects.get(usuario=self.alvaro)
+        # Sin entrenador asignado, al coordinador para que lo reparta.
+        a = Aviso.objects.get(usuario=self.alberto)
+        self.assertIn("no tienen entrenador", a.titulo)
         self.assertIn("Nuevo", a.mensaje)
-        self.assertTrue(Aviso.objects.filter(usuario=self.alberto).exists())
+        self.assertFalse(Aviso.objects.filter(usuario=self.alvaro).exists())
         self.assertTrue(Aviso.objects.filter(usuario=self.josep).exists())
         self.assertFalse(Aviso.objects.filter(usuario=self.ivan).exists())
+
+    def test_al_entrenador_asignado_y_a_diego(self):
+        AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.alvaro)
+        diego = User.objects.create_user(username="diego.dominguez", password="x", role=User.Role.PREPARADOR)
+        self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=7)), 1)
+        self.assertIn("Toca el primer informe", Aviso.objects.get(usuario=self.alvaro).titulo)
+        self.assertFalse(Aviso.objects.filter(usuario=self.alberto).exists())
+        # La física de Competición de tardes es de Diego: Josep ya no recibe estos recordatorios.
+        self.assertTrue(Aviso.objects.filter(usuario=diego).exists())
+        self.assertFalse(Aviso.objects.filter(usuario=self.josep).exists())
 
     def test_sin_alta_se_recuerda_una_vez(self):
         self.nuevo.fecha_alta = None
@@ -210,10 +260,11 @@ class RecordatoriosTests(TestCase):
         validado = timezone.now() - timedelta(days=76)
         ev = Evaluacion.objects.create(jugador=self.nuevo, evaluador=self.alberto, estado="TERMINADA")
         Informe.objects.create(jugador=self.nuevo, tenis=ev, estado="VALIDADO", validado_en=validado)
+        AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.alvaro)
         self.assertEqual(recordatorios.revisar(self.hoy), 1)
-        # El de tenis es quien lo hizo; sin parte física, los preparadores.
-        self.assertTrue(Aviso.objects.filter(usuario=self.alberto, titulo__contains="pronto").exists())
-        self.assertFalse(Aviso.objects.filter(usuario=self.alvaro).exists())
+        # El de tenis es el asignado; sin Diego, los preparadores.
+        self.assertTrue(Aviso.objects.filter(usuario=self.alvaro, titulo__contains="pronto").exists())
+        self.assertFalse(Aviso.objects.filter(usuario=self.alberto).exists())
         self.assertTrue(Aviso.objects.filter(usuario=self.josep).exists())
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=14)), 1)
         self.assertTrue(Aviso.objects.filter(usuario=self.ivan, titulo__contains="vencido").exists())

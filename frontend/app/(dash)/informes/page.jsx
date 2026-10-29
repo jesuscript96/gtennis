@@ -3,18 +3,25 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getInformes, getPanelInformes } from "../../../lib/api";
+import { asignarInforme, getInformes, getPanelInformes } from "../../../lib/api";
 import { ESTADO_INFORME, abrirParte, textoCiclo, textoParte } from "../../../lib/informes";
 import { fmtLarga } from "../../../lib/torneos";
 
-const FILTROS = [
-  ["todos", "Todos"],
-  ["toca", "Les toca"],
-  ["marcha", "En marcha"],
-  ["devueltos", "Devueltos"],
-];
+/** Filtros del panel: «Mis jugadores» para quien evalúa tenis y «Sin entrenador» para el coordinador. */
+function filtros(panel) {
+  return [
+    ...(panel.evalua_tenis ? [["mios", "Mis jugadores"]] : []),
+    ["todos", "Todos"],
+    ...(panel.puede_asignar ? [["sin", "Sin entrenador"]] : []),
+    ["toca", "Les toca"],
+    ["marcha", "En marcha"],
+    ["devueltos", "Devueltos"],
+  ];
+}
 
-function pasa(j, filtro) {
+function pasa(j, filtro, yo) {
+  if (filtro === "mios") return j.evaluador?.id === yo;
+  if (filtro === "sin") return !j.evaluador;
   if (filtro === "toca") return !j.informe && ["primera", "pronto", "vencido"].includes(j.ciclo.estado);
   if (filtro === "marcha") return !!j.informe;
   if (filtro === "devueltos") return j.informe?.estado === "DEVUELTO";
@@ -42,12 +49,37 @@ function Parte({ j, parte, titulo, puede }) {
   );
 }
 
-function Jugadores({ panel }) {
+/** El entrenador que hace el informe de tenis: el coordinador lo elige; los demás lo ven. */
+function Evaluador({ j, panel, onPanel }) {
+  const [error, setError] = useState("");
+  if (!panel.puede_asignar) {
+    return <span className="inf-asignado">Entrenador: <b>{j.evaluador?.nombre || "sin asignar"}</b></span>;
+  }
+  async function cambiar(e) {
+    setError("");
+    try { onPanel(await asignarInforme([j.id], e.target.value || null)); }
+    catch (err) { setError(err.message); }
+  }
+  return (
+    <label className="inf-asignado">
+      Entrenador:
+      <select value={j.evaluador?.id || ""} onChange={cambiar}>
+        <option value="">Sin asignar</option>
+        {panel.evaluadores.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+      </select>
+      {error && <span className="err">{error}</span>}
+    </label>
+  );
+}
+
+function Jugadores({ panel, onPanel }) {
+  const opciones = filtros(panel);
+  const cuenta = Object.fromEntries(opciones.map(([k]) => [k, panel.jugadores.filter((j) => pasa(j, k, panel.yo)).length]));
   const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState("todos");
+  // Se abre en «Mis jugadores» si tiene; el coordinador, en los que faltan por repartir.
+  const [filtro, setFiltro] = useState(() => (cuenta.mios ? "mios" : cuenta.sin ? "sin" : "todos"));
   const q = busca.trim().toLowerCase();
-  const lista = panel.jugadores.filter((j) => pasa(j, filtro) && (!q || j.nombre.toLowerCase().includes(q)));
-  const cuenta = Object.fromEntries(FILTROS.map(([k]) => [k, panel.jugadores.filter((j) => pasa(j, k)).length]));
+  const lista = panel.jugadores.filter((j) => pasa(j, filtro, panel.yo) && (!q || j.nombre.toLowerCase().includes(q)));
 
   return (
     <>
@@ -55,7 +87,7 @@ function Jugadores({ panel }) {
         <input className="eval-busca" type="search" placeholder="Buscar jugador"
           value={busca} onChange={(e) => setBusca(e.target.value)} />
         <div className="tabs-inv">
-          {FILTROS.map(([k, t]) => (
+          {opciones.map(([k, t]) => (
             <button key={k} type="button" className={`chip${filtro === k ? " on" : ""}`} onClick={() => setFiltro(k)}>
               {t} · {cuenta[k]}
             </button>
@@ -76,6 +108,7 @@ function Jugadores({ panel }) {
                   <span className={`pill ${pillCiclo}`}>{ciclo}</span>
                 </div>
                 <div className="inf-fila-partes">
+                  <Evaluador j={j} panel={panel} onPanel={onPanel} />
                   <Parte j={j} parte="tenis" titulo="Tenis" puede={panel.evalua_tenis} />
                   <Parte j={j} parte="fisico" titulo="Físico" puede={panel.evalua_fisico} />
                 </div>
@@ -143,8 +176,10 @@ function Informes() {
       <div className="page-head"><h1>Informes</h1></div>
       <p className="help">
         El informe trimestral de cada jugador de <b>Competición de tardes</b>: la evaluación de tenis y la
-        de preparación física van en un solo PDF. Cuando las dos están terminadas, pasa a dirección
-        deportiva, que lo aprueba o lo devuelve con una nota. El siguiente toca a los 90 días de validarlo.
+        de preparación física van en un solo PDF. El coordinador asigna a cada jugador el entrenador que
+        hace su parte de tenis (los demás también pueden evaluarle). Cuando las dos partes están
+        terminadas, pasa a dirección deportiva, que lo aprueba o lo devuelve con una nota. El siguiente
+        toca a los 90 días de validarlo.
       </p>
       {panel.puede_validar && (
         <div className="tabs-inv" role="tablist">
@@ -156,7 +191,7 @@ function Informes() {
           </button>
         </div>
       )}
-      {vista === "validar" && panel.puede_validar ? <PorValidar informes={pendientes} /> : <Jugadores panel={panel} />}
+      {vista === "validar" && panel.puede_validar ? <PorValidar informes={pendientes} /> : <Jugadores panel={panel} onPanel={setPanel} />}
     </div>
   );
 }

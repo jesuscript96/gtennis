@@ -10,6 +10,7 @@ jugadores, para no llenar la bandeja de avisos.
 from collections import defaultdict
 from datetime import date
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -17,7 +18,7 @@ from academy.models import Aviso, Jugador
 from academy.permissions import usuarios_valida_informes
 
 from . import informes
-from .models import Informe, RecordatorioInforme
+from .models import AsignacionInforme, Informe, RecordatorioInforme
 
 SIN_ALTA = date(2000, 1, 1)
 ETAPA = {"primera": RecordatorioInforme.Etapa.PRIMERA, "pronto": RecordatorioInforme.Etapa.D75,
@@ -38,7 +39,10 @@ def revisar(hoy=None):
     usuarios = {}
     nuevos = 0
     validadores = usuarios_valida_informes()
-    tenis_defecto = informes.evaluadores_tenis_por_defecto()
+    # Sin entrenador asignado, el recordatorio va al coordinador para que lo reparta.
+    sin_asignar = informes.coordinadores() or informes.evaluadores_tenis_por_defecto()
+    asignados = dict(AsignacionInforme.objects.filter(evaluador__is_active=True)
+                     .values_list("jugador_id", "evaluador_id"))
     fisicos = informes.preparadores()
     for j in _jugadores():
         c = informes.ciclo(j, hoy)
@@ -57,22 +61,27 @@ def revisar(hoy=None):
         except IntegrityError:
             continue  # ya recordado
         nuevos += 1
-        ult = informes.ultimo_validado(j)
-        tenis = [ult.tenis.evaluador] if ult and ult.tenis and ult.tenis.evaluador else tenis_defecto
-        fis = [ult.fisica.evaluador] if ult and ult.fisica and ult.fisica.evaluador else fisicos
-        destinatarios = list(tenis) + list(fis)
+        destinatarios = [(u, c["estado"]) for u in fisicos]
+        if j.id in asignados:
+            destinatarios.append((asignados[j.id], c["estado"]))
+        else:
+            destinatarios += [(u, "sin_asignar") for u in sin_asignar]
         if c["estado"] == "vencido":
-            destinatarios += validadores
-        for u in destinatarios:
+            destinatarios += [(u, c["estado"]) for u in validadores]
+        for u, etapa in destinatarios:
             if u is None:
                 continue
+            if isinstance(u, int):
+                u = usuarios.get(u) or get_user_model().objects.get(pk=u)
             usuarios[u.pk] = u
-            if j.nombre not in por_usuario[u.pk][c["estado"]]:
-                por_usuario[u.pk][c["estado"]].append(j.nombre)
+            if j.nombre not in por_usuario[u.pk][etapa]:
+                por_usuario[u.pk][etapa].append(j.nombre)
     textos = {
         "primera": ("Toca el primer informe", "Jugadores de Competición de tardes que aún no tienen informe"),
         "pronto": ("Toca pronto el siguiente informe", "Han pasado 75 días desde su último informe"),
         "vencido": ("Informe vencido", "Han pasado 90 días desde su último informe"),
+        "sin_asignar": ("Toca informe y no tienen entrenador",
+                        "Les toca el informe y aún no tienen entrenador asignado"),
     }
     for uid, etapas in por_usuario.items():
         for etapa, nombres in etapas.items():

@@ -83,9 +83,21 @@ def evalua_fisico(user):
     return es_preparador(user) or gestion_deportiva(user)
 
 
-# Entrenadores de tenis de Competición de tardes (27/10/2026): de momento los
-# tres evalúan a todos los jugadores de la escuela. Gestión deportiva también.
-EVALUAN_COMPETICION_TARDES = {"alvaro.mantoan", "alberto.sanz", "jorge.mico"}
+# Entrenadores de tenis de Competición de tardes. Los tres pueden evaluar a
+# todos los jugadores de la escuela; gestión deportiva también. 29/10/2026,
+# respuesta del club: entra Salva Barcala, sale Jorge Mico (es de pádel) y
+# Alberto Sanz coordina: reparte los jugadores entre los tres.
+EVALUAN_COMPETICION_TARDES = {"alvaro.mantoan", "alberto.sanz", "salva.barcala"}
+COORDINAN_COMPETICION_TARDES = {"alberto.sanz"}
+# La parte física de Competición de tardes la hace Diego Domínguez: a él le
+# llegan sus recordatorios (sin él, a todos los preparadores).
+FISICO_COMPETICION_TARDES = {"diego.dominguez"}
+
+
+def coordina_informes(user):
+    """Reparte los jugadores de Competición de tardes entre sus entrenadores."""
+    return gestion_deportiva(user) or bool(
+        user and user.is_authenticated and user.username in COORDINAN_COMPETICION_TARDES)
 
 
 def evalua_tenis_solo_informes(user):
@@ -97,11 +109,15 @@ def evalua_tenis_solo_informes(user):
 # Además de gestión deportiva, valida Iván Gallego (coach, como Dani: «validan
 # Sergio, Iván, Dani Gimeno o admin», 27/10/2026).
 VALIDAN_INFORMES = {"ivan.gallego"}
+# Administración envía los informes a las familias, pero no los valida (29/10/2026).
+NO_VALIDAN_INFORMES = {"administracion"}
 
 
 def valida_informes(user):
     """Valida (aprueba, corrige o devuelve) los informes: gestión deportiva
-    (Sergio, Iván, Dani Gimeno, admin y el resto de dirección)."""
+    (Sergio, Iván, Dani Gimeno, admin y el resto de dirección, menos administración)."""
+    if user and user.is_authenticated and user.username in NO_VALIDAN_INFORMES:
+        return False
     return gestion_deportiva(user) or bool(
         user and user.is_authenticated and user.username in VALIDAN_INFORMES)
 
@@ -119,4 +135,5 @@ def usuarios_valida_informes():
     from django.db.models import Q
     User = get_user_model()
     return [u for u in User.objects.filter(is_active=True).filter(
-        Q(role="SUPERADMIN") | Q(is_superuser=True) | Q(username__in=GESTION_DEPORTIVA | VALIDAN_INFORMES))]
+        Q(role="SUPERADMIN") | Q(is_superuser=True) | Q(username__in=GESTION_DEPORTIVA | VALIDAN_INFORMES))
+        .exclude(username__in=NO_VALIDAN_INFORMES)]

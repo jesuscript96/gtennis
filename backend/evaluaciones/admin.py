@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CarpetaDrive, CarpetaJugador, Evaluacion, EvaluacionFisica, FotoJugador, Informe, RecordatorioInforme
+from .models import AsignacionInforme, CarpetaDrive, CarpetaJugador, Evaluacion, EvaluacionFisica, FotoJugador, Informe, RecordatorioInforme
 
 
 @admin.register(Evaluacion)
@@ -52,3 +52,9 @@ class CarpetaDriveAdmin(admin.ModelAdmin):
 class RecordatorioInformeAdmin(admin.ModelAdmin):
     list_display = ("jugador", "etapa", "referencia")
     list_filter = ("etapa",)
+
+
+@admin.register(AsignacionInforme)
+class AsignacionInformeAdmin(admin.ModelAdmin):
+    list_display = ("jugador", "evaluador", "asignado_por", "actualizado")
+    search_fields = ("jugador__nombre",)

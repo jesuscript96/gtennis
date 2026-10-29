@@ -377,6 +377,8 @@ export async function descargarPdfEvaluacion(id) {
 
 // --- Informes de Competición de tardes (tenis + físico, validación) -------
 export const getPanelInformes = () => req("/informes/panel/");
+export const asignarInforme = (jugadores, evaluador) =>
+  req("/informes/asignar/", { method: "POST", body: JSON.stringify({ jugadores, evaluador }) });
 export const getInformes = async (params = {}) => {
   const s = new URLSearchParams(params).toString();
   return rows(await req(`/informes/${s ? `?${s}` : ""}`));

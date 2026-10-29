@@ -222,3 +222,20 @@ class RecordatorioInforme(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["jugador", "etapa", "referencia"],
                                                name="recordatorio_informe_unico")]
+
+
+class AsignacionInforme(models.Model):
+    """Qué entrenador de tenis hace los informes de un jugador de Competición
+    de tardes. Lo reparte el coordinador (29/10/2026): al asignado le llegan
+    los recordatorios y lo ve en «Mis jugadores»; los demás entrenadores de
+    tarde pueden evaluarle igual."""
+
+    jugador = models.OneToOneField("academy.Jugador", on_delete=models.CASCADE, related_name="asignacion_informe")
+    evaluador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="informes_asignados")
+    asignado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name="+")
+    actualizado = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.jugador} → {self.evaluador}"

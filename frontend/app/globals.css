@@ -1719,6 +1719,9 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .inf-fila-partes { display: flex; gap: 8px 24px; flex-wrap: wrap; }
 .inf-parte { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .inf-parte-nombre { font-size: 13px; color: var(--muted); min-width: 44px; }
+.inf-asignado { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.inf-asignado b { color: var(--text); font-weight: 600; }
+.inf-asignado select { font-size: 14px; padding: 4px 8px; }
 .inf-fila-pie { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 10px; }
 .inf-fila-pie .eval-nota { margin: 0; }
 .inf-ultimo { margin-left: auto; font-size: 13px; color: var(--muted); }

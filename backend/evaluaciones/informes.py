@@ -15,9 +15,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from academy.models import Aviso
-from academy.permissions import EVALUAN_COMPETICION_TARDES, usuarios_valida_informes
+from academy.permissions import (
+    COORDINAN_COMPETICION_TARDES, EVALUAN_COMPETICION_TARDES, FISICO_COMPETICION_TARDES, usuarios_valida_informes,
+)
 
-from .models import Evaluacion, EvaluacionFisica, Informe
+from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe
 
 log = logging.getLogger(__name__)
 
@@ -206,13 +208,46 @@ def ciclo(jugador, hoy=None):
     return {"estado": estado, "proxima": desde + timedelta(days=CICLO_VENCIDO), "desde": desde}
 
 
-def evaluadores_tenis_por_defecto():
+def _usuarios(**filtro):
     from django.contrib.auth import get_user_model
 
-    return list(get_user_model().objects.filter(username__in=EVALUAN_COMPETICION_TARDES, is_active=True))
+    return list(get_user_model().objects.filter(is_active=True, **filtro).select_related("entrenador")
+                .order_by("first_name", "username"))
+
+
+def evaluadores_tenis_por_defecto():
+    """Los entrenadores de tenis de Competición de tardes: entre ellos reparte el coordinador."""
+    return _usuarios(username__in=EVALUAN_COMPETICION_TARDES)
+
+
+def coordinadores():
+    return _usuarios(username__in=COORDINAN_COMPETICION_TARDES)
 
 
 def preparadores():
-    from django.contrib.auth import get_user_model
+    """Quien hace la física de Competición de tardes; sin él, todos los preparadores."""
+    return _usuarios(username__in=FISICO_COMPETICION_TARDES) or _usuarios(role="PREPARADOR")
 
-    return list(get_user_model().objects.filter(role="PREPARADOR", is_active=True))
+
+def asignar(jugadores, evaluador, por):
+    """El coordinador da (o quita, con `evaluador=None`) los informes de tenis
+    de esos jugadores a un entrenador, que recibe un aviso con los nuevos."""
+    nuevos = []
+    for j in jugadores:
+        if evaluador is None:
+            AsignacionInforme.objects.filter(jugador=j).delete()
+            continue
+        a, creada = AsignacionInforme.objects.get_or_create(
+            jugador=j, defaults={"evaluador": evaluador, "asignado_por": por})
+        if not creada and a.evaluador_id != evaluador.pk:
+            a.evaluador, a.asignado_por = evaluador, por
+            a.save()
+            creada = True
+        if creada:
+            nuevos.append(j.nombre)
+    if nuevos and evaluador.pk != por.pk:
+        n = len(nuevos)
+        _avisar([evaluador], f"Te han asignado {n} jugador{'es' if n != 1 else ''} para los informes",
+                f"Te toca hacer el informe de tenis de: {', '.join(nuevos)}. Los tienes en Informes, "
+                f"en «Mis jugadores».")
+    return nuevos

@@ -20,6 +20,7 @@ class TenisCompeticionTardesTests(TestCase):
             Entrenador.objects.create(nombre=nombre, user=u)
             return u
         self.alvaro = entrenador("alvaro.mantoan", "Alvaro Mantoan")
+        self.salva = entrenador("salva.barcala", "Salva Barcala")
         self.mico = entrenador("jorge.mico", "Jorge Mico")
         self.milla = entrenador("jorge.milla", "Jorge Milla")
         self.blas = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
@@ -34,13 +35,13 @@ class TenisCompeticionTardesTests(TestCase):
         return c
 
     def test_los_de_tarde_y_gestion_evaluan_a_los_de_competicion(self):
-        for u in (self.alvaro, self.mico, self.dani):
+        for u in (self.alvaro, self.salva, self.dani):
             nombres = [j["nombre"] for j in self.api(u).get("/api/evaluaciones/jugadores/").data]
             self.assertIn("Asier", nombres, u.username)
         r = self.api(self.alvaro).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
         self.assertEqual(r.status_code, 201, r.data)
         # Una sola evaluación de tenis por informe: los demás siguen con esa y la pueden corregir.
-        for u in (self.mico, self.dani):
+        for u in (self.salva, self.dani):
             r2 = self.api(u).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
             self.assertEqual((r2.status_code, int(r2.data["existente"])), (400, r.data["id"]), u.username)
             self.assertEqual(self.api(u).patch(f"/api/evaluaciones/{r.data['id']}/", {"idioma": "EN"},
@@ -50,6 +51,11 @@ class TenisCompeticionTardesTests(TestCase):
         # 27/10: «Jorge Mico» no era Jorge Milla; Milla no evalúa Competición de tardes.
         self.assertEqual(self.api(self.milla).post("/api/evaluaciones/", {"jugador": self.nino.id},
                                                    format="json").status_code, 403)
+
+    def test_jorge_mico_es_de_padel(self):
+        # 29/10, respuesta del club: Jorge Mico es de pádel y no hace informes.
+        self.assertEqual(self.api(self.mico).post("/api/evaluaciones/", {"jugador": self.nino.id},
+                                                  format="json").status_code, 403)
 
     def test_otro_entrenador_no(self):
         nombres = [j["nombre"] for j in self.api(self.blas).get("/api/evaluaciones/jugadores/").data]

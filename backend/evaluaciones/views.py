@@ -10,11 +10,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from academy.models import Jugador
-from academy.permissions import evalua_fisico, evalua_tenis_solo_informes, valida_informes, ve_informes
+from academy.permissions import (
+    coordina_informes, evalua_fisico, evalua_tenis_solo_informes, valida_informes, ve_informes,
+)
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
 from . import catalogo, drive, fichero, ia, informes, pdf
-from .models import Evaluacion, EvaluacionFisica, FotoJugador, Informe
+from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, FotoJugador, Informe
 from .serializers import EvaluacionFisicaSerializer, EvaluacionSerializer, InformeSerializer
 
 
@@ -318,6 +320,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
                     .order_by("creado")):
             abiertos[inf.jugador_id] = inf
         fotos = set(FotoJugador.objects.values_list("jugador_id", flat=True))
+        asignados = {a.jugador_id: a.evaluador for a in AsignacionInforme.objects.select_related("evaluador__entrenador")}
         out = []
         for j in jugadores_evaluables_fisico():
             inf = abiertos.get(j.id)
@@ -325,6 +328,8 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             ult = informes.ultimo_validado(j)
             out.append({
                 "id": j.id, "nombre": j.nombre, "edad": j.edad, "foto": j.id in fotos,
+                "evaluador": None if j.id not in asignados else {
+                    "id": asignados[j.id].id, "nombre": _nombre_evaluador(asignados[j.id])},
                 "ciclo": {"estado": c["estado"], "proxima": str(c["proxima"]) if c["proxima"] else None},
                 "informe": None if inf is None else {
                     "id": inf.id, "estado": inf.estado,
@@ -336,7 +341,33 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             })
         return Response({"jugadores": out, "puede_validar": valida_informes(request.user),
                          "evalua_tenis": evalua_tenis_solo_informes(request.user),
-                         "evalua_fisico": evalua_fisico(request.user)})
+                         "evalua_fisico": evalua_fisico(request.user),
+                         "puede_asignar": coordina_informes(request.user), "yo": request.user.id,
+                         "evaluadores": [{"id": u.id, "nombre": _nombre_evaluador(u)}
+                                         for u in informes.evaluadores_tenis_por_defecto()]})
+
+    @action(detail=False, methods=["post"])
+    def asignar(self, request):
+        """`{jugadores: [ids], evaluador: id | null}`: el coordinador reparte los
+        informes de tenis. Devuelve el panel actualizado."""
+        if not coordina_informes(request.user):
+            raise PermissionDenied("Reparte los jugadores el coordinador de Competición de tardes.")
+        try:
+            ids = [int(x) for x in request.data.get("jugadores") or []]
+            ev_id = request.data.get("evaluador")
+            ev_id = int(ev_id) if ev_id not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValidationError({"detail": "Datos no válidos."})
+        jugadores = list(jugadores_evaluables_fisico().filter(pk__in=ids))
+        if not jugadores:
+            raise ValidationError({"detail": "Elige algún jugador de Competición de tardes."})
+        evaluador = None
+        if ev_id is not None:
+            evaluador = next((u for u in informes.evaluadores_tenis_por_defecto() if u.pk == ev_id), None)
+            if evaluador is None:
+                raise ValidationError({"detail": "Ese entrenador no hace informes de Competición de tardes."})
+        informes.asignar(jugadores, evaluador, request.user)
+        return self.panel(request)
 
     @action(detail=True)
     def pdf(self, request, pk=None):
