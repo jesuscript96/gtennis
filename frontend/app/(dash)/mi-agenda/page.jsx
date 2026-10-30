@@ -31,6 +31,8 @@ const iso = (d) => d.toISOString().slice(0, 10);
 
 export default function MiAgenda() {
   const [semana, setSemana] = useState([]);
+  // El horario habitual lo fija dirección: el entrenador y su head coach lo ven.
+  const [puedeEditar, setPuedeEditar] = useState(false);
   const [hoy, setHoy] = useState(null);
   const [ausencias, setAusencias] = useState([]);
   const [nombre, setNombre] = useState("");
@@ -55,7 +57,8 @@ export default function MiAgenda() {
       const [a, d, v, ses] = await Promise.all([
         getMiAgenda(de), getMiDia(de), getMisAusencias(de), getMisSesiones(de, diaPista),
       ]);
-      setSemana(a.semana); setNombre(a.entrenador); setHoy(d); setAusencias(v);
+      setSemana(a.semana); setNombre(a.entrenador); setPuedeEditar(!!a.puede_editar_semana);
+      setHoy(d); setAusencias(v);
       setSesiones(ses);
     } catch (e) { setError(e.message); }
   }
@@ -86,6 +89,7 @@ export default function MiAgenda() {
   }, [ausencias]);
 
   async function alternar(dia, bloque) {
+    if (!puedeEditar) return;
     const next = semana.map((f) => (f.dia === dia ? { ...f, [bloque]: !f[bloque] } : f));
     setSemana(next);
     try {
@@ -184,8 +188,14 @@ export default function MiAgenda() {
 
       {/* ---- SEMANA ---- */}
       <section className="card">
-        <h2>Mi semana</h2>
-        <p className="hint">Marca en qué bloques trabajas. Por defecto, mañana y tarde.</p>
+        <h2>Horario habitual</h2>
+        <p className="hint">
+          {puedeEditar
+            ? "Marca en qué bloques trabaja. Por defecto, mañana y tarde."
+            : eligeOtros
+              ? "El horario habitual lo fija dirección."
+              : "Tu horario habitual lo fija dirección. Si cambia, habla con dirección; para un día suelto, márcalo en el calendario de abajo."}
+        </p>
         <table className="semana-tabla">
           <thead>
             <tr><th>Día</th><th>Mañana</th><th>Tarde</th></tr>
@@ -196,14 +206,20 @@ export default function MiAgenda() {
                 <td>{f.nombre}</td>
                 {["manana", "tarde"].map((b) => (
                   <td key={b}>
-                    <button
-                      type="button"
-                      className={f[b] ? "toggle on" : "toggle off"}
-                      aria-pressed={f[b]}
-                      onClick={() => alternar(f.dia, b)}
-                    >
-                      {f[b] ? "Sí" : "No"}
-                    </button>
+                    {puedeEditar ? (
+                      <button
+                        type="button"
+                        className={f[b] ? "toggle on" : "toggle off"}
+                        aria-pressed={f[b]}
+                        onClick={() => alternar(f.dia, b)}
+                      >
+                        {f[b] ? "Sí" : "No"}
+                      </button>
+                    ) : (
+                      <span className={f[b] ? "toggle on fijo" : "toggle off fijo"}>
+                        {f[b] ? "Sí" : "No"}
+                      </span>
+                    )}
                   </td>
                 ))}
               </tr>

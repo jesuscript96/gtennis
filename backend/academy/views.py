@@ -1285,7 +1285,7 @@ class MiAgendaViewSet(viewsets.ViewSet):
 
     Tres vistas, que son las tres cosas que necesita:
       * `dia`      — hoy, si trabaja de mañana, de tarde o ambas;
-      * `semana`   — los cinco días de un vistazo, editable;
+      * `semana`   — los cinco días de un vistazo; solo dirección la cambia;
       * `ausencias`— periodos con fecha de ida y de vuelta, a meses vista.
     """
 
@@ -1311,8 +1311,8 @@ class MiAgendaViewSet(viewsets.ViewSet):
 
         Normalmente el del propio usuario. Dirección puede mirar la de
         cualquiera, y un coach la de los de su bloque, pasando
-        `?entrenador=<id>`: hace falta para rellenarle la jornada a quien no
-        entre nunca a la app. Sin elegir a nadie se abre el primero de la
+        `?entrenador=<id>`; dirección, además, le rellena ahí la jornada
+        habitual. Sin elegir a nadie se abre el primero de la
         lista, para que la pantalla cargue en vez de dar un error.
         """
         user = self.request.user
@@ -1368,7 +1368,11 @@ class MiAgendaViewSet(viewsets.ViewSet):
 
     def list(self, request):
         ent = self._entrenador()
-        return Response({"entrenador": ent.nombre, "semana": self._semana(ent)})
+        return Response({
+            "entrenador": ent.nombre,
+            "semana": self._semana(ent),
+            "puede_editar_semana": bool(request.user.is_superadmin),
+        })
 
     @action(detail=False, methods=["get"])
     def sesiones(self, request):
@@ -1464,7 +1468,16 @@ class MiAgendaViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["put", "patch"])
     def semana(self, request):
-        """Guarda la jornada de la semana entera de una vez."""
+        """Guarda la jornada de la semana entera de una vez.
+
+        Su horario habitual lo fija dirección (30/10/2026): el entrenador y su
+        head coach lo ven, pero no lo cambian. Las faltas sueltas siguen
+        siendo suyas, en `ausencias`.
+        """
+        if not request.user.is_superadmin:
+            raise PermissionDenied(
+                "El horario habitual del entrenador lo fija dirección."
+            )
         ent = self._entrenador()
         for fila in request.data.get("semana", []):
             d = int(fila["dia"])

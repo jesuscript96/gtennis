@@ -1508,3 +1508,63 @@ class GruposPorDivisionTests(TestCase):
         self.assertEqual([(j["nombre"], j["responsable"]) for j in filas[2]],
                          [("Ana", None), ("Bea", "Blas")])
         self.assertEqual([j["nombre"] for j in filas[None]], ["Sin div"])
+
+
+class HorarioHabitualSoloDireccionTests(TestCase):
+    """«Sigue apareciendo en el perfil de los entrenadores la posibilidad de
+    que modifiquen su horario habitual» (30/10/2026): lo fija dirección; el
+    entrenador y su head coach lo ven, pero no lo cambian."""
+
+    def setUp(self):
+        from users.models import User
+
+        self.usuario_victor = User.objects.create_user(
+            username="victor", password="x", role=User.Role.ENTRENADOR)
+        self.victor = Entrenador.objects.create(nombre="Víctor", user=self.usuario_victor)
+        self.usuario_dani = User.objects.create_user(
+            username="dani", password="x", role=User.Role.COACH)
+        Coach.objects.create(nombre="Dani", user=self.usuario_dani).entrenadores.add(self.victor)
+        self.usuario_ivan = User.objects.create_user(
+            username="ivan", password="x", role=User.Role.SUPERADMIN)
+
+    def _api(self, usuario):
+        from rest_framework.test import APIClient
+
+        api = APIClient()
+        api.force_authenticate(usuario)
+        return api
+
+    def _guardar(self, usuario):
+        return self._api(usuario).patch(
+            f"/api/mi-agenda/semana/?entrenador={self.victor.id}",
+            {"semana": [{"dia": 1, "manana": True, "tarde": False}]}, format="json")
+
+    def test_el_entrenador_lo_ve_pero_no_lo_cambia(self):
+        r = self._api(self.usuario_victor).get("/api/mi-agenda/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.json()["puede_editar_semana"])
+        self.assertEqual(len(r.json()["semana"]), 6)
+        self.assertEqual(self._guardar(self.usuario_victor).status_code, 403)
+        self.assertFalse(self.victor.horario.exists())
+
+    def test_el_head_coach_tampoco(self):
+        r = self._api(self.usuario_dani).get(f"/api/mi-agenda/?entrenador={self.victor.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.json()["puede_editar_semana"])
+        self.assertEqual(self._guardar(self.usuario_dani).status_code, 403)
+
+    def test_direccion_lo_fija(self):
+        r = self._api(self.usuario_ivan).get(f"/api/mi-agenda/?entrenador={self.victor.id}")
+        self.assertTrue(r.json()["puede_editar_semana"])
+        r = self._guardar(self.usuario_ivan)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["semana"][1]["tarde"], False)
+        h = self.victor.horario.get(dia=1)
+        self.assertEqual((h.manana, h.tarde), (True, False))
+
+    def test_sus_faltas_las_sigue_marcando_el(self):
+        r = self._api(self.usuario_victor).post("/api/mi-agenda/ausencias/", {
+            "fecha_inicio": "2026-11-03", "fecha_fin": "2026-11-03", "motivo": "Médico",
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(VacacionesEntrenador.objects.filter(entrenador=self.victor).count(), 1)

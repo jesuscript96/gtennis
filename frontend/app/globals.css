@@ -665,6 +665,13 @@ body.nav-locked { overflow: hidden; }
 }
 .toggle.on  { background: #2f7d55; color: #fff; }
 .toggle.off { background: #efeeea; color: #86867f; border-color: #dcdad4; }
+/* Horario habitual en solo lectura: texto, sin pinta de botón. */
+.toggle.fijo {
+  display: inline-block; min-width: 0; padding: 0; cursor: default;
+  background: none; border: none;
+}
+.toggle.fijo.on  { color: #2f7d55; }
+.toggle.fijo.off { color: #a3a39c; font-weight: 500; }
 
 .fila-form { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; margin: .75rem 0 1rem; }
 .fila-form label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: #6b6b66; }
