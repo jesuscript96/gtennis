@@ -179,9 +179,10 @@ class JugadorTurnosSerializer(GuardaHorarioJugador, serializers.ModelSerializer)
     """Vista del jugador para un ENTRENADOR.
 
     El entrenador no gestiona la ficha del alumno — ni datos personales, ni
-    división, ni escuela, ni contactos. Lo único que declara es CUÁNDO entrena:
-    su franja de mañana, la de tarde, y si algún día cambia. Por eso aquí solo
-    viaja el nombre (para saber de quién se habla) y el horario.
+    división, ni escuela, ni contactos. Solo ve CUÁNDO entrena: su franja de
+    mañana, la de tarde, y si algún día cambia; cambiarlo es cosa de su head
+    coach o de dirección. Por eso aquí solo viaja el nombre (para saber de
+    quién se habla) y el horario.
 
     Las ausencias van por su propio endpoint (`/api/disponibilidades/`).
     """

@@ -56,6 +56,8 @@ const PATH_MIN = {
   "/mis-jugadores": "direccion",
   "/configuracion": "direccion",
   "/entrenadores": "coach",
+  // El horario habitual del alumno lo cambian head coach y dirección (30/10/2026).
+  "/jugador-turnos": "coach",
   // El calendario de torneos lo ve todo el mundo; dar de alta, solo los head
   // coaches y dirección (las subrutas heredan de la más larga que encaje).
   "/torneos/nuevo": "coach",

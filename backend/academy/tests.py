@@ -933,8 +933,9 @@ class GestionCompartidaTests(TestCase):
 
 class GrupoDeGestionTests(TestCase):
     """Cada color de la tabla del club es un grupo de gestión (13/10/2026):
-    el entrenador ve y edita a los jugadores que gestionan los demás de su
-    bloque, pero no los de otro color ni por estar en el bloque de todos."""
+    el entrenador ve a los jugadores que gestionan los demás de su bloque
+    (y les declara faltas), pero no los de otro color ni por estar en el
+    bloque de todos."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -971,13 +972,9 @@ class GrupoDeGestionTests(TestCase):
         self.assertTrue(self.blas.puede_gestionar(self.de_javi))
         self.assertFalse(self.blas.puede_gestionar(self.de_mario))
 
-    def test_edita_al_de_un_companero_pero_no_al_de_otro_color(self):
-        r = self.api.patch(f"/api/jugadores/{self.de_javi.id}/",
-                           {"turno_manana": None}, format="json")
-        self.assertEqual(r.status_code, 200)
-        r = self.api.patch(f"/api/jugadores/{self.de_mario.id}/",
-                           {"turno_manana": None}, format="json")
-        self.assertEqual(r.status_code, 404)
+    def test_abre_al_de_un_companero_pero_no_al_de_otro_color(self):
+        self.assertEqual(self.api.get(f"/api/jugadores/{self.de_javi.id}/").status_code, 200)
+        self.assertEqual(self.api.get(f"/api/jugadores/{self.de_mario.id}/").status_code, 404)
 
     def test_sin_color_solo_los_suyos(self):
         from academy.scope import jugadores_visibles
@@ -1568,3 +1565,55 @@ class HorarioHabitualSoloDireccionTests(TestCase):
         }, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(VacacionesEntrenador.objects.filter(entrenador=self.victor).count(), 1)
+
+
+class HorarioHabitualJugadorTests(TestCase):
+    """«Los entrenadores tampoco deben poder cambiar el horario habitual de un
+    jugador. Solo declaran faltas o viene además» (30/10/2026). Su head coach
+    y dirección, sí."""
+
+    def setUp(self):
+        from users.models import User
+
+        self.u_victor = User.objects.create_user(
+            username="victor", password="x", role=User.Role.ENTRENADOR)
+        victor = Entrenador.objects.create(nombre="Víctor", user=self.u_victor)
+        self.u_dani = User.objects.create_user(
+            username="dani", password="x", role=User.Role.COACH)
+        Coach.objects.create(nombre="Dani", user=self.u_dani).entrenadores.add(victor)
+        self.u_ivan = User.objects.create_user(
+            username="ivan", password="x", role=User.Role.SUPERADMIN)
+        self.carlos = Jugador.objects.create(nombre="Carlos", entrenador_responsable=victor)
+        self.m1 = Turno.objects.get(codigo="M1")
+
+    def _api(self, usuario):
+        from rest_framework.test import APIClient
+
+        api = APIClient()
+        api.force_authenticate(usuario)
+        return api
+
+    def test_el_entrenador_ni_la_franja_ni_los_dias(self):
+        api = self._api(self.u_victor)
+        url = f"/api/jugadores/{self.carlos.id}/"
+        self.assertEqual(api.get(url).status_code, 200)
+        r = api.patch(url, {"turno_manana": self.m1.id}, format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        r = api.patch(url, {"horario": [{"dia": 1, "entrena_tarde": False}]}, format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.carlos.refresh_from_db()
+        self.assertIsNone(self.carlos.turno_manana_id)
+        self.assertFalse(HorarioJugador.objects.filter(jugador=self.carlos).exists())
+
+    def test_el_head_coach_y_direccion_si(self):
+        url = f"/api/jugadores/{self.carlos.id}/"
+        r = self._api(self.u_dani).patch(url, {"turno_manana": self.m1.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._api(self.u_ivan).patch(url, {"turno_manana": None}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_el_entrenador_sigue_apuntando_viene_ademas(self):
+        r = self._api(self.u_victor).post(
+            f"/api/jugadores/{self.carlos.id}/extra/",
+            {"fecha": "2026-11-03", "turno": "M1"}, format="json")
+        self.assertNotEqual(r.status_code, 403, r.content)

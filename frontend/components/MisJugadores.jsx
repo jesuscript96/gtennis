@@ -96,7 +96,8 @@ export default function MisJugadores() {
         {activo && (
           <div className="detalle-jugador">
             {esCoach && <FichaDeportiva jugador={j} onGuardado={actualizar} />}
-            <AgendaJugador jugador={j} turnos={turnos} onGuardado={actualizar} />
+            <AgendaJugador jugador={j} turnos={turnos} onGuardado={actualizar}
+              cambiaHorario={esCoach} />
 
             <div className="bloque-faltas">
               <h3>Faltas</h3>
@@ -116,7 +117,9 @@ export default function MisJugadores() {
     <div className="page">
       <h1>Mis jugadores</h1>
       <p className="hint">
-        Declara cuándo entrena cada uno y sus faltas. Toca un nombre para
+        {esCoach
+          ? "Declara cuándo entrena cada uno y sus faltas."
+          : "Declara sus faltas y los días que vienen además."} Toca un nombre para
         abrirlo. En el calendario puedes marcar varios días —sueltos o
         arrastrando— y declararlos de una vez.
       </p>
@@ -155,7 +158,7 @@ export default function MisJugadores() {
  * general a buscarlo. Si dirección todavía no ha generado la semana se enseña
  * lo previsto por su horario, dicho como tal para no confundirlo con lo real.
  */
-function AgendaJugador({ jugador, turnos, onGuardado }) {
+function AgendaJugador({ jugador, turnos, onGuardado, cambiaHorario }) {
   const [datos, setDatos] = useState(null);
   // «Esta semana» (lo real o lo previsto) o «habitual» (su semana tipo).
   const [vista, setVista] = useState("semana");
@@ -333,7 +336,11 @@ function AgendaJugador({ jugador, turnos, onGuardado }) {
 
           <section>
             <h4>Todas las semanas</h4>
-            <PanelTurnos jugador={jugador} onGuardado={onGuardado} compacto />
+            {/* El horario habitual lo cambian su head coach o dirección
+                (30/10/2026); el entrenador lo ve en «Ver semana habitual». */}
+            {cambiaHorario
+              ? <PanelTurnos jugador={jugador} onGuardado={onGuardado} compacto />
+              : <p className="hint">Su horario habitual lo cambian su head coach o dirección.</p>}
           </section>
         </div>
       )}

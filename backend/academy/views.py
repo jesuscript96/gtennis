@@ -230,10 +230,10 @@ class JugadorViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         """El entrenador no gestiona la ficha del alumno.
 
-        Lo único que declara es cuándo entrena: su franja de mañana, la de
-        tarde y los cambios por día. Datos personales, división, escuela,
-        contactos y notas quedan fuera de su serializer — no los ve ni los
-        puede escribir. Dirección y coaches siguen con la ficha completa.
+        Solo ve cuándo entrena: su franja de mañana, la de tarde y los cambios
+        por día — y desde el 30/10/2026 ni eso lo cambia (`perform_update`).
+        Datos personales, división, escuela, contactos y notas quedan fuera de
+        su serializer. Dirección y coaches siguen con la ficha completa.
         """
         user = self.request.user
         if (user.is_authenticated and not user.is_superadmin
@@ -631,6 +631,14 @@ class JugadorViewSet(viewsets.ModelViewSet):
             )
 
     def perform_update(self, serializer):
+        # El horario habitual del alumno no lo toca el entrenador (30/10/2026):
+        # él declara faltas y «viene además», que van por sus endpoints.
+        user = self.request.user
+        if not (user.is_superadmin or user.is_coach):
+            raise PermissionDenied(
+                "El horario habitual del jugador lo cambian su head coach o "
+                "dirección. Tú puedes declarar sus faltas y los días que viene además."
+            )
         # #18: al dar de baja (activo True->False) se avisa a dirección in-app.
         antes_activo = serializer.instance.activo
         jugador = serializer.save()
