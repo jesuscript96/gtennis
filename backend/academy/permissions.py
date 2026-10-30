@@ -83,11 +83,12 @@ def evalua_fisico(user):
     return es_preparador(user) or gestion_deportiva(user)
 
 
-# Entrenadores de tenis de Competición de tardes. Los tres pueden evaluar a
-# todos los jugadores de la escuela; gestión deportiva también. 29/10/2026,
-# respuesta del club: entra Salva Barcala, sale Jorge Mico (es de pádel) y
-# Alberto Sanz coordina: reparte los jugadores entre los tres.
-EVALUAN_COMPETICION_TARDES = {"alvaro.mantoan", "alberto.sanz", "salva.barcala"}
+# Entrenadores de tenis de Competición de tardes. Pueden evaluar a todos los
+# jugadores de la escuela; gestión deportiva también. 29/10/2026, respuesta del
+# club: entra Salva Barcala, sale Jorge Mico (es de pádel) y Alberto Sanz
+# coordina: reparte los jugadores entre ellos. 30/10/2026: Álvaro Mantoan pasa
+# a entrenar mañana y tarde en el puesto de Salva, y Salva le sustituye aquí.
+EVALUAN_COMPETICION_TARDES = {"alberto.sanz", "salva.barcala"}
 COORDINAN_COMPETICION_TARDES = {"alberto.sanz"}
 # La parte física de Competición de tardes la hace Diego Domínguez: a él le
 # llegan sus recordatorios (sin él, a todos los preparadores).

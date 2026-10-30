@@ -47,7 +47,7 @@ class InformeTests(TestCase):
         return c
 
     def _tenis(self, user=None):
-        c = self.api(user or self.alvaro)
+        c = self.api(user or self.salva)
         r = c.post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
         self.assertEqual(r.status_code, 201, r.data)
         c.patch(f"/api/evaluaciones/{r.data['id']}/", {"puntuaciones": TENIS, "fortalezas": ["Saque"],
@@ -64,7 +64,7 @@ class InformeTests(TestCase):
 
     def test_circuito_completo(self):
         t = self._tenis()
-        r = self.api(self.alvaro).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        r = self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["informe"]["estado"], "EN_CURSO")
         f = self._fisico()
@@ -80,7 +80,7 @@ class InformeTests(TestCase):
                                                     format="json").status_code, 403)
 
         # No hay dos evaluaciones de tenis en el mismo informe: se sigue con la que hay.
-        r = self.api(self.salva).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
+        r = self.api(self.alberto).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(int(r.data["existente"]), t)
 
@@ -93,9 +93,9 @@ class InformeTests(TestCase):
         r = self.api(self.ivan).post(f"/api/informes/{inf.id}/devolver/",
                                      {"partes": ["tenis"], "nota": "Revisa el revés"}, format="json")
         self.assertEqual(r.data["estado"], "DEVUELTO")
-        self.assertTrue(Aviso.objects.filter(usuario=self.alvaro, titulo__contains="devuelto").exists())
+        self.assertTrue(Aviso.objects.filter(usuario=self.salva, titulo__contains="devuelto").exists())
         self.assertFalse(Aviso.objects.filter(usuario=self.josep, titulo__contains="devuelto").exists())
-        r = self.api(self.alvaro).get(f"/api/evaluaciones/{t}/")
+        r = self.api(self.salva).get(f"/api/evaluaciones/{t}/")
         self.assertEqual(r.data["informe"]["nota_devolucion"], "Revisa el revés")
 
         # Otro entrenador de tarde puede corregirlo; al terminar vuelve a pendiente.
@@ -116,12 +116,12 @@ class InformeTests(TestCase):
         self.assertTrue(Aviso.objects.filter(usuario=self.josep, titulo__contains="validado").exists())
 
         # El trimestre siguiente empieza un informe nuevo.
-        t2 = self._tenis(self.salva)
+        t2 = self._tenis(self.alberto)
         self.assertEqual(Informe.objects.count(), 2)
         self.assertEqual(Evaluacion.objects.get(pk=t2).informe.estado, "EN_CURSO")
 
         # Corregir una parte del ya validado lo devuelve a validar como versión 2.
-        self.api(self.alvaro).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
         inf.refresh_from_db()
         self.assertEqual((inf.estado, inf.version), ("PENDIENTE", 2))
 
@@ -132,7 +132,7 @@ class InformeTests(TestCase):
             fisica=EvaluacionFisica.objects.create(jugador=self.nino, estado="TERMINADA",
                                                    puntuaciones={k: 3 for k in FISICO}))
         t = self._tenis()
-        self.api(self.alvaro).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
         inf = Evaluacion.objects.get(pk=t).informe
         self.assertNotEqual(inf.pk, anterior.pk)
         from . import pdf
@@ -152,7 +152,7 @@ class InformeTests(TestCase):
 
     def test_quien_ve_los_informes_y_el_panel(self):
         self.assertEqual(self.api(self.blas).get("/api/informes/").status_code, 403)
-        for u in (self.alvaro, self.josep, self.ivan, self.dani):
+        for u in (self.salva, self.josep, self.ivan, self.dani):
             self.assertEqual(self.api(u).get("/api/informes/").status_code, 200, u.username)
         r = self.api(self.ivan).get("/api/informes/panel/")
         self.assertTrue(r.data["puede_validar"])
@@ -170,7 +170,7 @@ class InformeTests(TestCase):
         fila = next(j for j in r.data["jugadores"] if j["id"] == self.nino.id)
         self.assertEqual(fila["evaluador"]["nombre"], "Salva Barcala")
         self.assertTrue(r.data["puede_asignar"])
-        self.assertEqual({e["nombre"] for e in r.data["evaluadores"]}, {"Alvaro Mantoan", "Alberto Sanz", "Salva Barcala"})
+        self.assertEqual({e["nombre"] for e in r.data["evaluadores"]}, {"Alberto Sanz", "Salva Barcala"})
         a = Aviso.objects.get(usuario=self.salva)
         self.assertIn("Asier Pérez", a.mensaje)
         # Reasignar al mismo no vuelve a avisar; quitarlo lo deja sin entrenador.
@@ -181,18 +181,21 @@ class InformeTests(TestCase):
         # Jorge Mico (pádel) no está entre los que pueden hacerlo, y un entrenador no reparte.
         r = c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.mico.id}, format="json")
         self.assertEqual(r.status_code, 400)
-        r = self.api(self.alvaro).post("/api/informes/asignar/", {"jugadores": [self.nino.id],
-                                                                  "evaluador": self.alvaro.id}, format="json")
+        # Álvaro Mantoan tampoco desde el 30/10: Salva ocupa su sitio.
+        r = c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.alvaro.id}, format="json")
+        self.assertEqual(r.status_code, 400)
+        r = self.api(self.salva).post("/api/informes/asignar/", {"jugadores": [self.nino.id],
+                                                                  "evaluador": self.salva.id}, format="json")
         self.assertEqual(r.status_code, 403)
-        self.assertFalse(self.api(self.alvaro).get("/api/informes/panel/").data["puede_asignar"])
+        self.assertFalse(self.api(self.salva).get("/api/informes/panel/").data["puede_asignar"])
         # Los demás siguen pudiendo evaluarle.
-        c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.salva.id}, format="json")
-        self._tenis(self.alvaro)
+        c.post("/api/informes/asignar/", {"jugadores": [self.nino.id], "evaluador": self.alberto.id}, format="json")
+        self._tenis(self.salva)
 
     def test_administracion_no_valida(self):
         adm = User.objects.create_user(username="administracion", password="x", role=User.Role.SUPERADMIN)
         t = self._tenis()
-        self.api(self.alvaro).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
         f = self._fisico()
         self.api(self.josep).post(f"/api/evaluaciones-fisicas/{f}/terminar/", {}, format="json")
         inf = Informe.objects.get()
@@ -207,13 +210,13 @@ class InformeTests(TestCase):
         buf.seek(0)
         buf.name = "foto.png"
         url = f"/api/informes/foto/{self.nino.id}/"
-        self.assertEqual(self.api(self.alvaro).get(url).status_code, 404)
-        r = self.api(self.alvaro).post(url, {"foto": buf}, format="multipart")
+        self.assertEqual(self.api(self.salva).get(url).status_code, 404)
+        r = self.api(self.salva).post(url, {"foto": buf}, format="multipart")
         self.assertEqual(r.status_code, 200, r.data)
         r = self.api(self.josep).get(url)
         self.assertEqual(r["Content-Type"], "image/jpeg")
         self.assertEqual(Image.open(BytesIO(r.content)).size, (900, 540))
-        r = self.api(self.alvaro).post(url, {"foto": BytesIO(b"no es una imagen")}, format="multipart")
+        r = self.api(self.salva).post(url, {"foto": BytesIO(b"no es una imagen")}, format="multipart")
         self.assertEqual(r.status_code, 400)
 
 
@@ -223,7 +226,7 @@ class RecordatoriosTests(TestCase):
         self.hoy = timezone.localdate()
         self.nuevo = Jugador.objects.create(nombre="Nuevo", escuela=self.ct, activo=False,
                                             fecha_alta=self.hoy - timedelta(days=3))
-        self.alvaro = User.objects.create_user(username="alvaro.mantoan", password="x", role=User.Role.ENTRENADOR)
+        self.salva = User.objects.create_user(username="salva.barcala", password="x", role=User.Role.ENTRENADOR)
         self.alberto = User.objects.create_user(username="alberto.sanz", password="x", role=User.Role.ENTRENADOR)
         self.josep = User.objects.create_user(username="josep.mari", password="x", role=User.Role.PREPARADOR)
         self.ivan = User.objects.create_user(username="ivan", password="x", role=User.Role.SUPERADMIN)
@@ -236,15 +239,15 @@ class RecordatoriosTests(TestCase):
         a = Aviso.objects.get(usuario=self.alberto)
         self.assertIn("no tienen entrenador", a.titulo)
         self.assertIn("Nuevo", a.mensaje)
-        self.assertFalse(Aviso.objects.filter(usuario=self.alvaro).exists())
+        self.assertFalse(Aviso.objects.filter(usuario=self.salva).exists())
         self.assertTrue(Aviso.objects.filter(usuario=self.josep).exists())
         self.assertFalse(Aviso.objects.filter(usuario=self.ivan).exists())
 
     def test_al_entrenador_asignado_y_a_diego(self):
-        AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.alvaro)
+        AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.salva)
         diego = User.objects.create_user(username="diego.dominguez", password="x", role=User.Role.PREPARADOR)
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=7)), 1)
-        self.assertIn("Toca el primer informe", Aviso.objects.get(usuario=self.alvaro).titulo)
+        self.assertIn("Toca el primer informe", Aviso.objects.get(usuario=self.salva).titulo)
         self.assertFalse(Aviso.objects.filter(usuario=self.alberto).exists())
         # La física de Competición de tardes es de Diego: Josep ya no recibe estos recordatorios.
         self.assertTrue(Aviso.objects.filter(usuario=diego).exists())
@@ -260,10 +263,10 @@ class RecordatoriosTests(TestCase):
         validado = timezone.now() - timedelta(days=76)
         ev = Evaluacion.objects.create(jugador=self.nuevo, evaluador=self.alberto, estado="TERMINADA")
         Informe.objects.create(jugador=self.nuevo, tenis=ev, estado="VALIDADO", validado_en=validado)
-        AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.alvaro)
+        AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.salva)
         self.assertEqual(recordatorios.revisar(self.hoy), 1)
         # El de tenis es el asignado; sin Diego, los preparadores.
-        self.assertTrue(Aviso.objects.filter(usuario=self.alvaro, titulo__contains="pronto").exists())
+        self.assertTrue(Aviso.objects.filter(usuario=self.salva, titulo__contains="pronto").exists())
         self.assertFalse(Aviso.objects.filter(usuario=self.alberto).exists())
         self.assertTrue(Aviso.objects.filter(usuario=self.josep).exists())
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=14)), 1)
