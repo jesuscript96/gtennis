@@ -165,7 +165,7 @@ class InformeTests(TestCase):
         f = self._fisico()
         self.api(self.josep).post(f"/api/evaluaciones-fisicas/{f}/terminar/", {}, format="json")
         inf = Informe.objects.get()
-        traducir = lambda textos, idioma: {k: f"EN {v}" for k, v in textos.items()}
+        traducir = lambda textos, idioma, *contexto: {k: f"EN {v}" for k, v in textos.items()}
         with mock.patch.object(ia, "traducir", side_effect=traducir) as m:
             es = pdf.datos_informe(inf)
             m.assert_not_called()

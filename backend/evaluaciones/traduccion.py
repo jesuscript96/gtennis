@@ -15,11 +15,14 @@ from . import catalogo, ia
 def _traducir(obj, textos, origen, idioma):
     if idioma == origen or not textos:
         return textos
-    firma = hashlib.sha1(json.dumps([idioma, textos], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    jugador = obj.jugador
+    nombre, sexo = jugador.nombre.split()[0], jugador.sexo or ""
+    firma = hashlib.sha1(json.dumps([idioma, nombre, sexo, textos], sort_keys=True, ensure_ascii=False)
+                         .encode()).hexdigest()
     cache = obj.traduccion or {}
     if cache.get("firma") == firma:
         return cache["textos"]
-    out = ia.traducir(textos, idioma)
+    out = ia.traducir(textos, idioma, nombre, sexo)
     obj.traduccion = {"firma": firma, "textos": out}
     obj.save(update_fields=["traduccion"])
     return out

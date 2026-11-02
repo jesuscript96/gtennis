@@ -9,7 +9,7 @@ import {
 import { fmtLarga } from "../../../lib/torneos";
 
 const hoy = () => new Date().toISOString().slice(0, 10);
-const VACIO = { nombre: "", fecha_nacimiento: "", fecha_alta: hoy(), email: "", quien_1: "", email_2: "",
+const VACIO = { nombre: "", sexo: "", fecha_nacimiento: "", fecha_alta: hoy(), email: "", quien_1: "", email_2: "",
   quien_2: "", idioma: "ES" };
 
 /** Alta o cambios de un jugador. Las fechas vacías se mandan como null. */
@@ -30,6 +30,13 @@ function FichaJugador({ inicial, onGuardar, onCancelar }) {
     <form className="card inf-form tardes-ficha" onSubmit={guardar}>
       <div className="tardes-campos">
         <label>Nombre y apellidos<input value={f.nombre} onChange={cambia("nombre")} required /></label>
+        <label>Chico o chica
+          <select value={f.sexo} onChange={cambia("sexo")}>
+            <option value="">Sin indicar</option>
+            <option value="CHICO">Chico</option>
+            <option value="CHICA">Chica</option>
+          </select>
+        </label>
         <label>Fecha de nacimiento<input type="date" value={f.fecha_nacimiento || ""} onChange={cambia("fecha_nacimiento")} /></label>
         <label>Fecha de alta<input type="date" value={f.fecha_alta || ""} onChange={cambia("fecha_alta")} /></label>
         <label>Idioma del informe para la familia

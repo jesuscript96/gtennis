@@ -125,16 +125,23 @@ SISTEMA_TRADUCIR = """Traduces los textos del informe trimestral de un jugador d
 - Devuelve cada texto con su misma clave, sin comillas, corchetes, viñetas ni saltos de línea."""
 
 
-def traducir(textos, idioma):
-    """{clave: texto} traducido a `idioma` (ES/EN), con las mismas claves."""
+SEXO = {"CHICO": "es un chico (en inglés, he/him)", "CHICA": "es una chica (en inglés, she/her)"}
+
+
+def traducir(textos, idioma, jugador=None, sexo=""):
+    """{clave: texto} traducido a `idioma` (ES/EN), con las mismas claves.
+    `jugador` y `sexo` sirven para acertar con los pronombres."""
     esquema = {"type": "object", "properties": {k: {"type": "string"} for k in textos},
                "required": list(textos), "additionalProperties": False}
     respuesta = _llamar(
         max_tokens=8000,
         system=SISTEMA_TRADUCIR,
         output_config={"format": {"type": "json_schema", "schema": esquema}},
-        messages=[{"role": "user", "content": f"Idioma de destino: {IDIOMA[idioma]}.\n\n"
-                                              + json.dumps(textos, ensure_ascii=False, indent=1)}],
+        messages=[{"role": "user", "content": (
+            f"Idioma de destino: {IDIOMA[idioma]}.\n"
+            + (f"Jugador: {jugador}, que {SEXO.get(sexo, 'no sabemos si es chico o chica: no uses he ni she, usa su nombre o they')}.\n"
+               if jugador else "")
+            + "\n" + json.dumps(textos, ensure_ascii=False, indent=1))}],
     )
     try:
         datos = json.loads(_texto(respuesta))

@@ -220,7 +220,7 @@ class JugadorTardesSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Jugador
-        fields = ["id", "nombre", "fecha_nacimiento", "edad", "fecha_alta", "fecha_baja", "email",
+        fields = ["id", "nombre", "sexo", "fecha_nacimiento", "edad", "fecha_alta", "fecha_baja", "email",
                   "quien_1", "email_2", "quien_2", "idioma", "evaluador"]
         read_only_fields = ["edad", "fecha_baja"]
 
