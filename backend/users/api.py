@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academy.models import Coach, Entrenador
-from academy.permissions import aprueba_invitados, evalua_fisico, evalua_tenis_solo_informes, gestion_deportiva, valida_informes, ve_informes
+from academy.permissions import aprueba_invitados, coordina_informes, evalua_fisico, evalua_tenis_solo_informes, gestion_deportiva, valida_informes, ve_informes
 
 User = get_user_model()
 
@@ -51,6 +51,7 @@ def _user_payload(user):
         "evalua_fisico": evalua_fisico(user),
         "ve_informes": ve_informes(user),
         "evalua_tenis_informes": evalua_tenis_solo_informes(user),
+        "coordina_informes": coordina_informes(user),
         "valida_informes": valida_informes(user),
         "entrenador_id": entrenador.id if entrenador else None,
         "entrenador": entrenador_info,

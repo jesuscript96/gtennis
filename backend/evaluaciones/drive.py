@@ -9,6 +9,7 @@ fichero en vez de duplicarlo.
 import base64
 import json
 import logging
+import unicodedata
 import uuid
 
 from django.conf import settings
@@ -39,14 +40,21 @@ def _credenciales():
     return json.loads(bruto)
 
 
-def _sesion():
-    if not configurado():
+def ct_configurado():
+    """¿Van los informes de tardes a «Mi unidad» de la cuenta del club?"""
+    return bool(settings.GOOGLE_SERVICE_ACCOUNT_JSON and settings.DRIVE_CT_USUARIO)
+
+
+def _sesion(en_nombre_de=None):
+    if not (configurado() or (en_nombre_de and ct_configurado())):
         raise DriveNoDisponible("Drive no está conectado.")
     from google.auth.transport.requests import AuthorizedSession
     from google.oauth2 import service_account
 
     cred = service_account.Credentials.from_service_account_info(
         _credenciales(), scopes=["https://www.googleapis.com/auth/drive"])
+    if en_nombre_de:
+        cred = cred.with_subject(en_nombre_de)
     return AuthorizedSession(cred)
 
 
@@ -96,12 +104,12 @@ def _multipart(metadatos, contenido, tipo="application/pdf"):
     return cuerpo, {"Content-Type": f"multipart/related; boundary={frontera}"}
 
 
-def subir(ev):
+def subir(ev, idioma=None):
     """Sube (o reescribe) el PDF del informe en la carpeta del jugador.
     Devuelve `(file_id, url)`."""
     try:
         s = _sesion()
-        nombre, contenido = pdf.nombre(ev), pdf.generar(ev)
+        nombre, contenido = pdf.nombre(ev, idioma), pdf.generar(ev, idioma)
         params = {**COMUN, "uploadType": "multipart", "fields": "id,webViewLink"}
         if ev.drive_file_id and _sigue_ahi(s, ev.drive_file_id):
             cuerpo, cab = _multipart({"name": nombre}, contenido)
@@ -159,19 +167,74 @@ def _carpeta_ruta(s, partes):
     return padre
 
 
-def subir_informe(inf):
+# --- Competición de tardes en «Mi unidad» del club (02/11/2026) --------------
+# DRIVE_CT_RUTA › «Por validar» | «Validados», con los PDF de todos los jugadores
+# juntos. La ruta ya existe en el Drive de DRIVE_CT_USUARIO; las dos carpetas se
+# crean si faltan.
+CARPETA_CT = {"pendientes": "Por validar", "validados": "Validados"}
+
+
+def _normal(nombre):
+    """Para comparar nombres de carpeta sin que importen tildes, mayúsculas ni espacios."""
+    sin_tildes = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
+    return " ".join(sin_tildes.lower().split())
+
+
+def _hija(s, padre, nombre, crear=False):
+    """ID de la carpeta `nombre` dentro de `padre` (comparando sin tildes ni mayúsculas)."""
+    r = s.get(API, params={**COMUN, "includeItemsFromAllDrives": "true", "pageSize": 200, "fields": "files(id,name)",
+                           "q": f"'{padre}' in parents and mimeType = '{CARPETA}' and trashed = false"})
+    for f in _ok(r, "buscar una carpeta").get("files", []):
+        if _normal(f["name"]) == _normal(nombre):
+            return f["id"]
+    if not crear:
+        raise DriveNoDisponible(f"No encuentro la carpeta «{nombre}» en el Drive de {settings.DRIVE_CT_USUARIO}.")
+    return _ok(s.post(API, params={**COMUN, "fields": "id"},
+                      json={"name": nombre, "mimeType": CARPETA, "parents": [padre]}), "crear una carpeta")["id"]
+
+
+def _carpeta_ct(s, destino):
+    """La carpeta «Por validar» o «Validados»; recuerda cada tramo en `CarpetaDrive`."""
+    from .models import CarpetaDrive
+
+    partes = [p.strip() for p in settings.DRIVE_CT_RUTA.split("›") if p.strip()] + [CARPETA_CT[destino]]
+    padre = "root"
+    for i, nombre in enumerate(partes):
+        ruta = "ct:" + " › ".join(partes[: i + 1])
+        guardada = CarpetaDrive.objects.filter(ruta=ruta).first()
+        if guardada and _sigue_ahi(s, guardada.folder_id):
+            padre = guardada.folder_id
+            continue
+        padre = _hija(s, padre, nombre, crear=i == len(partes) - 1)
+        CarpetaDrive.objects.update_or_create(ruta=ruta, defaults={"folder_id": padre})
+    return padre
+
+
+def subir_informe(inf, idioma="ES"):
     """Deja el PDF conjunto del informe en la carpeta que le toca por su estado
-    (validado → «Validados y enviados»; si no, «Pendientes de validar»).
-    Reescribe el mismo fichero: solo se guarda la última versión."""
+    y reescribe el mismo fichero: solo se guarda la última versión. Con
+    DRIVE_CT_USUARIO, en «Por validar» o «Validados» de su Drive; si no, en la
+    unidad compartida, Escuela › Jugador › «Pendientes de validar» o
+    «Validados y enviados»."""
     try:
-        s = _sesion()
         destino = "validados" if inf.estado == inf.Estado.VALIDADO else "pendientes"
-        escuela = inf.jugador.escuela.nombre if inf.jugador.escuela_id else "Sin escuela"
-        carpeta = _carpeta_ruta(s, [escuela, inf.jugador.nombre.strip(), SUBCARPETA[destino]])
-        nombre, contenido = pdf.nombre_informe(inf), pdf.generar_informe(inf)
+        if ct_configurado():
+            s = _sesion(settings.DRIVE_CT_USUARIO)
+            carpeta = _carpeta_ct(s, destino)
+        else:
+            s = _sesion()
+            escuela = inf.jugador.escuela.nombre if inf.jugador.escuela_id else "Sin escuela"
+            carpeta = _carpeta_ruta(s, [escuela, inf.jugador.nombre.strip(), SUBCARPETA[destino]])
+        nombre, contenido = pdf.nombre_informe(inf, idioma), pdf.generar_informe(inf, idioma)
         params = {**COMUN, "uploadType": "multipart", "fields": "id,webViewLink,parents"}
+        actual = None
         if inf.drive_file_id and _sigue_ahi(s, inf.drive_file_id):
-            actual = _ok(s.get(f"{API}/{inf.drive_file_id}", params={**COMUN, "fields": "parents"}), "leer el informe")
+            actual = _ok(s.get(f"{API}/{inf.drive_file_id}", params={**COMUN, "fields": "parents,driveId"}),
+                         "leer el informe")
+            # El de la unidad compartida de antes no se mueve a «Mi unidad»: se hace uno nuevo.
+            if ct_configurado() and actual.get("driveId"):
+                actual = None
+        if actual is not None:
             cuerpo, cab = _multipart({"name": nombre}, contenido)
             mover = {}
             antiguos = [p for p in actual.get("parents", []) if p != carpeta]

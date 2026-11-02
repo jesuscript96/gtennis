@@ -6,13 +6,17 @@ import { fmtLarga } from "../lib/torneos";
 
 const COMPETICION = "competicion";
 
-// Paso 0: idioma · 1-8: bloques · 9: competición · 10: fortalezas y mejoras.
+// 1-8: bloques · 9: competición · 10: el entrenador escribe fortalezas y
+// mejoras · 11: cómo quedan pasadas a limpio. Desde el 02/11/2026 no se elige
+// idioma: se evalúa siempre en español y el idioma de la familia solo cambia
+// el PDF que se le envía.
 const PASO_COMPETICION = 9;
-const PASO_RESUMEN = 10;
+const PASO_FRASES = 10;
+const PASO_RESUMEN = 11;
 
 export function pasoInicial(ev, bloques) {
   if (ev.estado === "TERMINADA") return PASO_RESUMEN;
-  if (!ev.puntuados) return 0;
+  if (!ev.puntuados) return 1;
   const i = bloques.findIndex((b) => b.criterios.some((c) => !(c.clave in ev.puntuaciones)));
   return i === -1 ? PASO_COMPETICION : i + 1;
 }
@@ -53,6 +57,8 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
   const [revisando, setRevisando] = useState(false);
   const [fortalezas, setFortalezas] = useState(["", "", ""]);
   const [mejoras, setMejoras] = useState(["", "", ""]);
+  const [misFortalezas, setMisFortalezas] = useState(["", "", ""]);
+  const [misMejoras, setMisMejoras] = useState(["", "", ""]);
   const [ocupado, setOcupado] = useState("");
   const [error, setError] = useState("");
   const [avisos, setAvisos] = useState([]);
@@ -71,9 +77,14 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
     setPulido(com.pulido || "");
     setRevisando(Boolean(com.pulido));
     setAbierto(Boolean(com.original) || paso === PASO_COMPETICION);
+    const tres = (xs) => [0, 1, 2].map((i) => (xs || [])[i] || "");
+    if (paso === PASO_FRASES) {
+      setMisFortalezas(tres(ev.fortalezas_original));
+      setMisMejoras(tres(ev.mejoras_original));
+    }
     if (paso === PASO_RESUMEN) {
-      setFortalezas([0, 1, 2].map((i) => ev.fortalezas[i] || ""));
-      setMejoras([0, 1, 2].map((i) => ev.mejoras[i] || ""));
+      setFortalezas(tres(ev.fortalezas));
+      setMejoras(tres(ev.mejoras));
     }
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,17 +139,28 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
     });
   }
 
-  async function generar(rehacer = false) {
-    await trabajo(rehacer ? "Pidiendo otra propuesta…" : "Generando el informe…", async () => {
-      if (!rehacer && !(await guardarComentario(ev))) return;
-      const r = await terminarEvaluacion(ev.id, rehacer);
+  async function acabarCompeticion() {
+    await trabajo(ia && abierto && texto.trim() && !revisando ? "Puliendo el comentario…" : "Guardando…", async () => {
+      if (!(await guardarComentario(ev))) return;
+      setAvisos([]);
+      setPaso(PASO_FRASES);
+    });
+  }
+
+  async function generar() {
+    const limpias = (xs) => xs.map((x) => x.trim()).filter(Boolean);
+    if (!limpias(misFortalezas).length || !limpias(misMejoras).length) {
+      setError("Escribe al menos una fortaleza y un área de mejora.");
+      return;
+    }
+    await trabajo(ia ? "Pasándolas a limpio…" : "Generando el informe…", async () => {
+      const r = await terminarEvaluacion(ev.id, {
+        fortalezas_original: limpias(misFortalezas), mejoras_original: limpias(misMejoras),
+      });
       const { avisos: nuevos, ...nuevo } = r;
       actualizar(nuevo);
       setAvisos(nuevos || []);
-      if (rehacer) {
-        setFortalezas([0, 1, 2].map((i) => nuevo.fortalezas[i] || ""));
-        setMejoras([0, 1, 2].map((i) => nuevo.mejoras[i] || ""));
-      } else setPaso(PASO_RESUMEN);
+      setPaso(PASO_RESUMEN);
     });
   }
 
@@ -150,13 +172,6 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
       });
       actualizar(nuevo);
       onTerminada?.(nuevo);
-    });
-  }
-
-  async function empezar(idioma) {
-    await trabajo("Guardando…", async () => {
-      if (idioma !== ev.idioma) actualizar(await guardarEvaluacion(ev.id, { idioma }));
-      setPaso(1);
     });
   }
 
@@ -192,7 +207,7 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
 
   const cabecera = (
     <p className="eval-cabecera">
-      Informe: <b>{ev.jugador_nombre}</b> — {fmtLarga(ev.fecha)} · {ev.idioma === "EN" ? "en inglés" : "en español"}
+      Informe: <b>{ev.jugador_nombre}</b> — {fmtLarga(ev.fecha)}
     </p>
   );
 
@@ -206,7 +221,7 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
 
   const pie = (children) => (
     <div className="eval-pie">
-      {paso > 0 && paso < PASO_RESUMEN && (
+      {paso > 1 && paso < PASO_RESUMEN && (
         <button type="button" className="btn ghost" disabled={!!ocupado} onClick={() => setPaso(paso - 1)}>Atrás</button>
       )}
       {children}
@@ -216,28 +231,14 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
   return (
     <div className="eval-asistente">
       {cabecera}
-      {paso >= 1 && paso <= PASO_COMPETICION && (
-        <div className="eval-progreso" aria-label={`Paso ${paso} de ${PASO_COMPETICION}`}>
-          {Array.from({ length: PASO_COMPETICION }, (_, i) => (
+      {paso >= 1 && paso <= PASO_FRASES && (
+        <div className="eval-progreso" aria-label={`Paso ${paso} de ${PASO_FRASES}`}>
+          {Array.from({ length: PASO_FRASES }, (_, i) => (
             <span key={i} className={i + 1 < paso ? "hecho" : i + 1 === paso ? "actual" : ""} />
           ))}
         </div>
       )}
       {hecho && <p className="eval-hecho" role="status">{hecho}</p>}
-
-      {paso === 0 && (
-        <div className="card eval-paso">
-          <h2>¿En qué idioma quieres el informe?</h2>
-          {mensajes}
-          <p className="eval-nota">Las notas y comentarios los pones en español; si eliges inglés, Claude los traduce.</p>
-          <div className="eval-idiomas">
-            {[["ES", "Español"], ["EN", "Inglés"]].map(([cod, nombre]) => (
-              <button key={cod} type="button" className={`btn${ev.idioma === cod ? "" : " ghost"}`}
-                disabled={!!ocupado} onClick={() => empezar(cod)}>{nombre}</button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {bloque && (
         <div className="card eval-paso">
@@ -260,8 +261,33 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
           {comentario("los torneos")}
           {mensajes}
           {pie(
-            <button type="button" className="btn" disabled={!!ocupado} onClick={() => generar(false)}>
-              {ocupado || (ia && abierto && texto.trim() && !revisando ? "Pulir y revisar" : "Generar informe")}
+            <button type="button" className="btn" disabled={!!ocupado} onClick={acabarCompeticion}>
+              {ocupado || (ia && abierto && texto.trim() && !revisando ? "Pulir y revisar" : "Siguiente")}
+            </button>
+          )}
+        </div>
+      )}
+
+      {paso === PASO_FRASES && (
+        <div className="card eval-paso">
+          <h2>Fortalezas y áreas de mejora</h2>
+          <p className="eval-nota">
+            Escribe hasta tres de cada (al menos una). Puedes dictarlas con el micrófono del teclado.
+            {ia && " Al generar el informe, Claude las pasa a limpio sin cambiar lo que dices."}
+          </p>
+          {[["Fortalezas", misFortalezas, setMisFortalezas], ["Áreas de mejora", misMejoras, setMisMejoras]].map(([titulo, lista, set]) => (
+            <fieldset key={titulo} className="eval-frases">
+              <legend>{titulo}</legend>
+              {lista.map((f, i) => (
+                <input key={i} type="text" value={f} aria-label={`${titulo} ${i + 1}`}
+                  onChange={(e) => set(lista.map((x, j) => (j === i ? e.target.value : x)))} />
+              ))}
+            </fieldset>
+          ))}
+          {mensajes}
+          {pie(
+            <button type="button" className="btn" disabled={!!ocupado} onClick={generar}>
+              {ocupado || "Generar informe"}
             </button>
           )}
         </div>
@@ -269,12 +295,8 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
 
       {paso === PASO_RESUMEN && (
         <div className="card eval-paso">
-          <h2>Fortalezas y áreas de mejora</h2>
-          <p className="eval-nota">
-            {ev.fortalezas.length
-              ? "Propuesta de Claude a partir de tus notas y comentarios. Retócala si hace falta."
-              : "Escribe tres fortalezas y tres áreas de mejora."}
-          </p>
+          <h2>Así quedan en el informe</h2>
+          <p className="eval-nota">Tus fortalezas y áreas de mejora pasadas a limpio. Retócalas si hace falta.</p>
           {[["Fortalezas", fortalezas, setFortalezas], ["Áreas de mejora", mejoras, setMejoras]].map(([titulo, lista, set]) => (
             <fieldset key={titulo} className="eval-frases">
               <legend>{titulo}</legend>
@@ -286,12 +308,7 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
           ))}
           {mensajes}
           <div className="eval-pie">
-            <button type="button" className="btn ghost" disabled={!!ocupado} onClick={() => setPaso(PASO_COMPETICION)}>Atrás</button>
-            {ia && (
-              <button type="button" className="btn ghost" disabled={!!ocupado} onClick={() => generar(true)}>
-                Otra propuesta
-              </button>
-            )}
+            <button type="button" className="btn ghost" disabled={!!ocupado} onClick={() => setPaso(PASO_FRASES)}>Atrás</button>
             <button type="button" className="btn" disabled={!!ocupado} onClick={guardarResumen}>
               {ocupado || "Guardar informe"}
             </button>

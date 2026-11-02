@@ -83,7 +83,7 @@ function Validar({ inf, onCambio }) {
   const [modo, setModo] = useState(null); // null | "aprobar" | "devolver"
   const [dest, setDest] = useState(() =>
     inf.destinatarios.length ? inf.destinatarios
-      : inf.email_familia ? [{ email: inf.email_familia, quien: "Familia" }] : [{ email: "", quien: "Familia" }]);
+      : inf.destinatarios_propuestos.length ? inf.destinatarios_propuestos : [{ email: "", quien: "Familia" }]);
   const [partes, setPartes] = useState([]);
   const [nota, setNota] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -130,7 +130,7 @@ function Validar({ inf, onCambio }) {
           </button>
           <p className="eval-nota">
             El envío por correo todavía no está activo: los destinatarios se guardan para cuando lo esté.
-            Al aprobar, el PDF pasa a «Validados y enviados» en Drive.
+            Al aprobar, el PDF pasa a la carpeta de validados en Drive, en el idioma de la familia.
           </p>
           <div className="eval-pie">
             <button type="button" className="btn ghost" onClick={() => setModo(null)}>Cancelar</button>
@@ -178,10 +178,10 @@ export default function InformePage() {
   useEffect(() => { getInforme(id).then(setInf).catch((e) => setError(e.message)); }, [id]);
   useEffect(() => () => { if (pdf) URL.revokeObjectURL(pdf.url); }, [pdf]);
 
-  async function verPdf() {
+  async function verPdf(idioma = "ES") {
     setCargandoPdf(true); setError("");
     try {
-      const f = await descargarPdfInforme(id);
+      const f = await descargarPdfInforme(id, idioma);
       setPdf({ url: URL.createObjectURL(f.blob), nombre: f.nombre });
     } catch (e) { setError(e.message); }
     setCargandoPdf(false);
@@ -207,7 +207,7 @@ export default function InformePage() {
         <Foto inf={inf} />
         <div className="inf-resumen">
           <p><span className={`pill ${pill}`}>{estado}</span>
-            {inf.idioma && <span className="eval-nota"> · {inf.idioma === "EN" ? "en inglés" : "en español"}</span>}
+            {inf.idioma === "EN" && <span className="eval-nota"> · a la familia se le envía en inglés</span>}
           </p>
           {inf.estado === "EN_CURSO" && (
             <p className="eval-nota">Cuando tenis y preparación física estén terminadas, pasa a validar.</p>
@@ -225,8 +225,13 @@ export default function InformePage() {
           )}
           <div className="eval-acciones">
             {inf.tenis && (
-              <button type="button" className="btn ghost" disabled={cargandoPdf} onClick={verPdf}>
+              <button type="button" className="btn ghost" disabled={cargandoPdf} onClick={() => verPdf("ES")}>
                 {cargandoPdf ? "Generando PDF…" : "Ver PDF"}
+              </button>
+            )}
+            {inf.tenis && inf.idioma === "EN" && (
+              <button type="button" className="btn ghost" disabled={cargandoPdf} onClick={() => verPdf("EN")}>
+                PDF para la familia (inglés)
               </button>
             )}
             {pdf && <a className="btn ghost" href={pdf.url} download={pdf.nombre}>Descargar PDF</a>}

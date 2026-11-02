@@ -160,3 +160,9 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 # en base64. Sin ella los informes se descargan pero no se suben.
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 DRIVE_INFORMES_ID = os.environ.get("DRIVE_INFORMES_ID", "")
+# Informes de Competición de tardes (02/11/2026): en «Mi unidad» de esta cuenta
+# del club, en dos carpetas dentro de DRIVE_CT_RUTA (tramos separados por « › »).
+# La cuenta de servicio entra en su nombre (delegación en todo el dominio).
+DRIVE_CT_USUARIO = os.environ.get("DRIVE_CT_USUARIO", "")
+DRIVE_CT_RUTA = os.environ.get(
+    "DRIVE_CT_RUTA", "gtennis › Gestión deportiva › Competición tardes › 26/27 › Seguimiento y Evaluación")

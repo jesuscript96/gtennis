@@ -79,49 +79,60 @@ def es_preparador(user):
 
 
 def evalua_fisico(user):
-    """Ve y hace evaluaciones físicas: el preparador físico y gestión deportiva."""
-    return es_preparador(user) or gestion_deportiva(user)
+    """Ve y hace evaluaciones físicas: el preparador físico, gestión deportiva y
+    quien esté de físico en el equipo de tardes."""
+    return es_preparador(user) or gestion_deportiva(user) or _en_tardes(user, "FISICO")
 
 
-# Entrenadores de tenis de Competición de tardes. Pueden evaluar a todos los
-# jugadores de la escuela; gestión deportiva también. 29/10/2026, respuesta del
-# club: entra Salva Barcala, sale Jorge Mico (es de pádel) y Alberto Sanz
-# coordina: reparte los jugadores entre ellos. 30/10/2026: Álvaro Mantoan pasa
-# a entrenar mañana y tarde en el puesto de Salva, y Salva le sustituye aquí.
-EVALUAN_COMPETICION_TARDES = {"alberto.sanz", "salva.barcala"}
+# Competición de tardes. Alberto Sanz coordina (29/10/2026) y desde el
+# 02/11/2026 también valida sus informes, reparte los jugadores y da de alta y
+# de baja a jugadores y entrenadores de tardes. Quién evalúa cada parte ya no
+# es una lista fija: lo lleva él en la app (`evaluaciones.MiembroTardes`).
 COORDINAN_COMPETICION_TARDES = {"alberto.sanz"}
-# La parte física de Competición de tardes: de momento Diego Domínguez y Josep
-# Mari evalúan a todos y a los dos les llegan los recordatorios (02/11/2026).
-# Sin ninguno activo, a todos los preparadores.
-FISICO_COMPETICION_TARDES = {"diego.dominguez", "josep.mari"}
+
+
+def _de(user, nombres):
+    return bool(user and user.is_authenticated and user.username in nombres)
+
+
+def _en_tardes(user, funcion):
+    if not (user and user.is_authenticated):
+        return False
+    from evaluaciones.models import MiembroTardes
+
+    return MiembroTardes.objects.filter(usuario=user, funcion=funcion).exists()
+
+
+def es_coordinador_tardes(user):
+    return _de(user, COORDINAN_COMPETICION_TARDES)
 
 
 def coordina_informes(user):
-    """Reparte los jugadores de Competición de tardes entre sus entrenadores."""
-    return gestion_deportiva(user) or bool(
-        user and user.is_authenticated and user.username in COORDINAN_COMPETICION_TARDES)
+    """Lleva Competición de tardes: reparte jugadores, da altas y bajas de
+    jugadores y del equipo de informes."""
+    return gestion_deportiva(user) or es_coordinador_tardes(user)
 
 
 def evalua_tenis_solo_informes(user):
     """Hace la evaluación de tenis de los alumnos de escuelas «solo informes»."""
-    return gestion_deportiva(user) or bool(
-        user and user.is_authenticated and user.username in EVALUAN_COMPETICION_TARDES)
+    return (gestion_deportiva(user) or es_coordinador_tardes(user)
+            or _en_tardes(user, "TENIS"))
 
 
 # Además de gestión deportiva, valida Iván Gallego (coach, como Dani: «validan
-# Sergio, Iván, Dani Gimeno o admin», 27/10/2026).
+# Sergio, Iván, Dani Gimeno o admin», 27/10/2026), y el coordinador de tardes.
 VALIDAN_INFORMES = {"ivan.gallego"}
 # Administración envía los informes a las familias, pero no los valida (29/10/2026).
 NO_VALIDAN_INFORMES = {"administracion"}
 
 
 def valida_informes(user):
-    """Valida (aprueba, corrige o devuelve) los informes: gestión deportiva
-    (Sergio, Iván, Dani Gimeno, admin y el resto de dirección, menos administración)."""
-    if user and user.is_authenticated and user.username in NO_VALIDAN_INFORMES:
+    """Valida (aprueba, corrige o devuelve) los informes: el coordinador de
+    tardes y gestión deportiva (Sergio, Iván, Dani Gimeno, admin y el resto de
+    dirección, menos administración)."""
+    if _de(user, NO_VALIDAN_INFORMES):
         return False
-    return gestion_deportiva(user) or bool(
-        user and user.is_authenticated and user.username in VALIDAN_INFORMES)
+    return gestion_deportiva(user) or _de(user, VALIDAN_INFORMES) or es_coordinador_tardes(user)
 
 
 def ve_informes(user):
@@ -137,5 +148,14 @@ def usuarios_valida_informes():
     from django.db.models import Q
     User = get_user_model()
     return [u for u in User.objects.filter(is_active=True).filter(
-        Q(role="SUPERADMIN") | Q(is_superuser=True) | Q(username__in=GESTION_DEPORTIVA | VALIDAN_INFORMES))
+        Q(role="SUPERADMIN") | Q(is_superuser=True) | Q(username__in=GESTION_DEPORTIVA | VALIDAN_INFORMES | COORDINAN_COMPETICION_TARDES))
         .exclude(username__in=NO_VALIDAN_INFORMES)]
+
+
+def usuarios_avisar_validar():
+    """A quién se avisa de que hay un informe listo para validar: el
+    coordinador de tardes (02/11/2026). Sin él activo, a todos los que validan."""
+    from django.contrib.auth import get_user_model
+
+    coord = list(get_user_model().objects.filter(is_active=True, username__in=COORDINAN_COMPETICION_TARDES))
+    return coord or usuarios_valida_informes()

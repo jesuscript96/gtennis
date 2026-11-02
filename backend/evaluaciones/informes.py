@@ -11,15 +11,14 @@ aprobar se guardan los destinatarios para cuando lo haya.
 import logging
 from datetime import timedelta
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
 
 from academy.models import Aviso
-from academy.permissions import (
-    COORDINAN_COMPETICION_TARDES, EVALUAN_COMPETICION_TARDES, FISICO_COMPETICION_TARDES, usuarios_valida_informes,
-)
+from academy.permissions import COORDINAN_COMPETICION_TARDES, usuarios_avisar_validar
 
-from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe
+from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, MiembroTardes
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +29,27 @@ PRIMERA_TRAS_ALTA = 7  # un jugador nuevo, a la semana de su alta
 
 class InformeError(Exception):
     """Algo que el usuario tiene que saber (se devuelve como 400)."""
+
+
+def idioma_familia(jugador, defecto="ES"):
+    """Idioma del PDF que se envía a la familia (02/11/2026): lo demás va
+    siempre en español. Sin dato, `defecto` (el de las evaluaciones de antes,
+    cuando lo elegía el entrenador)."""
+    try:
+        return jugador.datos_informe.idioma
+    except ObjectDoesNotExist:
+        return defecto
+
+
+def destinatarios_propuestos(jugador):
+    """Los correos de la familia que se proponen al aprobar el informe."""
+    datos = getattr(jugador, "datos_informe", None)
+    out = []
+    if jugador.email:
+        out.append({"email": jugador.email, "quien": (datos.quien_1 if datos else "") or "Familia"})
+    if datos and datos.email_2:
+        out.append({"email": datos.email_2, "quien": datos.quien_2 or "Familia"})
+    return out
 
 
 def es_de_informe(jugador):
@@ -85,38 +105,36 @@ def autores(inf, partes=("tenis", "fisico")):
     return out
 
 
-def _traducir_fisico(inf):
-    """Si el informe va en inglés, los textos del preparador físico (que se
-    escriben en español) se pasan a inglés con la IA."""
-    from . import ia
-
-    if not inf.tenis or inf.tenis.idioma == "ES" or not inf.fisica:
-        inf.textos_fisico_traducidos = {}
-        return
-    out = {}
-    for clave, texto in inf.fisica.textos.items():
-        if not texto:
-            continue
-        try:
-            out[clave] = ia.pulir(texto, inf.tenis.idioma, "la preparación física")
-        except ia.IANoDisponible:
-            out[clave] = texto
-    inf.textos_fisico_traducidos = out
+def idioma_pdf(inf):
+    """El idioma del PDF que se guarda: en español mientras se revisa; una vez
+    validado, el de la familia, que es el que se le envía."""
+    if inf.estado != Informe.Estado.VALIDADO:
+        return "ES"
+    return idioma_familia(inf.jugador, inf.tenis.idioma if inf.tenis else "ES")
 
 
 def guardar_en_drive(inf):
     """Genera el PDF conjunto y lo deja en la carpeta que toca según el
-    estado. Devuelve un aviso si Drive falla (el informe sigue en la app)."""
-    from . import drive
+    estado. Devuelve un aviso si Drive o la traducción fallan (el informe
+    sigue en la app)."""
+    from . import drive, ia, traduccion
 
-    if not drive.configurado():
+    if not (drive.configurado() or drive.ct_configurado()):
         return None
+    idioma, aviso = idioma_pdf(inf), None
+    if idioma != "ES":
+        try:
+            traduccion.tenis(inf.tenis, idioma)
+            if inf.fisica:
+                traduccion.fisica(inf.fisica, idioma)
+        except ia.IANoDisponible as e:
+            idioma, aviso = "ES", f"No se ha podido traducir el PDF ({e}): en Drive queda en español. Pulsa «Guardar en Drive» para reintentarlo."
     try:
-        drive.subir_informe(inf)
+        drive.subir_informe(inf, idioma)
         inf.save(update_fields=["drive_file_id", "drive_url", "drive_carpeta", "actualizado"])
     except drive.DriveNoDisponible as e:
         return f"{e} El informe está en la app; se reintenta al validar."
-    return None
+    return aviso
 
 
 def parte_terminada(ev):
@@ -130,8 +148,7 @@ def parte_terminada(ev):
         return inf
     if inf.estado == Informe.Estado.PENDIENTE:
         # Ya estaba pendiente y se ha retocado: se rehace el PDF, sin avisar otra vez.
-        _traducir_fisico(inf)
-        inf.save(update_fields=["textos_fisico_traducidos", "actualizado"])
+        inf.save(update_fields=["actualizado"])
         guardar_en_drive(inf)
         return inf
     corregido = inf.estado == Informe.Estado.VALIDADO
@@ -139,11 +156,10 @@ def parte_terminada(ev):
         inf.version += 1
     inf.estado = Informe.Estado.PENDIENTE
     inf.devuelto_partes = []
-    _traducir_fisico(inf)
     inf.save()
     guardar_en_drive(inf)
     nombre = inf.jugador.nombre
-    _avisar(usuarios_valida_informes(),
+    _avisar(usuarios_avisar_validar(),
             f"Informe de {nombre} {'corregido, ' if corregido else ''}listo para validar",
             "Tenis y preparación física están terminados. Revísalo en Informes y apruébalo o "
             "devuélvelo con una nota.")
@@ -208,16 +224,19 @@ def ciclo(jugador, hoy=None):
     return {"estado": estado, "proxima": desde + timedelta(days=CICLO_VENCIDO), "desde": desde}
 
 
-def _usuarios(**filtro):
+def _usuarios(*q, **filtro):
     from django.contrib.auth import get_user_model
 
-    return list(get_user_model().objects.filter(is_active=True, **filtro).select_related("entrenador")
-                .order_by("first_name", "username"))
+    return list(get_user_model().objects.filter(*q, is_active=True, **filtro).select_related("entrenador")
+                .distinct().order_by("first_name", "username"))
 
 
 def evaluadores_tenis_por_defecto():
-    """Los entrenadores de tenis de Competición de tardes: entre ellos reparte el coordinador."""
-    return _usuarios(username__in=EVALUAN_COMPETICION_TARDES)
+    """Los entrenadores de tenis de Competición de tardes (el equipo y el
+    coordinador): entre ellos reparte el coordinador."""
+    from django.db.models import Q
+
+    return _usuarios(Q(tardes__funcion=MiembroTardes.Funcion.TENIS) | Q(username__in=COORDINAN_COMPETICION_TARDES))
 
 
 def coordinadores():
@@ -226,7 +245,7 @@ def coordinadores():
 
 def preparadores():
     """Quien hace la física de Competición de tardes; sin él, todos los preparadores."""
-    return _usuarios(username__in=FISICO_COMPETICION_TARDES) or _usuarios(role="PREPARADOR")
+    return _usuarios(tardes__funcion=MiembroTardes.Funcion.FISICO) or _usuarios(role="PREPARADOR")
 
 
 def asignar(jugadores, evaluador, por):

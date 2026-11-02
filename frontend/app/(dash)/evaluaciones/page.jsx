@@ -90,7 +90,7 @@ function Tenis({ pestanas }) {
                   <Link href={`/evaluaciones/${e.id}`} className="card">
                     <span className="eval-lista-nombre">{e.jugador_nombre}</span>
                     <span className="eval-lista-meta">
-                      {fmtLarga(e.fecha)} · {e.nombre_evaluador} · {e.idioma}
+                      {fmtLarga(e.fecha)} · {e.nombre_evaluador}
                     </span>
                     {e.estado === "BORRADOR"
                       ? <span className="pill pend">A medias · {e.puntuados}/34</span>

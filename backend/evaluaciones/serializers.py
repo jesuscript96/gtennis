@@ -1,7 +1,9 @@
 from rest_framework import serializers
 
+from academy.models import Escuela, Jugador
+
 from . import catalogo
-from .models import Evaluacion, EvaluacionFisica, FotoJugador, Informe
+from .models import DatosInforme, Evaluacion, EvaluacionFisica, FotoJugador, Informe
 
 
 class _ConInforme:
@@ -21,17 +23,25 @@ class EvaluacionSerializer(_ConInforme, serializers.ModelSerializer):
     puntuados = serializers.SerializerMethodField()
     puede_editar = serializers.SerializerMethodField()
     informe = serializers.SerializerMethodField()
+    idioma_familia = serializers.SerializerMethodField()
 
     class Meta:
         model = Evaluacion
         fields = ["id", "jugador", "jugador_nombre", "evaluador", "nombre_evaluador", "fecha", "idioma",
-                  "estado", "puntuaciones", "comentarios", "fortalezas", "mejoras", "puntuados",
+                  "estado", "puntuaciones", "comentarios", "fortalezas", "mejoras", "fortalezas_original",
+                  "mejoras_original", "idioma_familia", "puntuados",
                   "puede_editar", "drive_url", "informe", "creada", "actualizada", "terminada_en"]
         read_only_fields = ["evaluador", "nombre_evaluador", "estado", "drive_url", "creada",
                             "actualizada", "terminada_en"]
 
     def get_puntuados(self, ev):
         return sum(1 for k in catalogo.CRITERIOS if k in ev.puntuaciones)
+
+    def get_idioma_familia(self, ev):
+        """En qué idioma sale el PDF que se le envía a la familia."""
+        from . import informes
+
+        return informes.idioma_familia(ev.jugador, ev.idioma)
 
     def get_puede_editar(self, ev):
         req = self.context.get("request")
@@ -69,6 +79,8 @@ class EvaluacionSerializer(_ConInforme, serializers.ModelSerializer):
 
     validate_fortalezas = _tres_frases
     validate_mejoras = _tres_frases
+    validate_fortalezas_original = _tres_frases
+    validate_mejoras_original = _tres_frases
 
     def update(self, instance, data):
         # Cada paso del asistente manda solo su bloque: se mezcla con lo que ya había.
@@ -147,6 +159,7 @@ class InformeSerializer(serializers.ModelSerializer):
     devuelto_por_nombre = serializers.SerializerMethodField()
     validado_por_nombre = serializers.SerializerMethodField()
     email_familia = serializers.CharField(source="jugador.email", read_only=True)
+    destinatarios_propuestos = serializers.SerializerMethodField()
     edad = serializers.IntegerField(source="jugador.edad", read_only=True)
     tiene_foto = serializers.SerializerMethodField()
     puede_validar = serializers.SerializerMethodField()
@@ -156,7 +169,7 @@ class InformeSerializer(serializers.ModelSerializer):
         fields = ["id", "jugador", "jugador_nombre", "edad", "estado", "estado_display", "version", "completo",
                   "tenis", "fisica", "idioma", "devuelto_partes", "nota_devolucion", "devuelto_por_nombre",
                   "devuelto_en", "validado_por_nombre", "validado_en", "destinatarios", "email_familia",
-                  "drive_url", "drive_carpeta", "tiene_foto", "puede_validar", "creado", "actualizado"]
+                  "destinatarios_propuestos", "drive_url", "drive_carpeta", "tiene_foto", "puede_validar", "creado", "actualizado"]
 
     def get_tenis(self, inf):
         return _parte(inf.tenis, catalogo.CRITERIOS)
@@ -165,7 +178,15 @@ class InformeSerializer(serializers.ModelSerializer):
         return _parte(inf.fisica, catalogo.CRITERIOS_FISICO)
 
     def get_idioma(self, inf):
-        return inf.tenis.idioma if inf.tenis else None
+        """El del PDF para la familia; en la app todo va en español."""
+        from . import informes
+
+        return informes.idioma_familia(inf.jugador)
+
+    def get_destinatarios_propuestos(self, inf):
+        from . import informes
+
+        return informes.destinatarios_propuestos(inf.jugador)
 
     def _nombre(self, u):
         return (u.get_full_name() or u.username) if u else None
@@ -184,3 +205,60 @@ class InformeSerializer(serializers.ModelSerializer):
 
         req = self.context.get("request")
         return bool(req and valida_informes(req.user))
+
+
+class JugadorTardesSerializer(serializers.ModelSerializer):
+    """Ficha de un jugador de Competición de tardes tal como la lleva el
+    coordinador (02/11/2026): datos básicos, familia e idioma del informe."""
+    idioma = serializers.ChoiceField(choices=DatosInforme.Idioma.choices, required=False)
+    quien_1 = serializers.CharField(required=False, allow_blank=True, max_length=40)
+    email_2 = serializers.EmailField(required=False, allow_blank=True)
+    quien_2 = serializers.CharField(required=False, allow_blank=True, max_length=40)
+    evaluador = serializers.SerializerMethodField()
+
+    CAMPOS_DATOS = ("idioma", "quien_1", "email_2", "quien_2")
+
+    class Meta:
+        model = Jugador
+        fields = ["id", "nombre", "fecha_nacimiento", "edad", "fecha_alta", "fecha_baja", "email",
+                  "quien_1", "email_2", "quien_2", "idioma", "evaluador"]
+        read_only_fields = ["edad", "fecha_baja"]
+
+    def to_representation(self, j):
+        data = super().to_representation(j)
+        datos = getattr(j, "datos_informe", None)
+        for k in self.CAMPOS_DATOS:
+            data[k] = getattr(datos, k) if datos else ("ES" if k == "idioma" else "")
+        return data
+
+    def get_evaluador(self, j):
+        a = getattr(j, "asignacion_informe", None)
+        if a is None:
+            return None
+        u = a.evaluador
+        ent = getattr(u, "entrenador", None)
+        return {"id": u.id, "nombre": ent.nombre if ent else (u.get_full_name() or u.username)}
+
+    def validate_nombre(self, valor):
+        valor = valor.strip()
+        if not valor:
+            raise serializers.ValidationError("Pon el nombre del jugador.")
+        return valor
+
+    def _guardar_datos(self, j, datos):
+        if not datos:
+            return
+        j.datos_informe, _ = DatosInforme.objects.update_or_create(jugador=j, defaults=datos)
+
+    def create(self, validated):
+        datos = {k: validated.pop(k) for k in self.CAMPOS_DATOS if k in validated}
+        escuela = Escuela.objects.filter(solo_informes=True).order_by("id").first()
+        j = Jugador.objects.create(escuela=escuela, activo=False, **validated)
+        self._guardar_datos(j, datos)
+        return j
+
+    def update(self, j, validated):
+        datos = {k: validated.pop(k) for k in self.CAMPOS_DATOS if k in validated}
+        j = super().update(j, validated)
+        self._guardar_datos(j, datos)
+        return j

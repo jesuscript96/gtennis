@@ -41,6 +41,7 @@ const SECTIONS = [
   { title: "Rendimiento", items: [
     ["/evaluaciones", "Evaluaciones"],
     ["/informes", "Informes", "informes"],
+    ["/tardes", "Competición de tardes", "tardes"],
   ] },
   { title: "Gestión", items: [
     ["/invitados", "Invitados"],
@@ -63,7 +64,9 @@ const SECTIONS_ENTRENADOR = [
     ["/avisos", "Avisos"],
   ] },
   { title: "Mis jugadores", items: [
-    ["/jugadores", "Mis jugadores"],
+    // El coordinador de tardes (Alberto) lleva los jugadores de Competición de tardes.
+    ["/jugadores", "Mis jugadores", "no-tardes"],
+    ["/tardes", "Mis jugadores", "tardes"],
     ["/grupos", "Grupos"],
     ["/divisiones", "Divisiones"],
     ["/ausencias", "Ausencias de la semana"],
@@ -127,6 +130,8 @@ export default function Sidebar({ onNavigate }) {
             {section.items
               // «informes»: quien evalúa Competición de tardes o valida (permiso, no rango).
               .filter(([, , role]) => role === "informes" ? user?.ve_informes
+                : role === "tardes" ? user?.coordina_informes
+                : role === "no-tardes" ? !user?.coordina_informes
                 : !role || roleRank(user) >= NEED[role])
               .map(([href, label]) => (
                 <Link key={href} href={href} className={pathname === href || (href === "/torneos" && /^\/torneos\/\d+/.test(pathname)) || (href === "/evaluaciones" && pathname.startsWith("/evaluaciones/")) || (href === "/informes" && pathname.startsWith("/informes/")) ? "active" : ""} onClick={onNavigate}>

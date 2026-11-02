@@ -116,28 +116,39 @@ class EvaluacionesTests(TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("Drive (Derecha)", str(r.data))
 
-    @mock.patch.object(ia, "resumir", return_value=(["Buen saque", "Gran derecha", "Muy motivada"],
-                                                    ["Volea", "Smash", "Fuerza"]))
-    def test_terminar_propone_el_resumen_una_vez(self, m):
+    @mock.patch.object(ia, "pulir_frases", return_value=(["Buen saque.", "Gran derecha."], ["Subir a la red."]))
+    def test_las_fortalezas_las_escribe_el_entrenador(self, m):
+        # 02/11/2026: el entrenador escribe sus fortalezas y mejoras y Claude solo las pasa a limpio.
         ev = self.crear(puntuaciones=TODAS).data
         url = f"/api/evaluaciones/{ev['id']}/terminar/"
         c = self.api(self.u_blas)
-        r = c.post(url, {}, format="json")
+        self.assertEqual(c.post(url, {}, format="json").status_code, 400)
+        r = c.post(url, {"fortalezas_original": ["buen saque", " gran derecha ", ""],
+                         "mejoras_original": ["subir a la red"]}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["estado"], "TERMINADA")
-        self.assertEqual(r.data["fortalezas"], ["Buen saque", "Gran derecha", "Muy motivada"])
-        # Si el entrenador ya retocó el resumen, terminar otra vez no se lo pisa…
-        c.patch(f"/api/evaluaciones/{ev['id']}/", {"fortalezas": ["Saque", "Derecha", "Actitud"]}, format="json")
-        self.assertEqual(c.post(url, {}, format="json").data["fortalezas"], ["Saque", "Derecha", "Actitud"])
-        # …salvo que pida otra propuesta.
-        self.assertEqual(c.post(url, {"rehacer_resumen": True}, format="json").data["fortalezas"][0], "Buen saque")
-        self.assertEqual(m.call_count, 2)
+        self.assertEqual(r.data["fortalezas_original"], ["buen saque", "gran derecha"])
+        self.assertEqual(r.data["fortalezas"], ["Buen saque.", "Gran derecha."])
+        m.assert_called_once_with(["buen saque", "gran derecha"], ["subir a la red"], "ES")
+        # Si retoca lo pasado a limpio y vuelve a terminar sin cambiar lo suyo, no se le pisa.
+        c.patch(f"/api/evaluaciones/{ev['id']}/", {"fortalezas": ["Saque", "Derecha"]}, format="json")
+        self.assertEqual(c.post(url, {}, format="json").data["fortalezas"], ["Saque", "Derecha"])
+        self.assertEqual(m.call_count, 1)
+
+    @override_settings(ANTHROPIC_API_KEY="")
+    def test_sin_ia_las_frases_quedan_tal_cual(self):
+        ev = self.crear(puntuaciones=TODAS).data
+        r = self.api(self.u_blas).post(f"/api/evaluaciones/{ev['id']}/terminar/",
+                                       {"fortalezas_original": ["saque"], "mejoras_original": ["volea"]}, format="json")
+        self.assertEqual((r.data["fortalezas"], r.data["mejoras"]), (["saque"], ["volea"]))
+        self.assertIn("Quedan tal como las escribiste.", r.data["avisos"][0])
 
     @mock.patch.object(ia, "pulir", return_value="Lacks reaction at the net.")
-    @mock.patch.object(ia, "resumir", return_value=(["a", "b", "c"], ["d", "e", "f"]))
-    def test_al_cambiar_de_idioma_se_traduce_al_terminar(self, _resumir, pulir):
+    @mock.patch.object(ia, "pulir_frases", return_value=(["a"], ["d"]))
+    def test_al_cambiar_de_idioma_se_traduce_al_terminar(self, _frases, pulir):
         ev = Evaluacion.objects.create(
             jugador=self.ana, evaluador=self.u_blas, nombre_evaluador="Blas", idioma="EN", puntuaciones=TODAS,
+            fortalezas_original=["a"], mejoras_original=["d"],
             comentarios={"volley": {"original": "carece de reacción", "pulido": "Carece de reacción.",
                                     "idioma": "ES"}})
         r = self.api(self.u_blas).post(f"/api/evaluaciones/{ev.id}/terminar/", {}, format="json")

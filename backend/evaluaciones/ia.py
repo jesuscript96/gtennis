@@ -2,8 +2,8 @@
 
 Todo lo demás —orden de los bloques, notas, validación, fichero— es código. Aquí
 solo se pule la redacción de lo que dice el entrenador (sin cambiarle el
-sentido) y se resumen tres fortalezas y tres mejoras a partir de sus notas y
-comentarios. Si no hay clave de API o Claude falla, quien llama recibe
+sentido): sus comentarios por bloque y, desde el 02/11/2026, las fortalezas y
+mejoras que escribe él (antes las proponía Claude a partir de las notas). Si no hay clave de API o Claude falla, quien llama recibe
 `IANoDisponible` y el informe sigue con el texto del entrenador tal cual.
 """
 import json
@@ -11,8 +11,6 @@ import logging
 
 import anthropic
 from django.conf import settings
-
-from . import catalogo
 
 log = logging.getLogger(__name__)
 
@@ -79,52 +77,69 @@ def pulir(texto, idioma, habilidad):
     return _texto(respuesta)
 
 
-SISTEMA_RESUMIR = """Resumes evaluaciones de jugadores de una academia de tenis de alta competición.
+SISTEMA_FRASES = """Pasas a limpio las fortalezas y las áreas de mejora que un entrenador de una academia de tenis ha escrito sobre su jugador, para el informe que recibe la familia.
 
-Recibirás las notas (del 1 al 5) que un entrenador ha puesto en cada criterio y sus comentarios por bloque. Escribe exactamente tres fortalezas y tres áreas de mejora del jugador.
-- Apóyate solo en lo que el entrenador ha indicado: los criterios con nota alta o elogiados en sus comentarios son candidatos a fortaleza; los de nota baja o con un fallo señalado, a mejora.
-- No añadas juicios, causas, consejos ni conclusiones que el entrenador no haya expresado.
-- Cada frase es breve (una línea), concreta y sin comillas, corchetes ni saltos de línea.
-- Escribe en el idioma que se te indique."""
+- Corrige ortografía y gramática y deja cada una como una frase breve (una línea), clara y profesional.
+- Respeta lo que dice el entrenador: no añadas ideas, causas, consejos ni valoraciones, no juntes ni separes frases y no cambies su orden.
+- Devuelve exactamente tantas fortalezas y tantas mejoras como recibes.
+- Sin comillas, corchetes, viñetas ni saltos de línea.
+- Escribe en el idioma que se te indique; si el entrenador escribió en otro, traduce fielmente."""
 
-_ESQUEMA_RESUMEN = {
+_ESQUEMA_FRASES = {
     "type": "object",
-    "properties": {k: {"type": "string"} for k in
-                   ("fortaleza_1", "fortaleza_2", "fortaleza_3", "mejora_1", "mejora_2", "mejora_3")},
-    "required": ["fortaleza_1", "fortaleza_2", "fortaleza_3", "mejora_1", "mejora_2", "mejora_3"],
+    "properties": {"fortalezas": {"type": "array", "items": {"type": "string"}},
+                   "mejoras": {"type": "array", "items": {"type": "string"}}},
+    "required": ["fortalezas", "mejoras"],
     "additionalProperties": False,
 }
 
 
-def _volcado(ev):
-    """La evaluación en texto llano para que Claude la lea."""
-    lineas = []
-    for b in catalogo.BLOQUES:
-        lineas.append(f"## {b['titulo']}")
-        for clave, etiqueta, _ in b["criterios"]:
-            lineas.append(f"- {etiqueta}: {ev.puntuaciones.get(clave, '—')}")
-        com = (ev.comentarios.get(b["clave"]) or {}).get("pulido")
-        lineas.append(f"Comentario del entrenador: {com or 'ninguno'}")
-        lineas.append("")
-    comp = (ev.comentarios.get(catalogo.COMPETICION) or {}).get("pulido")
-    lineas.append(f"## Resultados en competición\n{comp or 'ninguno'}")
-    return "\n".join(lineas)
-
-
-def resumir(ev):
-    """(fortalezas, mejoras): tres frases cada una, en el idioma del informe."""
+def pulir_frases(fortalezas, mejoras, idioma):
+    """(fortalezas, mejoras) que escribió el entrenador, pasadas a limpio en `idioma`."""
+    lista = lambda xs: "\n".join(f"- {x}" for x in xs) or "(ninguna)"
     respuesta = _llamar(
-        max_tokens=8000,
-        system=SISTEMA_RESUMIR,
-        output_config={"format": {"type": "json_schema", "schema": _ESQUEMA_RESUMEN}},
+        max_tokens=4000,
+        system=SISTEMA_FRASES,
+        output_config={"format": {"type": "json_schema", "schema": _ESQUEMA_FRASES}},
         messages=[{
             "role": "user",
-            "content": f"Idioma del informe: {IDIOMA[ev.idioma]}.\n\n{_volcado(ev)}",
+            "content": (f"Idioma del informe: {IDIOMA[idioma]}.\n\nFortalezas:\n{lista(fortalezas)}\n\n"
+                        f"Áreas de mejora:\n{lista(mejoras)}"),
         }],
     )
     try:
         datos = json.loads(_texto(respuesta))
     except json.JSONDecodeError as e:
-        raise IANoDisponible("Claude ha devuelto un resumen que no se puede leer.") from e
-    return ([datos[f"fortaleza_{i}"].strip() for i in (1, 2, 3)],
-            [datos[f"mejora_{i}"].strip() for i in (1, 2, 3)])
+        raise IANoDisponible("Claude ha devuelto unas frases que no se pueden leer.") from e
+    f = [x.strip() for x in datos.get("fortalezas", [])]
+    m = [x.strip() for x in datos.get("mejoras", [])]
+    if len(f) != len(fortalezas) or len(m) != len(mejoras) or not all(f + m):
+        raise IANoDisponible("Claude no ha devuelto las mismas frases que escribiste.")
+    return f, m
+
+
+SISTEMA_TRADUCIR = """Traduces los textos del informe trimestral de un jugador de una academia de tenis, para enviárselo a su familia.
+
+- Traducción fiel y natural, con el mismo tono claro y profesional. No añadas, quites ni reinterpretes nada.
+- Usa el vocabulario habitual del tenis en el idioma de destino.
+- Devuelve cada texto con su misma clave, sin comillas, corchetes, viñetas ni saltos de línea."""
+
+
+def traducir(textos, idioma):
+    """{clave: texto} traducido a `idioma` (ES/EN), con las mismas claves."""
+    esquema = {"type": "object", "properties": {k: {"type": "string"} for k in textos},
+               "required": list(textos), "additionalProperties": False}
+    respuesta = _llamar(
+        max_tokens=8000,
+        system=SISTEMA_TRADUCIR,
+        output_config={"format": {"type": "json_schema", "schema": esquema}},
+        messages=[{"role": "user", "content": f"Idioma de destino: {IDIOMA[idioma]}.\n\n"
+                                              + json.dumps(textos, ensure_ascii=False, indent=1)}],
+    )
+    try:
+        datos = json.loads(_texto(respuesta))
+    except json.JSONDecodeError as e:
+        raise IANoDisponible("Claude ha devuelto una traducción que no se puede leer.") from e
+    if set(datos) != set(textos) or not all(str(v).strip() for v in datos.values()):
+        raise IANoDisponible("La traducción ha llegado incompleta.")
+    return {k: str(v).strip() for k, v in datos.items()}

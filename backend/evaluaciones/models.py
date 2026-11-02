@@ -38,6 +38,13 @@ class Evaluacion(models.Model):
     comentarios = models.JSONField(default=dict, blank=True)
     fortalezas = models.JSONField(default=list, blank=True)  # 3 frases
     mejoras = models.JSONField(default=list, blank=True)     # 3 frases
+    # Lo que escribió el entrenador (02/11/2026); `fortalezas` y `mejoras` son
+    # esas mismas frases pasadas a limpio por Claude.
+    fortalezas_original = models.JSONField(default=list, blank=True)
+    mejoras_original = models.JSONField(default=list, blank=True)
+    # Los textos ya traducidos para el PDF de la familia, si no es en español
+    # (`traduccion.py`): {"firma", "textos"}. Se rehace si cambia algo.
+    traduccion = models.JSONField(default=dict, blank=True)
 
     # Copia en Drive (carpeta del jugador). Vacío hasta que se suba.
     drive_file_id = models.CharField(max_length=120, blank=True)
@@ -100,6 +107,8 @@ class EvaluacionFisica(models.Model):
     puntuaciones = models.JSONField(default=dict, blank=True)
     # {"puntos_fuertes": "…", "a_mejorar": "…", "notas_fisio": "…"}
     textos = models.JSONField(default=dict, blank=True)
+    # Como en `Evaluacion.traduccion`: los textos en el idioma de la familia.
+    traduccion = models.JSONField(default=dict, blank=True)
 
     creada = models.DateTimeField(auto_now_add=True)
     actualizada = models.DateTimeField(auto_now=True)
@@ -156,6 +165,7 @@ class Informe(models.Model):
     # A quién se enviará cuando el envío por correo esté activo: [{"email", "quien"}].
     destinatarios = models.JSONField(default=list, blank=True)
     # Textos de la parte física pasados al idioma del informe si no es español.
+    # Sin uso desde el 02/11/2026: la traducción va en `EvaluacionFisica.traduccion`.
     textos_fisico_traducidos = models.JSONField(default=dict, blank=True)
 
     drive_file_id = models.CharField(max_length=120, blank=True)
@@ -239,3 +249,44 @@ class AsignacionInforme(models.Model):
 
     def __str__(self):
         return f"{self.jugador} → {self.evaluador}"
+
+
+class MiembroTardes(models.Model):
+    """Quién hace los informes de Competición de tardes, y de qué parte. Lo da
+    de alta y de baja el coordinador desde la app (02/11/2026); antes era una
+    lista fija en el código."""
+
+    class Funcion(models.TextChoices):
+        TENIS = "TENIS", "Tenis"
+        FISICO = "FISICO", "Preparación física"
+
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tardes")
+    funcion = models.CharField(max_length=8, choices=Funcion.choices)
+    anadido_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="+")
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["usuario", "funcion"], name="miembro_tardes_unico")]
+
+    def __str__(self):
+        return f"{self.usuario} · {self.get_funcion_display()}"
+
+
+class DatosInforme(models.Model):
+    """Lo que el informe necesita de la familia y no está en la ficha: el
+    idioma del PDF que se le envía y un segundo correo (02/11/2026). El
+    primero es `Jugador.email`."""
+
+    class Idioma(models.TextChoices):
+        ES = "ES", "Español"
+        EN = "EN", "Inglés"
+
+    jugador = models.OneToOneField("academy.Jugador", on_delete=models.CASCADE, related_name="datos_informe")
+    idioma = models.CharField(max_length=2, choices=Idioma.choices, default=Idioma.ES)
+    quien_1 = models.CharField(max_length=40, blank=True)
+    email_2 = models.EmailField(blank=True)
+    quien_2 = models.CharField(max_length=40, blank=True)
+
+    def __str__(self):
+        return f"{self.jugador} · {self.idioma}"

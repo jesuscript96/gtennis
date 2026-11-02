@@ -15,9 +15,11 @@ from academy.permissions import (
 )
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
-from . import catalogo, drive, fichero, ia, informes, pdf
-from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, FotoJugador, Informe
-from .serializers import EvaluacionFisicaSerializer, EvaluacionSerializer, InformeSerializer
+from . import catalogo, drive, fichero, ia, informes, pdf, traduccion
+from .models import (
+    AsignacionInforme, DatosInforme, Evaluacion, EvaluacionFisica, FotoJugador, Informe, MiembroTardes,
+)
+from .serializers import EvaluacionFisicaSerializer, EvaluacionSerializer, InformeSerializer, JugadorTardesSerializer
 
 
 def _sin_duplicar(jugador, campo):
@@ -142,13 +144,25 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def terminar(self, request, pk=None):
         """Comprueba que estén las 34 notas, pasa los comentarios al idioma del
-        informe si hace falta y propone fortalezas y mejoras (si aún no hay o se
-        pide `rehacer_resumen`)."""
+        informe si hace falta y pasa a limpio las fortalezas y mejoras que ha
+        escrito el entrenador (`fortalezas_original`, `mejoras_original`;
+        desde el 02/11/2026 ya no las propone Claude)."""
         ev = self._editable(self.get_object())
         faltan = [b["titulo"] for b in catalogo.BLOQUES
                   if any(k not in ev.puntuaciones for k, _, _ in b["criterios"])]
         if faltan:
             raise ValidationError({"puntuaciones": f"Faltan notas en: {', '.join(faltan)}."})
+        cambian = False
+        for campo in ("fortalezas_original", "mejoras_original"):
+            if campo in request.data:
+                frases = request.data.get(campo)
+                if not isinstance(frases, list) or len(frases) > 3 or not all(isinstance(f, str) for f in frases):
+                    raise ValidationError({campo: "Van hasta tres frases."})
+                frases = [f.strip() for f in frases if f.strip()]
+                cambian = cambian or frases != getattr(ev, campo)
+                setattr(ev, campo, frases)
+        if not ev.fortalezas_original or not ev.mejoras_original:
+            raise ValidationError({"detail": "Escribe al menos una fortaleza y un área de mejora."})
         avisos = []
         # Un comentario pulido en otro idioma (se cambió el idioma después) se vuelve a pasar.
         for bloque, com in list(ev.comentarios.items()):
@@ -156,11 +170,12 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
                 aviso = self._pulir(ev, bloque, com.get("original") or com["pulido"])
                 if aviso:
                     avisos.append(aviso)
-        if request.data.get("rehacer_resumen") or not (ev.fortalezas or ev.mejoras):
+        if cambian or not (ev.fortalezas and ev.mejoras):
             try:
-                ev.fortalezas, ev.mejoras = ia.resumir(ev)
+                ev.fortalezas, ev.mejoras = ia.pulir_frases(ev.fortalezas_original, ev.mejoras_original, ev.idioma)
             except ia.IANoDisponible as e:
-                avisos.append(f"{e} Escribe tú las fortalezas y mejoras.")
+                ev.fortalezas, ev.mejoras = list(ev.fortalezas_original), list(ev.mejoras_original)
+                avisos.append(f"{e} Quedan tal como las escribiste.")
         ev.estado = Evaluacion.Estado.TERMINADA
         ev.terminada_en = ev.terminada_en or timezone.now()
         ev.save()
@@ -180,8 +195,13 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
             informes.parte_terminada(ev)
             return Response({**self.get_serializer(ev).data, "aviso": None})
         aviso = None
+        idioma = informes.idioma_familia(ev.jugador, ev.idioma)
         try:
-            ev.drive_file_id, ev.drive_url = drive.subir(ev)
+            traduccion.tenis(ev, idioma)
+        except ia.IANoDisponible as e:
+            idioma, aviso = ev.idioma, f"No se ha podido traducir el PDF ({e}); se guarda sin traducir."
+        try:
+            ev.drive_file_id, ev.drive_url = drive.subir(ev, idioma)
             ev.save(update_fields=["drive_file_id", "drive_url", "actualizada"])
         except drive.DriveNoDisponible as e:
             aviso = f"{e} El informe está guardado en la app; puedes reintentarlo desde su ficha."
@@ -189,11 +209,27 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, url_path="pdf")
     def informe_pdf(self, request, pk=None):
-        """El informe maquetado, para descargarlo."""
+        """El informe maquetado, para descargarlo: en el idioma de la familia."""
         ev = self.get_object()
-        respuesta = HttpResponse(pdf.generar(ev), content_type="application/pdf")
-        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre(ev))
+        idioma = informes.idioma_familia(ev.jugador, ev.idioma)
+        try:
+            contenido = pdf.generar(ev, idioma)
+        except ia.IANoDisponible as e:
+            raise ValidationError({"detail": f"No se ha podido traducir el PDF: {e}"})
+        respuesta = HttpResponse(contenido, content_type="application/pdf")
+        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre(ev, idioma))
         return respuesta
+
+    @action(detail=True, methods=["post"], url_path="idioma-familia")
+    def idioma_familia(self, request, pk=None):
+        """`{idioma}`: en qué idioma se le manda el PDF a la familia del jugador."""
+        ev = self._editable(self.get_object())
+        idioma = request.data.get("idioma")
+        if idioma not in DatosInforme.Idioma.values:
+            raise ValidationError({"detail": "Elige español o inglés."})
+        DatosInforme.objects.update_or_create(jugador=ev.jugador, defaults={"idioma": idioma})
+        ev.jugador.refresh_from_db()
+        return Response(self.get_serializer(ev).data)
 
     @action(detail=True)
     def fichero(self, request, pk=None):
@@ -374,8 +410,14 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         inf = self.get_object()
         if not inf.tenis:
             raise ValidationError({"detail": "Este informe aún no tiene la parte de tenis."})
-        respuesta = HttpResponse(pdf.generar_informe(inf), content_type="application/pdf")
-        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre_informe(inf))
+        # En español para revisarlo; `?idioma=EN`, el que se envía a la familia.
+        idioma = request.query_params.get("idioma") if request.query_params.get("idioma") in ("ES", "EN") else "ES"
+        try:
+            contenido = pdf.generar_informe(inf, idioma)
+        except ia.IANoDisponible as e:
+            raise ValidationError({"detail": f"No se ha podido traducir el PDF: {e}"})
+        respuesta = HttpResponse(contenido, content_type="application/pdf")
+        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre_informe(inf, idioma))
         return respuesta
 
     @action(detail=True, methods=["post"])
@@ -409,7 +451,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         inf = self.get_object()
         if not inf.completo:
             raise ValidationError({"detail": "Faltan partes por terminar."})
-        if not drive.configurado():
+        if not (drive.configurado() or drive.ct_configurado()):
             return Response({**self.get_serializer(inf).data, "aviso": "Drive no está conectado."})
         aviso = informes.guardar_en_drive(inf)
         return Response({**self.get_serializer(inf).data, "aviso": aviso})
@@ -443,3 +485,90 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         FotoJugador.objects.update_or_create(jugador=jugador, defaults={
             "imagen": buf.getvalue(), "tipo": "image/jpeg", "subida_por": request.user})
         return Response({"ok": True})
+
+
+class _DeCoordinador:
+    """Lo usa el coordinador de Competición de tardes (y gestión deportiva)."""
+
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if not coordina_informes(request.user):
+            raise PermissionDenied("Esto lo lleva el coordinador de Competición de tardes.")
+
+
+class JugadorTardesViewSet(_DeCoordinador, viewsets.ModelViewSet):
+    """Altas, cambios y bajas de los jugadores de Competición de tardes
+    (02/11/2026). Por defecto, los que siguen; `?bajas=1` también los de baja."""
+
+    serializer_class = JugadorTardesSerializer
+    http_method_names = ["get", "post", "patch"]
+
+    def get_queryset(self):
+        qs = (Jugador.objects.filter(escuela__solo_informes=True)
+              .select_related("datos_informe", "asignacion_informe__evaluador__entrenador").order_by("nombre"))
+        # La lista enseña los que siguen; una ficha concreta se abre siempre, para poder reactivarla.
+        if self.action == "list" and self.request.query_params.get("bajas") not in ("1", "true", "si", "sí"):
+            hoy = timezone.localdate()
+            qs = qs.filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy))
+        return qs
+
+    @action(detail=True, methods=["post"])
+    def baja(self, request, pk=None):
+        """`{fecha}`: desde ese día deja de salir en Informes y de tener recordatorios."""
+        from datetime import date
+
+        j = self.get_object()
+        try:
+            fecha = date.fromisoformat(str(request.data.get("fecha") or timezone.localdate()))
+        except ValueError:
+            raise ValidationError({"detail": "Fecha no válida."})
+        j.fecha_baja = fecha
+        j.save(update_fields=["fecha_baja"])
+        return Response(self.get_serializer(j).data)
+
+    @action(detail=True, methods=["post"])
+    def reactivar(self, request, pk=None):
+        j = self.get_object()
+        j.fecha_baja = None
+        j.save(update_fields=["fecha_baja"])
+        return Response(self.get_serializer(j).data)
+
+
+class EquipoTardesViewSet(_DeCoordinador, viewsets.ViewSet):
+    """Quién hace los informes de Competición de tardes (02/11/2026). GET
+    lista el equipo y los candidatos; POST `{usuario, funcion}` da de alta;
+    DELETE da de baja."""
+
+    def _fila(self, m):
+        return {"id": m.id, "usuario": m.usuario_id, "nombre": _nombre_evaluador(m.usuario), "funcion": m.funcion}
+
+    def list(self, request):
+        from django.contrib.auth import get_user_model
+
+        miembros = MiembroTardes.objects.select_related("usuario__entrenador").filter(usuario__is_active=True)
+        candidatos = (get_user_model().objects.filter(is_active=True, role__in=["ENTRENADOR", "COACH", "PREPARADOR"])
+                      .select_related("entrenador"))
+        return Response({
+            "miembros": sorted((self._fila(m) for m in miembros), key=lambda f: f["nombre"].lower()),
+            "candidatos": sorted(({"id": u.id, "nombre": _nombre_evaluador(u)} for u in candidatos),
+                                 key=lambda f: f["nombre"].lower()),
+        })
+
+    def create(self, request):
+        from django.contrib.auth import get_user_model
+
+        funcion = request.data.get("funcion")
+        if funcion not in MiembroTardes.Funcion.values:
+            raise ValidationError({"detail": "Elige tenis o preparación física."})
+        u = get_user_model().objects.filter(pk=request.data.get("usuario"), is_active=True).first()
+        if u is None:
+            raise ValidationError({"detail": "Elige a una persona con usuario en la app."})
+        m, _ = MiembroTardes.objects.get_or_create(usuario=u, funcion=funcion, defaults={"anadido_por": request.user})
+        return Response(self._fila(m), status=201)
+
+    def destroy(self, request, pk=None):
+        MiembroTardes.objects.filter(pk=pk).delete()
+        return Response(status=204)

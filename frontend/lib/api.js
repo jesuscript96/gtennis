@@ -358,8 +358,12 @@ export const borrarEvaluacion = (id) => req(`/evaluaciones/${id}/`, { method: "D
 // Claude pule el comentario del bloque y lo deja guardado ({comentario, aviso}).
 export const pulirComentario = (id, bloque, texto) =>
   req(`/evaluaciones/${id}/pulir/`, { method: "POST", body: JSON.stringify({ bloque, texto }) });
-export const terminarEvaluacion = (id, rehacerResumen = false) =>
-  req(`/evaluaciones/${id}/terminar/`, { method: "POST", body: JSON.stringify({ rehacer_resumen: rehacerResumen }) });
+// Termina la evaluación con las fortalezas y mejoras que escribe el entrenador; Claude las pasa a limpio.
+// En qué idioma se le manda el PDF a la familia del jugador ({…evaluación}).
+export const cambiarIdiomaFamilia = (id, idioma) =>
+  req(`/evaluaciones/${id}/idioma-familia/`, { method: "POST", body: JSON.stringify({ idioma }) });
+export const terminarEvaluacion = (id, frases = {}) =>
+  req(`/evaluaciones/${id}/terminar/`, { method: "POST", body: JSON.stringify(frases) });
 export const getFicheroEvaluacion = (id) => req(`/evaluaciones/${id}/fichero/`);
 // Sube (o reescribe) el informe terminado en la carpeta del jugador en Drive ({…evaluación, aviso}).
 export const guardarEvaluacionEnDrive = (id) =>
@@ -377,6 +381,20 @@ export async function descargarPdfEvaluacion(id) {
 
 // --- Informes de Competición de tardes (tenis + físico, validación) -------
 export const getPanelInformes = () => req("/informes/panel/");
+// Competición de tardes: lo lleva el coordinador (02/11/2026).
+export const getJugadoresTardes = (bajas = false) => req(`/tardes/jugadores/${bajas ? "?bajas=1" : ""}`);
+export const crearJugadorTardes = (datos) =>
+  req("/tardes/jugadores/", { method: "POST", body: JSON.stringify(datos) });
+export const editarJugadorTardes = (id, datos) =>
+  req(`/tardes/jugadores/${id}/`, { method: "PATCH", body: JSON.stringify(datos) });
+export const bajaJugadorTardes = (id, fecha) =>
+  req(`/tardes/jugadores/${id}/baja/`, { method: "POST", body: JSON.stringify({ fecha }) });
+export const reactivarJugadorTardes = (id) =>
+  req(`/tardes/jugadores/${id}/reactivar/`, { method: "POST", body: "{}" });
+export const getEquipoTardes = () => req("/tardes/equipo/");
+export const altaEquipoTardes = (usuario, funcion) =>
+  req("/tardes/equipo/", { method: "POST", body: JSON.stringify({ usuario, funcion }) });
+export const bajaEquipoTardes = (id) => req(`/tardes/equipo/${id}/`, { method: "DELETE" });
 export const asignarInforme = (jugadores, evaluador) =>
   req("/informes/asignar/", { method: "POST", body: JSON.stringify({ jugadores, evaluador }) });
 export const getInformes = async (params = {}) => {
@@ -397,7 +415,9 @@ async function fichero(path, porDefecto) {
   const m = disp.match(/filename\*=utf-8''([^;]+)/i) || disp.match(/filename="?([^";]+)"?/i);
   return { blob: await res.blob(), nombre: m ? decodeURIComponent(m[1]) : porDefecto };
 }
-export const descargarPdfInforme = (id) => fichero(`/informes/${id}/pdf/`, `informe-${id}.pdf`);
+// En español para revisarlo; con idioma "EN", el PDF que se envía a la familia.
+export const descargarPdfInforme = (id, idioma = "ES") =>
+  fichero(`/informes/${id}/pdf/?idioma=${idioma}`, `informe-${id}.pdf`);
 // La foto del jugador para el informe (null si no tiene).
 export const getFotoJugador = (jugadorId) => fichero(`/informes/foto/${jugadorId}/`, "foto.jpg");
 export async function subirFotoJugador(jugadorId, file) {

@@ -2,6 +2,7 @@
 devolución, PDF, foto y recordatorios del ciclo (27/10/2026)."""
 from datetime import timedelta
 from io import BytesIO
+from unittest import mock
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -10,9 +11,12 @@ from rest_framework.test import APIClient
 from academy.models import Aviso, Coach, Entrenador, Escuela, Jugador
 from users.models import User
 
-from . import catalogo, recordatorios
-from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, RecordatorioInforme
-from .tests import SIN_CAPTURA_DE_PLANTILLAS
+from . import catalogo, drive, ia, pdf, recordatorios
+from . import informes as informes_mod
+from .models import (
+    AsignacionInforme, DatosInforme, Evaluacion, EvaluacionFisica, Informe, MiembroTardes, RecordatorioInforme,
+)
+from .tests import SIN_CAPTURA_DE_PLANTILLAS, FakeDrive, FakeResp
 
 TENIS = {k: 3 for k in catalogo.CRITERIOS}
 FISICO = {k: 4 for k in catalogo.CRITERIOS_FISICO}
@@ -40,6 +44,8 @@ class InformeTests(TestCase):
         Coach.objects.create(nombre="Dani", user=self.dani)
         self.ivan_g = User.objects.create_user(username="ivan.gallego", password="x", role=User.Role.COACH)
         Coach.objects.create(nombre="Ivan Gallego", user=self.ivan_g)
+        MiembroTardes.objects.create(usuario=self.salva, funcion="TENIS")
+        MiembroTardes.objects.create(usuario=self.josep, funcion="FISICO")
 
     def api(self, user):
         c = APIClient()
@@ -50,8 +56,8 @@ class InformeTests(TestCase):
         c = self.api(user or self.salva)
         r = c.post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
         self.assertEqual(r.status_code, 201, r.data)
-        c.patch(f"/api/evaluaciones/{r.data['id']}/", {"puntuaciones": TENIS, "fortalezas": ["Saque"],
-                                                       "mejoras": ["Revés"]}, format="json")
+        c.patch(f"/api/evaluaciones/{r.data['id']}/", {"puntuaciones": TENIS, "fortalezas_original": ["Saque"],
+                                                       "mejoras_original": ["Revés"]}, format="json")
         return r.data["id"]
 
     def _fisico(self):
@@ -71,9 +77,10 @@ class InformeTests(TestCase):
         r = self.api(self.josep).post(f"/api/evaluaciones-fisicas/{f}/terminar/", {}, format="json")
         inf = Informe.objects.get()
         self.assertEqual((inf.tenis_id, inf.fisica_id, inf.estado), (t, f, "PENDIENTE"))
-        self.assertTrue(Aviso.objects.filter(usuario=self.ivan, titulo__contains="listo para validar").exists())
-        self.assertTrue(Aviso.objects.filter(usuario=self.dani, titulo__contains="listo para validar").exists())
-        self.assertTrue(Aviso.objects.filter(usuario=self.ivan_g, titulo__contains="listo para validar").exists())
+        # Desde el 02/11 valida el coordinador de tardes: el aviso le llega solo a él.
+        self.assertTrue(Aviso.objects.filter(usuario=self.alberto, titulo__contains="listo para validar").exists())
+        self.assertFalse(Aviso.objects.filter(usuario=self.ivan, titulo__contains="listo para validar").exists())
+        self.assertFalse(Aviso.objects.filter(usuario=self.dani, titulo__contains="listo para validar").exists())
         # Iván Gallego valida pero no evalúa tenis.
         self.assertEqual(self.api(self.ivan_g).get(f"/api/informes/{inf.id}/").data["puede_validar"], True)
         self.assertEqual(self.api(self.ivan_g).post("/api/evaluaciones/", {"jugador": self.nino.id},
@@ -149,6 +156,30 @@ class InformeTests(TestCase):
         r = self.api(self.ivan).get(f"/api/informes/{inf.id}/pdf/")
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.content.startswith(b"%PDF"))
+
+    def test_el_idioma_solo_cambia_el_pdf_de_la_familia(self):
+        # 02/11/2026: en la app todo va en español; el PDF de la familia, en su idioma.
+        DatosInforme.objects.create(jugador=self.nino, idioma="EN")
+        t = self._tenis()
+        self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        f = self._fisico()
+        self.api(self.josep).post(f"/api/evaluaciones-fisicas/{f}/terminar/", {}, format="json")
+        inf = Informe.objects.get()
+        traducir = lambda textos, idioma: {k: f"EN {v}" for k, v in textos.items()}
+        with mock.patch.object(ia, "traducir", side_effect=traducir) as m:
+            es = pdf.datos_informe(inf)
+            m.assert_not_called()
+            self.assertEqual((es["t"]["lang"], es["fortalezas"]), ("es", ["Saque"]))
+            en = pdf.datos_informe(inf, "EN")
+            self.assertEqual((en["t"]["lang"], en["fortalezas"], en["mejoras"]), ("en", ["EN Saque"], ["EN Revés"]))
+            self.assertEqual(en["fisico"]["textos"][0]["texto"], "EN Rápido")
+            self.assertEqual(m.call_count, 2)
+            pdf.datos_informe(inf, "EN")  # ya traducido: no se vuelve a pedir
+            self.assertEqual(m.call_count, 2)
+        self.assertEqual(self.api(self.ivan).get(f"/api/informes/{inf.id}/").data["idioma"], "EN")
+        self.assertEqual(informes_mod.idioma_pdf(inf), "ES")  # mientras se revisa
+        inf.estado = "VALIDADO"
+        self.assertEqual(informes_mod.idioma_pdf(inf), "EN")
 
     def test_quien_ve_los_informes_y_el_panel(self):
         self.assertEqual(self.api(self.blas).get("/api/informes/").status_code, 403)
@@ -246,6 +277,8 @@ class RecordatoriosTests(TestCase):
     def test_al_entrenador_asignado_y_a_diego(self):
         AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.salva)
         diego = User.objects.create_user(username="diego.dominguez", password="x", role=User.Role.PREPARADOR)
+        for u in (diego, self.josep):
+            MiembroTardes.objects.create(usuario=u, funcion="FISICO")
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=7)), 1)
         self.assertIn("Toca el primer informe", Aviso.objects.get(usuario=self.salva).titulo)
         self.assertFalse(Aviso.objects.filter(usuario=self.alberto).exists())
@@ -276,3 +309,85 @@ class RecordatoriosTests(TestCase):
     def test_no_recuerda_si_ya_esta_en_marcha(self):
         Informe.objects.create(jugador=self.nuevo, tenis=Evaluacion.objects.create(jugador=self.nuevo))
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=10)), 0)
+
+
+class CoordinadorTardesTests(TestCase):
+    """Alberto lleva Competición de tardes: jugadores y equipo (02/11/2026)."""
+
+    def setUp(self):
+        self.ct = Escuela.objects.create(nombre="Competición de tardes", solo_informes=True)
+        self.alberto = User.objects.create_user(username="alberto.sanz", password="x", role=User.Role.ENTRENADOR)
+        self.milla = User.objects.create_user(username="jorge.milla", password="x", role=User.Role.ENTRENADOR)
+        Entrenador.objects.create(nombre="Jorge Milla", user=self.milla)
+        self.blas = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
+
+    def api(self, user):
+        c = APIClient()
+        c.force_authenticate(user)
+        return c
+
+    def test_alta_cambios_y_baja_de_jugadores(self):
+        c = self.api(self.alberto)
+        r = c.post("/api/tardes/jugadores/", {"nombre": " Lucía Pérez ", "fecha_nacimiento": "2014-05-12",
+                                               "fecha_alta": "2026-11-02", "email": "madre@x.com", "quien_1": "Madre",
+                                               "email_2": "padre@x.com", "quien_2": "Padre", "idioma": "EN"},
+                   format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        j = Jugador.objects.get(pk=r.data["id"])
+        self.assertEqual((j.nombre, j.escuela, j.activo, j.edad is not None), ("Lucía Pérez", self.ct, False, True))
+        self.assertEqual((r.data["idioma"], r.data["email_2"]), ("EN", "padre@x.com"))
+        r = c.patch(f"/api/tardes/jugadores/{j.id}/", {"idioma": "ES"}, format="json")
+        self.assertEqual(r.data["idioma"], "ES")
+        self.assertEqual([d["quien"] for d in informes_mod.destinatarios_propuestos(j)], ["Madre", "Padre"])
+        r = c.post(f"/api/tardes/jugadores/{j.id}/baja/", {"fecha": "2026-11-01"}, format="json")
+        self.assertEqual(r.data["fecha_baja"], "2026-11-01")
+        self.assertEqual(c.get("/api/tardes/jugadores/").data, [])
+        self.assertEqual(len(c.get("/api/tardes/jugadores/?bajas=1").data), 1)
+        c.post(f"/api/tardes/jugadores/{j.id}/reactivar/", {}, format="json")
+        self.assertEqual(len(c.get("/api/tardes/jugadores/").data), 1)
+        # Un entrenador cualquiera no.
+        self.assertEqual(self.api(self.blas).get("/api/tardes/jugadores/").status_code, 403)
+
+    def test_equipo(self):
+        c = self.api(self.alberto)
+        r = c.post("/api/tardes/equipo/", {"usuario": self.milla.id, "funcion": "TENIS"}, format="json")
+        self.assertEqual((r.status_code, r.data["nombre"]), (201, "Jorge Milla"))
+        datos = c.get("/api/tardes/equipo/").data
+        self.assertEqual([m["nombre"] for m in datos["miembros"]], ["Jorge Milla"])
+        self.assertIn("Jorge Milla", [x["nombre"] for x in datos["candidatos"]])
+        self.assertTrue(self.api(self.milla).get("/api/auth/me/").data["evalua_tenis_informes"])
+        c.delete(f"/api/tardes/equipo/{r.data['id']}/")
+        self.assertFalse(MiembroTardes.objects.exists())
+        self.assertEqual(self.api(self.blas).post("/api/tardes/equipo/", {"usuario": self.blas.id, "funcion": "TENIS"},
+                                                  format="json").status_code, 403)
+        # El coordinador valida y lo puede todo en tardes.
+        me = c.get("/api/auth/me/").data
+        self.assertTrue(me["valida_informes"] and me["coordina_informes"] and me["evalua_tenis_informes"])
+
+
+@override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="{}", DRIVE_INFORMES_ID="", DRIVE_CT_USUARIO="gestion@gtennis.com",
+                   DRIVE_CT_RUTA="gtennis › Gestión deportiva › Competición tardes › 26/27 › Seguimiento y Evaluación")
+class DriveTardesTests(TestCase):
+    """Informes de tardes en «Mi unidad» de gestion@: dos carpetas y todos los PDF dentro (02/11/2026)."""
+
+    def test_busca_la_ruta_sin_tildes_y_crea_las_dos_carpetas(self):
+        arbol = {"root": [("a", "GTennis")], "a": [("b", "Gestion Deportiva")], "b": [("c", "competicion tardes")],
+                 "c": [("d", "26/27")], "d": [("e", "Seguimiento y evaluacion")], "e": []}
+
+        class Sesion(FakeDrive):
+            def get(self, url, params=None):
+                q = (params or {}).get("q", "")
+                if q:
+                    padre = q.split("'")[1]
+                    return FakeResp({"files": [{"id": i, "name": n} for i, n in arbol.get(padre, [])]})
+                return super().get(url, params)
+
+        s = Sesion()
+        self.assertEqual(drive._carpeta_ct(s, "pendientes"), "id1")
+        self.assertEqual(len(s.creados), 1)  # solo «Por validar»; la ruta ya existía
+        # Sin la carpeta de la temporada, no se inventa la ruta: avisa.
+        del arbol["d"]
+        from .models import CarpetaDrive
+        CarpetaDrive.objects.all().delete()
+        with self.assertRaises(drive.DriveNoDisponible):
+            drive._carpeta_ct(Sesion(), "validados")

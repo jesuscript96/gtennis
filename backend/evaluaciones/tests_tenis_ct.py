@@ -1,10 +1,12 @@
-"""Tenis de Competición de tardes: lo evalúan Alberto Sanz, Salva Barcala y
-gestión deportiva, a todos los alumnos de la escuela (27/10/2026; Salva entra
-el 29/10 y Álvaro Mantoan sale el 30/10)."""
+"""Tenis de Competición de tardes: lo evalúan el coordinador (Alberto Sanz), el
+equipo de tardes que él lleva en la app y gestión deportiva, a todos los
+alumnos de la escuela (27/10/2026; Salva entra el 29/10, Álvaro Mantoan sale
+el 30/10, Jorge Milla entra y el equipo pasa a la base de datos el 02/11)."""
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from academy.models import Coach, Entrenador, Escuela, Jugador, ResponsableJugador
+from evaluaciones.models import MiembroTardes
 from users.models import User
 
 
@@ -30,6 +32,8 @@ class TenisCompeticionTardesTests(TestCase):
         self.blas_e.save(update_fields=["user"])
         self.dani = User.objects.create_user(username="daniel.gimeno", password="x", role=User.Role.COACH)
         Coach.objects.create(nombre="Dani", user=self.dani)
+        for u in (self.salva, self.milla):
+            MiembroTardes.objects.create(usuario=u, funcion="TENIS")
 
     def api(self, user):
         c = APIClient()
@@ -49,8 +53,12 @@ class TenisCompeticionTardesTests(TestCase):
             self.assertEqual(self.api(u).patch(f"/api/evaluaciones/{r.data['id']}/", {"idioma": "EN"},
                                                format="json").status_code, 200, u.username)
 
-    def test_jorge_milla_ya_no(self):
-        # 27/10: «Jorge Mico» no era Jorge Milla; Milla no evalúa Competición de tardes.
+    def test_el_equipo_lo_lleva_el_coordinador(self):
+        # 02/11: Jorge Milla entra en tardes; quien no está en el equipo no evalúa
+        # hasta que el coordinador le da de alta.
+        self.assertEqual(self.api(self.milla).post("/api/evaluaciones/", {"jugador": self.nino.id},
+                                                   format="json").status_code, 201)
+        MiembroTardes.objects.filter(usuario=self.milla).delete()
         self.assertEqual(self.api(self.milla).post("/api/evaluaciones/", {"jugador": self.nino.id},
                                                    format="json").status_code, 403)
 

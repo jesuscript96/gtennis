@@ -13,7 +13,7 @@ from pathlib import Path
 from django.template import Context, Template
 from django.utils import timezone
 
-from . import catalogo
+from . import catalogo, traduccion
 
 log = logging.getLogger(__name__)
 
@@ -67,10 +67,10 @@ def _fecha(d, t):
     return f"{d.day} de {mes} de {d.year}" if t["lang"] == "es" else f"{d.day} {mes} {d.year}"
 
 
-def nombre(ev):
+def nombre(ev, idioma=None):
     """`Xu Guilin-22-07-2026-EN.pdf`"""
     jugador = re.sub(r'[\\/:*?"<>|]', "", ev.jugador.nombre).strip()
-    return f"{jugador}-{ev.fecha:%d-%m-%Y}-{ev.idioma}.pdf"
+    return f"{jugador}-{ev.fecha:%d-%m-%Y}-{idioma or ev.idioma}.pdf"
 
 
 def _iniciales(nombre):
@@ -97,10 +97,14 @@ def _foto(jugador):
     return ""
 
 
-def datos(ev):
-    """Todo lo que pinta la plantilla, ya calculado y formateado."""
-    t = TEXTOS[ev.idioma]
-    en = ev.idioma == "EN"
+def datos(ev, idioma=None):
+    """Todo lo que pinta la plantilla, ya calculado y formateado, en `idioma`
+    (por defecto, el de la evaluación). Los textos del entrenador se traducen
+    si hace falta (`traduccion.tenis`)."""
+    idioma = idioma or ev.idioma
+    t = TEXTOS[idioma]
+    en = idioma == "EN"
+    tr = traduccion.tenis(ev, idioma)
     bloques = []
     for i, b in enumerate(catalogo.BLOQUES, 1):
         notas = [ev.puntuaciones.get(k) for k, _, _ in b["criterios"]]
@@ -111,11 +115,11 @@ def datos(ev):
             "titulo": b["titulo_en"] if en else b["titulo"],
             "corto": b["corto_en"] if en else b["corto"],
             "media_num": media,
-            "media": _num(media, ev.idioma),
+            "media": _num(media, idioma),
             # Como texto: Django pintaría los decimales con coma y el SVG/CSS no lo entiende.
             "ancho": f"{(media or 0) / 5 * 100:.1f}",
             "arco": f"{(media or 0) / 5 * PERIMETRO:.2f}",
-            "comentario": (ev.comentarios.get(b["clave"]) or {}).get("pulido", ""),
+            "comentario": tr["comentarios"].get(b["clave"], ""),
             "criterios": [{
                 "etiqueta": en_ if en else es,
                 "nota": n or "—",
@@ -133,7 +137,7 @@ def datos(ev):
         "jugador": ev.jugador.nombre,
         "entrenador": ev.nombre_evaluador,
         "fecha": _fecha(ev.fecha, t),
-        "media": _num(sum(todas) / len(todas) if todas else None, ev.idioma),
+        "media": _num(sum(todas) / len(todas) if todas else None, idioma),
         "bloques": bloques,
         "pares": [bloques[i:i + 2] for i in range(0, len(bloques), 2)],
         "filas_anillos": [bloques[:4], bloques[4:]],
@@ -142,22 +146,22 @@ def datos(ev):
         "ordenados": ordenados,
         "iniciales": _iniciales(ev.jugador.nombre),
         "foto": _foto(ev.jugador),
-        "fortalezas": [f for f in ev.fortalezas if f.strip()],
-        "mejoras": [m for m in ev.mejoras if m.strip()],
-        "competicion": (ev.comentarios.get(catalogo.COMPETICION) or {}).get("pulido", ""),
+        "fortalezas": tr["fortalezas"],
+        "mejoras": tr["mejoras"],
+        "competicion": tr["comentarios"].get(catalogo.COMPETICION, ""),
     }
 
 
-def html(ev):
+def html(ev, idioma=None):
     plantilla = Template((CARPETA / "informe.html").read_text(encoding="utf-8"))
-    return plantilla.render(Context(datos(ev)))
+    return plantilla.render(Context(datos(ev, idioma)))
 
 
-def generar(ev):
+def generar(ev, idioma=None):
     """Los bytes del PDF."""
     from weasyprint import HTML  # carga pango: solo cuando de verdad se genera
 
-    return HTML(string=html(ev), base_url=str(CARPETA)).write_pdf()
+    return HTML(string=html(ev, idioma), base_url=str(CARPETA)).write_pdf()
 
 
 # --- Informe conjunto de Competición de tardes (27/10/2026) -----------------
@@ -217,7 +221,7 @@ def datos_fisico(inf, idioma):
                 "segmentos": [bool(ev.puntuaciones.get(k)) and i < ev.puntuaciones.get(k) for i in range(5)],
             } for k, e, _ in b["criterios"]],
         })
-    textos = inf.textos_fisico_traducidos if en and inf.textos_fisico_traducidos else ev.textos
+    textos = traduccion.fisica(ev, idioma)
     t = TEXTOS[idioma]
     return {
         "evaluador": ev.nombre_evaluador,
@@ -228,9 +232,10 @@ def datos_fisico(inf, idioma):
     }
 
 
-def datos_informe(inf):
-    d = datos(inf.tenis)
-    idioma = inf.tenis.idioma
+def datos_informe(inf, idioma="ES"):
+    """El informe conjunto: en español para la app y dirección; en el idioma de
+    la familia para el PDF que se le envía (02/11/2026)."""
+    d = datos(inf.tenis, idioma)
     d["t"] = {**d["t"], "academia": d["t"]["academia_tardes"]}
     previo = anterior(inf)
     if previo and previo.tenis:
@@ -246,18 +251,18 @@ def datos_informe(inf):
     return d
 
 
-def nombre_informe(inf):
+def nombre_informe(inf, idioma="ES"):
     jugador = re.sub(r'[\\/:*?"<>|]', "", inf.jugador.nombre).strip()
     fecha = timezone.localtime(inf.validado_en).date() if inf.validado_en else timezone.localdate()
-    return f"{jugador}-{fecha:%d-%m-%Y}-{inf.tenis.idioma}.pdf"
+    return f"{jugador}-{fecha:%d-%m-%Y}-{idioma}.pdf"
 
 
-def html_informe(inf):
+def html_informe(inf, idioma="ES"):
     plantilla = Template((CARPETA / "informe.html").read_text(encoding="utf-8"))
-    return plantilla.render(Context(datos_informe(inf)))
+    return plantilla.render(Context(datos_informe(inf, idioma)))
 
 
-def generar_informe(inf):
+def generar_informe(inf, idioma="ES"):
     from weasyprint import HTML
 
-    return HTML(string=html_informe(inf), base_url=str(CARPETA)).write_pdf()
+    return HTML(string=html_informe(inf, idioma), base_url=str(CARPETA)).write_pdf()

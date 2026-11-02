@@ -1752,6 +1752,21 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .inf-dest input { flex: 1 1 180px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--r); font: inherit; background: var(--surface); }
 .inf-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--r); font: inherit; background: var(--surface); }
 .inf-form > .btn { justify-self: start; }
+/* Competición de tardes: jugadores y equipo del coordinador (02/11/2026). */
+.tardes-ficha { padding: 16px; margin: 12px 0; }
+.tardes-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+.tardes-campos label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.tardes-campos input, .tardes-campos select, .inf-dest select, .inf-asignado input[type="date"] {
+  padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--r); font: inherit;
+  font-size: 14px; color: var(--text); background: var(--surface); min-width: 0; }
+.tardes-equipo { padding: 16px; margin: 12px 0; max-width: 560px; }
+.tardes-equipo h2 { font-family: var(--font-serif); font-weight: 500; font-size: 20px; margin: 0 0 8px; }
+.tardes-miembros { list-style: none; margin: 0 0 12px; padding: 0; }
+.tardes-miembros li { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); }
+.tardes-equipo .inf-dest select { flex: 1 1 220px; }
+.tardes-bajas { white-space: nowrap; }
+@media (max-width: 640px) { .tardes-campos { grid-template-columns: 1fr; } }
 .inf-checks { display: flex; gap: 16px; flex-wrap: wrap; }
 .inf-checks label { display: inline-flex; gap: 6px; align-items: center; }
 .inf-pdf { width: 100%; height: 80vh; border: 1px solid var(--border); border-radius: var(--r); }

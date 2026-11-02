@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import AsistenteEvaluacion from "../../../../components/AsistenteEvaluacion";
 import InformeDeLaEvaluacion from "../../../../components/InformeDeLaEvaluacion";
 import {
-  borrarEvaluacion, descargarPdfEvaluacion, getCatalogoEvaluacion, getEvaluacion, guardarEvaluacionEnDrive,
+  borrarEvaluacion, cambiarIdiomaFamilia, descargarPdfEvaluacion, getCatalogoEvaluacion, getEvaluacion, guardarEvaluacionEnDrive,
 } from "../../../../lib/api";
 import { fmtLarga } from "../../../../lib/torneos";
 
@@ -105,7 +105,7 @@ export default function EvaluacionPage() {
       ) : (
         <>
           <p className="eval-cabecera">
-            {fmtLarga(ev.fecha)} · evaluado por <b>{ev.nombre_evaluador}</b> · {ev.idioma === "EN" ? "en inglés" : "en español"}
+            {fmtLarga(ev.fecha)} · evaluado por <b>{ev.nombre_evaluador}</b>
             {ev.estado === "BORRADOR" && <span className="pill pend"> A medias · {ev.puntuados}/34</span>}
           </p>
           <InformeDeLaEvaluacion informe={ev.informe} parte="tenis" />
@@ -117,6 +117,15 @@ export default function EvaluacionPage() {
               <button type="button" className="btn ghost" disabled={drive === "subiendo"} onClick={subirADrive}>Guardar en Drive</button>
             )}
             {ev.estado === "TERMINADA" && <button type="button" className="btn ghost" onClick={descargar}>Descargar PDF</button>}
+            {ev.estado === "TERMINADA" && !ev.informe && (
+              <label className="inf-asignado">PDF para la familia en
+                <select value={ev.idioma_familia} disabled={!ev.puede_editar}
+                  onChange={(e) => cambiarIdiomaFamilia(ev.id, e.target.value).then(setEv).catch((err) => setError(err.message))}>
+                  <option value="ES">español</option>
+                  <option value="EN">inglés</option>
+                </select>
+              </label>
+            )}
             {ev.puede_editar && <button type="button" className="btn danger" onClick={borrar}>Borrar</button>}
           </div>
           {drive === "subiendo" && <p className="eval-nota" role="status">Guardando en la carpeta del jugador en Drive…</p>}
