@@ -39,16 +39,16 @@ function FichaJugador({ inicial, onGuardar, onCancelar }) {
         </label>
         <label>Fecha de nacimiento<input type="date" value={f.fecha_nacimiento || ""} onChange={cambia("fecha_nacimiento")} /></label>
         <label>Fecha de alta<input type="date" value={f.fecha_alta || ""} onChange={cambia("fecha_alta")} /></label>
+        <label>Email de la familia<input type="email" value={f.email} onChange={cambia("email")} /></label>
+        <label>¿Quién es?<input value={f.quien_1} onChange={cambia("quien_1")} placeholder="Madre, padre…" /></label>
+        <label>Segundo email (opcional)<input type="email" value={f.email_2} onChange={cambia("email_2")} /></label>
+        <label>¿Quién es?<input value={f.quien_2} onChange={cambia("quien_2")} placeholder="Madre, padre…" /></label>
         <label>Idioma del informe para la familia
           <select value={f.idioma} onChange={cambia("idioma")}>
             <option value="ES">Español</option>
             <option value="EN">Inglés</option>
           </select>
         </label>
-        <label>Email de la familia<input type="email" value={f.email} onChange={cambia("email")} /></label>
-        <label>¿Quién es?<input value={f.quien_1} onChange={cambia("quien_1")} placeholder="Madre, padre…" /></label>
-        <label>Segundo email (opcional)<input type="email" value={f.email_2} onChange={cambia("email_2")} /></label>
-        <label>¿Quién es?<input value={f.quien_2} onChange={cambia("quien_2")} placeholder="Madre, padre…" /></label>
       </div>
       <p className="eval-nota">
         El informe se hace siempre en español; el idioma solo cambia el PDF que se envía a la familia.
@@ -153,7 +153,7 @@ function Jugadores() {
           setNuevo(false);
         }} />
       )}
-      <p className="eval-nota">{visibles.length} jugadores. El entrenador de cada uno se asigna en <Link href="/informes">Informes</Link>.</p>
+      <p className="eval-nota">{visibles.length} jugador{visibles.length === 1 ? "" : "es"}. El entrenador de cada uno se asigna en <Link href="/informes">Informes</Link>.</p>
       <ul className="inf-lista">
         {visibles.map((j) => <FilaJugador key={j.id} j={j} onCambio={cambia} />)}
       </ul>
