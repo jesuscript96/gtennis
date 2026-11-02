@@ -249,9 +249,9 @@ class RecordatoriosTests(TestCase):
         self.assertEqual(recordatorios.revisar(self.hoy + timedelta(days=7)), 1)
         self.assertIn("Toca el primer informe", Aviso.objects.get(usuario=self.salva).titulo)
         self.assertFalse(Aviso.objects.filter(usuario=self.alberto).exists())
-        # La física de Competición de tardes es de Diego: Josep ya no recibe estos recordatorios.
+        # La física de Competición de tardes la hacen Diego y Josep: les llega a los dos.
         self.assertTrue(Aviso.objects.filter(usuario=diego).exists())
-        self.assertFalse(Aviso.objects.filter(usuario=self.josep).exists())
+        self.assertTrue(Aviso.objects.filter(usuario=self.josep).exists())
 
     def test_sin_alta_se_recuerda_una_vez(self):
         self.nuevo.fecha_alta = None
@@ -265,7 +265,7 @@ class RecordatoriosTests(TestCase):
         Informe.objects.create(jugador=self.nuevo, tenis=ev, estado="VALIDADO", validado_en=validado)
         AsignacionInforme.objects.create(jugador=self.nuevo, evaluador=self.salva)
         self.assertEqual(recordatorios.revisar(self.hoy), 1)
-        # El de tenis es el asignado; sin Diego, los preparadores.
+        # El de tenis es el asignado; la física, Josep.
         self.assertTrue(Aviso.objects.filter(usuario=self.salva, titulo__contains="pronto").exists())
         self.assertFalse(Aviso.objects.filter(usuario=self.alberto).exists())
         self.assertTrue(Aviso.objects.filter(usuario=self.josep).exists())

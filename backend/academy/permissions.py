@@ -90,9 +90,10 @@ def evalua_fisico(user):
 # a entrenar mañana y tarde en el puesto de Salva, y Salva le sustituye aquí.
 EVALUAN_COMPETICION_TARDES = {"alberto.sanz", "salva.barcala"}
 COORDINAN_COMPETICION_TARDES = {"alberto.sanz"}
-# La parte física de Competición de tardes la hace Diego Domínguez: a él le
-# llegan sus recordatorios (sin él, a todos los preparadores).
-FISICO_COMPETICION_TARDES = {"diego.dominguez"}
+# La parte física de Competición de tardes: de momento Diego Domínguez y Josep
+# Mari evalúan a todos y a los dos les llegan los recordatorios (02/11/2026).
+# Sin ninguno activo, a todos los preparadores.
+FISICO_COMPETICION_TARDES = {"diego.dominguez", "josep.mari"}
 
 
 def coordina_informes(user):
