@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from academy.models import Entrenador
 
+from . import categorias as cats
 from .models import Participante, Torneo
 
 
@@ -15,12 +16,16 @@ class ParticipanteSerializer(serializers.ModelSerializer):
     # Su entrenador hoy, según Grupos (03/11/2026). `entrenador_ref` es el
     # nombre que traía el Excel y ya no se enseña.
     entrenador = serializers.SerializerMethodField()
+    # Su categoría el año del torneo y si se sale de las del torneo (pasa si
+    # se cambian las categorías después de apuntarle).
+    categoria = serializers.SerializerMethodField()
+    fuera_de_categoria = serializers.SerializerMethodField()
 
     class Meta:
         model = Participante
         fields = ["id", "torneo", "jugador", "nombre", "certeza", "certeza_display",
                   "entrenador_ref", "entrenador", "detalle", "apuntado_por", "apuntado_por_nombre",
-                  "apuntado_por_mi"]
+                  "apuntado_por_mi", "categoria", "fuera_de_categoria"]
         read_only_fields = ["apuntado_por"]
         # La restricción (torneo, nombre) se comprueba abajo, una vez resuelto el
         # nombre a partir de la ficha; el validador automático obligaría a mandarlo.
@@ -41,6 +46,15 @@ class ParticipanteSerializer(serializers.ModelSerializer):
         if repetido.exists():
             raise serializers.ValidationError({"nombre": f"{nombre} ya está apuntado a este torneo."})
         return data
+
+    def get_categoria(self, obj):
+        if obj.jugador is None:
+            return None
+        c = cats.categoria_de(obj.jugador, obj.torneo.fecha_inicio.year)
+        return cats.NOMBRE[c] if c else None
+
+    def get_fuera_de_categoria(self, obj):
+        return obj.jugador is not None and not cats.puede_jugar(obj.jugador, obj.torneo)
 
     def get_entrenador(self, obj):
         return entrenador_de(obj.jugador) if obj.jugador_id else ""
@@ -86,7 +100,8 @@ class TorneoSerializer(serializers.ModelSerializer):
         model = Torneo
         fields = [
             "id", "nombre", "circuito", "nivel", "lugar", "fecha_inicio", "fecha_fin",
-            "cierre_inscripcion", "qualy_inicio", "qualy_fin", "solo_fines_semana", "estado", "estado_display", "acompanantes",
+            "cierre_inscripcion", "qualy_inicio", "qualy_fin", "solo_fines_semana", "categorias",
+            "estado", "estado_display", "acompanantes",
             "acompanantes_detalle", "acompanante_nota", "notas", "fuente", "alias",
             "participantes", "n_jugadores", "creado_por", "creado_por_nombre",
             "created_at", "updated_at",
@@ -101,6 +116,11 @@ class TorneoSerializer(serializers.ModelSerializer):
         if u is None:
             return ""
         return u.get_full_name() or u.username
+
+    def validate_categorias(self, value):
+        if not isinstance(value, list) or any(c not in cats.CODIGOS for c in value):
+            raise serializers.ValidationError(f"Categorías válidas: {', '.join(cats.CODIGOS)}.")
+        return cats.ordenar(value)
 
     def validate(self, data):
         ini = data.get("fecha_inicio") or getattr(self.instance, "fecha_inicio", None)

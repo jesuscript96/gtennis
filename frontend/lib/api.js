@@ -336,7 +336,9 @@ export const delParticipante = (id) => req(`/torneos-participantes/${id}/`, { me
 export const getPorConfirmar = () => req("/torneos-participantes/por_confirmar/");
 // A quién puede apuntar cada uno: los de su columna en Grupos (el head coach,
 // los de sus entrenadores; dirección, todos), con su entrenador.
-export const getJugadoresApuntables = () => req("/torneos-participantes/jugadores/");
+// Con `torneo`, solo los que entran por categoría y con la suya ese año.
+export const getJugadoresApuntables = (torneo) =>
+  req(`/torneos-participantes/jugadores/${torneo ? `?torneo=${torneo}` : ""}`);
 // Entrenadores activos con sus vacaciones en el tramo: para el desplegable de «acompaña».
 export const getTorneosEntrenadores = (desde, hasta) =>
   req(`/torneos/entrenadores/?${new URLSearchParams({ ...(desde && { desde }), ...(hasta && { hasta }) })}`);

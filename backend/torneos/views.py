@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from academy.models import Aviso, Coach, Entrenador, Jugador, VacacionesEntrenador
 from academy.permissions import es_coach, es_direccion
 
+from . import categorias as cats
 from . import historial
 from .models import CambioTorneo, Participante, Torneo
 from .serializers import ParticipanteSerializer, TorneoListaSerializer, TorneoSerializer, entrenador_de
@@ -241,6 +242,7 @@ class TorneoViewSet(viewsets.ModelViewSet):
                     p.torneo = t
                     p.save(update_fields=["torneo"])
             t.acompanantes.add(*otro.acompanantes.all())
+            t.categorias = cats.ordenar(t.categorias + otro.categorias)
             alias = [x for x in (t.alias + " | " + otro.nombre + " | " + otro.alias).split(" | ") if x.strip()]
             t.alias = " | ".join(dict.fromkeys(alias))[:300]
             t.fuente = ", ".join(x for x in (t.fuente, otro.fuente) if x)[:300]
@@ -322,6 +324,13 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         if t.estado == Torneo.Estado.CANCELADO:
             raise ValidationError({"torneo": "Ese torneo está cancelado."})
 
+    def _de_su_categoria(self, jugador, torneo):
+        """Para todos, también dirección: solo los de la categoría del torneo
+        o una más pequeña (03/11/2026)."""
+        if jugador is not None and not cats.puede_jugar(jugador, torneo):
+            # En «detail», que es lo que enseña la pantalla tal cual.
+            raise ValidationError({"detail": cats.motivo(jugador, torneo)})
+
     def perform_create(self, serializer):
         d = serializer.validated_data
         user = self.request.user
@@ -331,6 +340,7 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         else:
             self._puede_apuntar_entrenador(d)
             extra["certeza"] = Participante.Certeza.PENDIENTE
+        self._de_su_categoria(d.get("jugador"), d["torneo"])
         t = d["torneo"]
         nombre = d.get("nombre") or (d["jugador"].nombre if d.get("jugador") else "")
         historial.registrar(user, f"Apuntar a {nombre} en «{t.nombre}»", t.id)
@@ -345,6 +355,7 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         self._de_mi_grupo(p.jugador)
         destino = serializer.validated_data.get("torneo")
         if destino is not None and destino.pk != p.torneo_id:
+            self._de_su_categoria(p.jugador, destino)
             historial.registrar(self.request.user,
                                 f"Mover a {p.nombre} de «{p.torneo.nombre}» a «{destino.nombre}»",
                                 p.torneo_id, destino.pk)
@@ -393,10 +404,21 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def jugadores(self, request):
         """El desplegable de apuntar: los jugadores de su grupo, con su
-        entrenador según Grupos."""
+        entrenador según Grupos. Con `?torneo=`, solo los que entran por
+        categoría, con la suya ese año (None si no consta su nacimiento)."""
         qs = jugadores_apuntables(request.user).select_related(
             "entrenador_responsable").prefetch_related("cogestores")
-        return Response([{"id": j.id, "nombre": j.nombre, "entrenador": entrenador_de(j)} for j in qs])
+        t = None
+        if request.query_params.get("torneo"):
+            t = get_object_or_404(Torneo, pk=request.query_params["torneo"])
+        filas = []
+        for j in qs:
+            if t is not None and not cats.puede_jugar(j, t):
+                continue
+            cat = cats.categoria_de(j, t.fecha_inicio.year if t else date.today().year)
+            filas.append({"id": j.id, "nombre": j.nombre, "entrenador": entrenador_de(j),
+                          "categoria": cats.NOMBRE[cat] if cat else None})
+        return Response(filas)
 
 
 class CambioTorneoViewSet(viewsets.ViewSet):

@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { getTorneosEntrenadores } from "../lib/api";
+import { CATEGORIAS } from "../lib/torneos";
 
 const VACIO = {
-  nombre: "", circuito: "", nivel: "", lugar: "", fecha_inicio: "", fecha_fin: "",
+  nombre: "", circuito: "", nivel: "", categorias: [], lugar: "", fecha_inicio: "", fecha_fin: "",
   cierre_inscripcion: "", qualy_inicio: "", qualy_fin: "", solo_fines_semana: false, estado: "VALIDADO", acompanantes: [], acompanante_nota: "", notas: "",
 };
 
@@ -23,6 +24,12 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
   }, []);
 
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+  function toggleCategoria(c) {
+    setF((s) => ({
+      ...s,
+      categorias: s.categorias.includes(c) ? s.categorias.filter((x) => x !== c) : [...s.categorias, c],
+    }));
+  }
   function toggleAcomp(id) {
     setF((s) => ({
       ...s,
@@ -49,9 +56,6 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
         <label className="field"><span>Circuito</span>
           <input list="circuitos" value={f.circuito} onChange={set("circuito")} placeholder="ITF Junior, MARCA, TTK Warriors…" />
           <datalist id="circuitos">{circuitos.map((c) => <option key={c} value={c} />)}</datalist>
-        </label>
-        <label className="field"><span>Nivel / categoría</span>
-          <input value={f.nivel} onChange={set("nivel")} placeholder="J60, M25, Sub-16, Cadete…" />
         </label>
         <label className="field"><span>Lugar</span>
           <input value={f.lugar} onChange={set("lugar")} placeholder="Ciudad o club" />
@@ -84,6 +88,16 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
             onChange={(e) => setF((s) => ({ ...s, solo_fines_semana: e.target.checked }))} />
           <span>Solo se juega en fin de semana</span>
         </label>
+        <div className="field col-3"><span>Categorías (marca todas las que tenga; sin ninguna, no hay límite de edad)</span>
+          <div className="chips-acomp">
+            {CATEGORIAS.map((c) => (
+              <button type="button" key={c.codigo}
+                className={`chip-acomp${f.categorias.includes(c.codigo) ? " on" : ""}`}
+                onClick={() => toggleCategoria(c.codigo)}>{c.nombre} <span className="muted">{c.sub}</span></button>
+            ))}
+          </div>
+          <small className="muted">Se apuntan los de esas categorías y los más pequeños, según los años que cumplen en el año del torneo.</small>
+        </div>
         <div className="field col-2"><span>Coach que acompaña</span>
           <div className="chips-acomp">
             {entrenadores.map((e) => (

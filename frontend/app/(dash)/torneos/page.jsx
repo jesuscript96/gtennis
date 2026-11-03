@@ -8,7 +8,8 @@ import {
 import { apuntaATorneos, canWrite } from "../../../lib/perms";
 import DeshacerTorneos from "../../../components/DeshacerTorneos";
 import {
-  ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, semanasDe, semanasOcupadas, solapa,
+  ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, nombreCategoria, semanasDe,
+  semanasOcupadas, solapa,
 } from "../../../lib/torneos";
 
 // El año en curso y el siguiente: en otoño ya se apuntan torneos de enero
@@ -263,6 +264,7 @@ export default function TorneosPage() {
           <Link href={`/torneos/${t.id}`} className="torneo-link">{t.nombre}</Link>
           <div className="torneo-sub">
             {t.circuito && <span className="pill circ">{t.circuito}</span>}
+            {(t.categorias || []).map((c) => <span key={c} className="pill cat">{nombreCategoria(c)}</span>)}
             {t.nivel && <span className="muted">{t.nivel}</span>}
             {t.lugar && <span className="muted">· {t.lugar}</span>}
           </div>

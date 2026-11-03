@@ -32,6 +32,19 @@ export function diasHasta(iso) {
   const b = new Date(iso + "T00:00:00");
   return Math.round((b - a) / 86400000);
 }
+// Categorías de edad (backend/torneos/categorias.py): los años que se cumplen
+// en el año del torneo. Un torneo puede tener varias; se apuntan los de esas o
+// los de una más pequeña.
+export const CATEGORIAS = [
+  { codigo: "SUB8", nombre: "Pre-benjamín", sub: "Sub-8" },
+  { codigo: "SUB10", nombre: "Benjamín", sub: "Sub-10" },
+  { codigo: "SUB12", nombre: "Alevín", sub: "Sub-12" },
+  { codigo: "SUB14", nombre: "Infantil", sub: "Sub-14" },
+  { codigo: "SUB16", nombre: "Cadete", sub: "Sub-16" },
+  { codigo: "SUB18", nombre: "Júnior", sub: "Sub-18" },
+  { codigo: "ABSOLUTA", nombre: "Absoluta", sub: "Senior" },
+];
+export const nombreCategoria = (c) => CATEGORIAS.find((x) => x.codigo === c)?.nombre || c;
 export const CERTEZA_LABEL = { CONFIRMADO: "Confirmado", PENDIENTE: "Pendiente", DEDUCIDO: "Deducido" };
 export const CERTEZA_CLASS = { CONFIRMADO: "ok", PENDIENTE: "pend", DEDUCIDO: "ded" };
 export const ESTADO_CLASS = { VALIDADO: "ok", PROPUESTO: "pend", CANCELADO: "no" };

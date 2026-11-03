@@ -384,3 +384,81 @@ class PreviaTests(TestCase):
                                      solo_fines_semana=True)
         r = self.c.post(f"/api/torneos/{otro.id}/fusionar/", {"con": tid}, format="json")
         self.assertEqual((r.data["qualy_inicio"], r.data["solo_fines_semana"]), ("2026-10-17", True))
+
+
+class CategoriasTests(TestCase):
+    """03/11/2026: un torneo es de una o varias categorías de edad (los años
+    que se cumplen en el año del torneo) y a él se apuntan los de esas o los
+    de una más pequeña."""
+
+    def setUp(self):
+        self.u_dir = User.objects.create_user(username="dir", password="x", role=User.Role.SUPERADMIN)
+        self.c = APIClient()
+        self.c.force_authenticate(self.u_dir)
+        self.alevin = Jugador.objects.create(nombre="Alevín", fecha_nacimiento=date(2014, 12, 31))    # 12 en 2026
+        self.infantil = Jugador.objects.create(nombre="Infantil", fecha_nacimiento=date(2012, 1, 1))  # 14 en 2026
+        self.cadete = Jugador.objects.create(nombre="Cadete", fecha_nacimiento=date(2011, 6, 15))    # 15 en 2026
+        self.sin_fecha = Jugador.objects.create(nombre="Sin fecha")
+        self.t = Torneo.objects.create(nombre="Valencia Tennis Tour", fecha_inicio="2026-11-07",
+                                       fecha_fin="2026-11-14", categorias=["SUB12", "SUB14"])
+
+    def apuntar(self, jugador, torneo=None):
+        return self.c.post("/api/torneos-participantes/", {"torneo": (torneo or self.t).id, "jugador": jugador.id},
+                           format="json")
+
+    def test_categoria_por_los_anios_que_cumple_en_el_anio_del_torneo(self):
+        from .categorias import categoria_de
+        self.assertEqual(categoria_de(self.infantil, 2026), "SUB14")
+        self.assertEqual(categoria_de(self.infantil, 2027), "SUB16")
+        self.assertEqual(categoria_de(self.alevin, 2026), "SUB12")
+        self.assertIsNone(categoria_de(self.sin_fecha, 2026))
+        self.assertEqual(categoria_de(Jugador(fecha_nacimiento=date(1990, 1, 1)), 2026), "ABSOLUTA")
+
+    def test_se_apuntan_los_de_su_categoria_o_mas_pequenos(self):
+        self.assertEqual(self.apuntar(self.alevin).status_code, 201)
+        self.assertEqual(self.apuntar(self.infantil).status_code, 201)
+        self.assertEqual(self.apuntar(self.sin_fecha).status_code, 201)
+        r = self.apuntar(self.cadete)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("cadete en 2026", str(r.data["detail"]))
+        # Un benjamín también entra en un torneo infantil.
+        benjamin = Jugador.objects.create(nombre="Benjamín", fecha_nacimiento=date(2017, 3, 1))
+        self.assertEqual(self.apuntar(benjamin).status_code, 201)
+
+    def test_en_enero_ya_cuenta_el_anio_nuevo(self):
+        t = Torneo.objects.create(nombre="Enero", fecha_inicio="2027-01-11", fecha_fin="2027-01-17",
+                                  categorias=["SUB14"])
+        self.assertEqual(self.apuntar(self.infantil, t).status_code, 400)  # 15 en 2027
+
+    def test_sin_categorias_no_hay_limite(self):
+        t = Torneo.objects.create(nombre="Libre", fecha_inicio="2026-11-07", fecha_fin="2026-11-14")
+        self.assertEqual(self.apuntar(self.cadete, t).status_code, 201)
+
+    def test_no_se_mueve_a_un_torneo_de_categoria_menor(self):
+        absoluto = Torneo.objects.create(nombre="Absoluto", fecha_inicio="2026-11-07", fecha_fin="2026-11-14",
+                                         categorias=["ABSOLUTA"])
+        pid = self.apuntar(self.cadete, absoluto).data["id"]
+        r = self.c.patch(f"/api/torneos-participantes/{pid}/", {"torneo": self.t.id}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(Participante.objects.get(pk=pid).torneo, absoluto)
+
+    def test_el_desplegable_solo_ofrece_los_que_entran(self):
+        r = self.c.get(f"/api/torneos-participantes/jugadores/?torneo={self.t.id}")
+        mios = {j["nombre"]: j["categoria"] for j in r.data if j["id"] in
+                {self.alevin.id, self.infantil.id, self.cadete.id, self.sin_fecha.id}}
+        self.assertEqual(mios, {"Alevín": "Alevín", "Infantil": "Infantil", "Sin fecha": None})
+
+    def test_categorias_validas_y_ordenadas(self):
+        r = self.c.patch(f"/api/torneos/{self.t.id}/", {"categorias": ["SUB16", "SUB10", "SUB16"]}, format="json")
+        self.assertEqual(r.data["categorias"], ["SUB10", "SUB16"])
+        r = self.c.patch(f"/api/torneos/{self.t.id}/", {"categorias": ["Cadete"]}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_avisa_si_queda_fuera_de_categoria(self):
+        self.apuntar(self.infantil)
+        self.c.patch(f"/api/torneos/{self.t.id}/", {"categorias": ["SUB12"]}, format="json")
+        p = self.c.get(f"/api/torneos/{self.t.id}/").data["participantes"][0]
+        self.assertEqual((p["categoria"], p["fuera_de_categoria"]), ("Infantil", True))
+        # Deshacer devuelve también las categorías.
+        self.c.post("/api/torneos-cambios/deshacer/", {}, format="json")
+        self.assertEqual(Torneo.objects.get(pk=self.t.id).categorias, ["SUB12", "SUB14"])

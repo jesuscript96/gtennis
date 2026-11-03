@@ -19,8 +19,12 @@ class Torneo(models.Model):
     # Circuito tal como se nombra en el club (ITF Junior, MARCA, TTK Warriors…).
     # Texto libre: los circuitos cambian cada temporada.
     circuito = models.CharField(max_length=60, blank=True)
-    # Nivel dentro del circuito: J30, M25, Sub-16, Cadete… Texto libre.
+    # Nivel dentro del circuito: J30, M25… Texto libre; casi no se usaba y
+    # desde el 03/11/2026 el formulario pide las categorías.
     nivel = models.CharField(max_length=40, blank=True)
+    # Categorías de edad («SUB12», «SUB14»… ver categorias.py). Vacío = sin
+    # límite de edad.
+    categorias = models.JSONField(default=list, blank=True)
     lugar = models.CharField(max_length=120, blank=True)
     fecha_inicio = models.DateField()
     fecha_fin = models.DateField()

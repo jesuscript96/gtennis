@@ -10,7 +10,9 @@ import {
 } from "../../../../lib/api";
 import { apuntaATorneos, canWrite } from "../../../../lib/perms";
 import DeshacerTorneos from "../../../../components/DeshacerTorneos";
-import { CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, diasHasta, fmtLarga, fmtRango, hoyISO, sumaDias } from "../../../../lib/torneos";
+import {
+  CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, diasHasta, fmtLarga, fmtRango, hoyISO, nombreCategoria, sumaDias,
+} from "../../../../lib/torneos";
 
 export default function TorneoDetallePage() {
   const { id } = useParams();
@@ -43,8 +45,13 @@ export default function TorneoDetallePage() {
   }, [t?.id, t?.fecha_inicio, t?.fecha_fin]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     getTorneosResumen().then((r) => setCircuitos(r.circuitos.map((c) => c.nombre))).catch(() => {});
-    getJugadoresApuntables().then(setJugadores).catch(() => setJugadores([]));
   }, []);
+  // Quién entra depende de las categorías del torneo: se vuelve a pedir si cambian.
+  const categoriasClave = (t?.categorias || []).join(",");
+  useEffect(() => {
+    if (!t) return;
+    getJugadoresApuntables(id).then(setJugadores).catch(() => setJugadores([]));
+  }, [id, t?.fecha_inicio, categoriasClave]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function guardar(body) {
     setGuardando(true); setError("");
@@ -88,6 +95,9 @@ export default function TorneoDetallePage() {
   const conAcciones = puedeEditar || t.participantes.some(quitaEntrenador);
   const sePuedeApuntar = t.fecha_fin >= hoyISO() && t.estado !== "CANCELADO";
   const libres = (jugadores || []).filter((j) => !yaApuntados.has(j.id));
+  const avisoCategorias = t.categorias?.length
+    ? ` Solo salen los de ${t.categorias.map(nombreCategoria).join(", ").toLowerCase()} o más pequeños en ${t.fecha_inicio.slice(0, 4)}.`
+    : "";
   const notasInput = (
     <input className="apuntar-notas" placeholder="Notas (opcional): solo la previa, va con su padre…" maxLength={200}
       value={nuevo.notas} onChange={(e) => setNuevo({ ...nuevo, notas: e.target.value })} />
@@ -101,6 +111,7 @@ export default function TorneoDetallePage() {
           <h1>{t.nombre}</h1>
           <div className="torneo-sub grande">
             {t.circuito && <span className="pill circ">{t.circuito}</span>}
+            {(t.categorias || []).map((c) => <span key={c} className="pill cat">{nombreCategoria(c)}</span>)}
             {t.nivel && <span className="muted">{t.nivel}</span>}
             {t.estado !== "VALIDADO" && <span className={`pill ${ESTADO_CLASS[t.estado]}`}>{t.estado_display}</span>}
           </div>
@@ -157,6 +168,8 @@ export default function TorneoDetallePage() {
                   <td>
                     {p.nombre}
                     {!p.jugador && <span className="pill gris" title="No está en las fichas de la academia">sin ficha</span>}
+                    {p.categoria && <span className="muted cat-jug"> · {p.categoria}</span>}
+                    {p.fuera_de_categoria && <span className="pill no" title="Su categoría es mayor que las del torneo">fuera de categoría</span>}
                     {p.apuntado_por_nombre && <div className="apuntado-por">apuntado por {p.apuntado_por_mi ? "ti" : p.apuntado_por_nombre}</div>}
                   </td>
                   <td><span className={`pill ${CERTEZA_CLASS[p.certeza]}`}>{CERTEZA_LABEL[p.certeza]}</span></td>
@@ -183,18 +196,22 @@ export default function TorneoDetallePage() {
           <form className="apuntar" onSubmit={apuntar}>
             <select value={nuevo.jugador} onChange={(e) => setNuevo({ ...nuevo, jugador: e.target.value, nombre: "" })}>
               <option value="">{!jugadores ? "Cargando tus jugadores…" : libres.length ? "Uno de tus jugadores…" : "No te queda ningún jugador por apuntar"}</option>
-              {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+              {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre} · {j.categoria || "sin fecha de nacimiento"}</option>)}
             </select>
             {notasInput}
             <button className="btn" disabled={!nuevo.jugador}>Apuntar</button>
-            <span className="muted apuntar-nota">Queda pendiente hasta que tu head coach o dirección lo confirmen.</span>
+            <span className="muted apuntar-nota">Queda pendiente hasta que tu head coach o dirección lo confirmen.{avisoCategorias}</span>
           </form>
         )}
         {puedeEditar && (
           <form className="apuntar" onSubmit={apuntar}>
             <select value={nuevo.jugador} onChange={(e) => setNuevo({ ...nuevo, jugador: e.target.value, nombre: "" })}>
               <option value="">Jugador de la academia…</option>
-              {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre}{j.entrenador ? ` · ${j.entrenador}` : ""}</option>)}
+              {libres.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.nombre} · {j.categoria || "sin fecha de nacimiento"}{j.entrenador ? ` · ${j.entrenador}` : ""}
+                </option>
+              ))}
             </select>
             <span className="muted">o</span>
             <input placeholder="Nombre de alguien que no está en las fichas" value={nuevo.nombre}
@@ -203,6 +220,7 @@ export default function TorneoDetallePage() {
             <button className="btn" disabled={!nuevo.jugador && !nuevo.nombre.trim()}>Apuntar</button>
           </form>
         )}
+        {puedeEditar && avisoCategorias && <p className="muted apuntar-nota apuntar-pie">{avisoCategorias.trim()}</p>}
       </div>
 
       {puedeEditar && vecinos.length > 0 && (
