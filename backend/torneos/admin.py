@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CambioTorneo, Participante, Torneo
+from .models import CambioTorneo, CategoriaJugador, Participante, Torneo
 
 
 class ParticipanteInline(admin.TabularInline):
@@ -17,6 +17,12 @@ class TorneoAdmin(admin.ModelAdmin):
     search_fields = ("nombre", "lugar", "alias")
     filter_horizontal = ("acompanantes",)
     inlines = [ParticipanteInline]
+
+
+@admin.register(CategoriaJugador)
+class CategoriaJugadorAdmin(admin.ModelAdmin):
+    list_display = ("jugador", "categoria")
+    autocomplete_fields = ["jugador"]
 
 
 @admin.register(CambioTorneo)

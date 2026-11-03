@@ -448,6 +448,20 @@ class CategoriasTests(TestCase):
                 {self.alevin.id, self.infantil.id, self.cadete.id, self.sin_fecha.id}}
         self.assertEqual(mios, {"Alevín": "Alevín", "Infantil": "Infantil", "Sin fecha": None})
 
+    def test_sin_fecha_vale_la_categoria_fijada(self):
+        from .models import CategoriaJugador
+        CategoriaJugador.objects.create(jugador=self.sin_fecha, categoria="ABSOLUTA")
+        self.assertEqual(self.apuntar(self.sin_fecha).status_code, 400)
+        absoluto = Torneo.objects.create(nombre="Absoluto", fecha_inicio="2026-11-07", fecha_fin="2026-11-14",
+                                         categorias=["ABSOLUTA"])
+        self.assertEqual(self.apuntar(self.sin_fecha, absoluto).status_code, 201)
+        r = self.c.get(f"/api/torneos-participantes/jugadores/?torneo={absoluto.id}")
+        self.assertIn(("Sin fecha", "Absoluta"), [(j["nombre"], j["categoria"]) for j in r.data])
+        # Si se le pone la fecha, manda la fecha.
+        self.sin_fecha.fecha_nacimiento = date(2014, 5, 5)
+        self.sin_fecha.save()
+        self.assertEqual(self.apuntar(self.sin_fecha).status_code, 201)
+
     def test_categorias_validas_y_ordenadas(self):
         r = self.c.patch(f"/api/torneos/{self.t.id}/", {"categorias": ["SUB16", "SUB10", "SUB16"]}, format="json")
         self.assertEqual(r.data["categorias"], ["SUB10", "SUB16"])

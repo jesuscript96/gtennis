@@ -27,11 +27,12 @@ def ordenar(codigos):
 
 
 def categoria_de(jugador, anio):
-    """Código de la categoría del jugador en el año `anio`, o None si no
-    consta su fecha de nacimiento."""
+    """Código de la categoría del jugador en el año `anio`. Sin fecha de
+    nacimiento, la que se le haya fijado (`CategoriaJugador`) o None."""
     nacimiento = getattr(jugador, "fecha_nacimiento", None)
     if nacimiento is None:
-        return None
+        fija = getattr(jugador, "categoria_torneos", None) if jugador.pk else None
+        return fija.categoria if fija is not None else None
     cumple = anio - nacimiento.year
     for codigo, _, _, tope in CATEGORIAS:
         if tope is None or cumple <= tope:
@@ -40,9 +41,9 @@ def categoria_de(jugador, anio):
 
 
 def puede_jugar(jugador, torneo):
-    """¿Entra por edad? Sí si el torneo no tiene categorías, si no consta su
-    nacimiento (no se le cierra la puerta por un dato que falta) o si su
-    categoría es la del torneo o una más pequeña."""
+    """¿Entra por edad? Sí si el torneo no tiene categorías, si no se sabe su
+    categoría (sin fecha de nacimiento ni categoría fijada: no se le cierra la
+    puerta por un dato que falta) o si es la del torneo o una más pequeña."""
     if not torneo.categorias or jugador is None:
         return True
     cat = categoria_de(jugador, torneo.fecha_inicio.year)

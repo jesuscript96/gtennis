@@ -8,6 +8,8 @@ va. La vinculación con las faltas del cuadrante queda para más adelante.
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 
+from .categorias import CATEGORIAS
+
 
 class Torneo(models.Model):
     class Estado(models.TextChoices):
@@ -132,3 +134,21 @@ class CambioTorneo(models.Model):
 
     def __str__(self):
         return self.descripcion
+
+
+class CategoriaJugador(models.Model):
+    """La categoría de un jugador del que no consta la fecha de nacimiento
+    (03/11/2026: de Carlos López Montagud solo se sabe que ya es absoluto).
+    Si la ficha tiene fecha de nacimiento, manda la fecha."""
+
+    jugador = models.OneToOneField(
+        "academy.Jugador", on_delete=models.CASCADE, related_name="categoria_torneos",
+    )
+    categoria = models.CharField(max_length=10, choices=[(c[0], c[1]) for c in CATEGORIAS])
+
+    class Meta:
+        verbose_name = "Categoría de un jugador sin fecha de nacimiento"
+        verbose_name_plural = "Categorías de jugadores sin fecha de nacimiento"
+
+    def __str__(self):
+        return f"{self.jugador} → {self.get_categoria_display()}"

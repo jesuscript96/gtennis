@@ -134,7 +134,8 @@ class TorneoViewSet(viewsets.ModelViewSet):
         qs = (Torneo.objects
               .prefetch_related("participantes__apuntado_por__entrenador", "acompanantes",
                                 "participantes__jugador__entrenador_responsable",
-                                "participantes__jugador__cogestores")
+                                "participantes__jugador__cogestores",
+                                "participantes__jugador__categoria_torneos")
               .annotate(_n_jug=Count("participantes", distinct=True)))
         p = self.request.query_params
         if p.get("desde"):
@@ -300,7 +301,8 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = (Participante.objects
-              .select_related("jugador__entrenador_responsable", "torneo", "apuntado_por__entrenador")
+              .select_related("jugador__entrenador_responsable", "jugador__categoria_torneos", "torneo",
+                              "apuntado_por__entrenador")
               .prefetch_related("jugador__cogestores"))
         if self.request.query_params.get("torneo"):
             qs = qs.filter(torneo_id=self.request.query_params["torneo"])
@@ -407,7 +409,7 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         entrenador según Grupos. Con `?torneo=`, solo los que entran por
         categoría, con la suya ese año (None si no consta su nacimiento)."""
         qs = jugadores_apuntables(request.user).select_related(
-            "entrenador_responsable").prefetch_related("cogestores")
+            "entrenador_responsable", "categoria_torneos").prefetch_related("cogestores")
         t = None
         if request.query_params.get("torneo"):
             t = get_object_or_404(Torneo, pk=request.query_params["torneo"])
