@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  getTorneos, getTorneosEntrenadores, getTorneosResumen, guardarTorneo, updParticipante,
+  delParticipante, getPorConfirmar, getTorneos, getTorneosEntrenadores, getTorneosResumen, guardarTorneo, updParticipante,
 } from "../../../lib/api";
-import { canWrite } from "../../../lib/perms";
+import { apuntaATorneos, canWrite } from "../../../lib/perms";
 import DeshacerTorneos from "../../../components/DeshacerTorneos";
 import {
   ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, semanasDe, solapa,
@@ -86,11 +86,46 @@ function JugadoresCell({ t, sel, setSel, onMover, puedeEditar }) {
             if (!puedeEditar) return;
             setSel(sel?.id === j.id ? null : { id: j.id, torneo: t.id, nombre: j.nombre });
           }}
-          title={puedeEditar ? "Arrastra a otro torneo, o toca y luego toca el torneo de destino" : ""}>
+          title={[j.apuntado_por_nombre && `Apuntado por ${j.apuntado_por_nombre}${j.certeza === "PENDIENTE" ? ", pendiente de confirmar" : ""}`,
+            puedeEditar && "Arrastra a otro torneo, o toca y luego toca el torneo de destino"].filter(Boolean).join(". ")}>
           {j.nombre}
         </span>
       ))}
       {!t.jugadores.length && <span className="muted">{esDestino ? "soltar aquí" : "—"}</span>}
+    </div>
+  );
+}
+
+// Lo que han apuntado los entrenadores y falta confirmar. El head coach (y
+// dirección) lo confirma o lo quita aquí, o lo arrastra a otro torneo en el
+// calendario; el entrenador ve lo suyo y puede quitarlo.
+function PorConfirmar({ filas, puedeEditar, onAccion }) {
+  if (!filas?.length) return null;
+  return (
+    <div className="card cierres-card por-confirmar">
+      <div className="cierres-head">
+        {puedeEditar ? "Por confirmar · apuntados por los entrenadores" : "Lo que has apuntado y falta confirmar"}
+      </div>
+      <ul className="cierres-lista">
+        {filas.map((p) => (
+          <li key={p.id}>
+            <b>{p.nombre}</b>
+            <Link href={`/torneos/${p.torneo_detalle.id}`}>{p.torneo_detalle.nombre}</Link>
+            <span className="muted">
+              {fmtRango(p.torneo_detalle.qualy_inicio || p.torneo_detalle.fecha_inicio, p.torneo_detalle.fecha_fin)}
+              {p.torneo_detalle.cierre_inscripcion && ` · cierra el ${fmtCorta(p.torneo_detalle.cierre_inscripcion)}`}
+              {puedeEditar && ` · apuntado por ${p.apuntado_por_nombre}`}
+            </span>
+            <span className="row-actions">
+              {puedeEditar && (
+                <button type="button" className="btn sm ghost"
+                  onClick={() => onAccion(() => updParticipante(p.id, { certeza: "CONFIRMADO" }))}>Confirmar</button>
+              )}
+              <button type="button" className="btn sm danger" onClick={() => onAccion(() => delParticipante(p.id))}>Quitar</button>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -118,6 +153,8 @@ export default function TorneosPage() {
     return n;
   });
   const puedeEditar = canWrite("torneos");
+  const apunta = apuntaATorneos();
+  const [pendientes, setPendientes] = useState([]);
 
   const rango = useMemo(() => {
     if (mes === "prox") return { desde: hoy, hasta: `${ANIO}-12-31` };
@@ -131,6 +168,10 @@ export default function TorneosPage() {
 
   const cargarResumen = useCallback(() => getTorneosResumen().then(setResumen).catch(() => {}), []);
   useEffect(() => { cargarResumen(); }, [cargarResumen]);
+  const cargarPendientes = useCallback(() => {
+    if (apunta) getPorConfirmar().then(setPendientes).catch(() => {});
+  }, [apunta]);
+  useEffect(() => { cargarPendientes(); }, [cargarPendientes]);
   useEffect(() => { setItems(null); cargar(); }, [cargar]);
   useEffect(() => {
     getTorneosEntrenadores(rango.desde, rango.hasta).then(setEntrenadores).catch(() => {});
@@ -182,8 +223,15 @@ export default function TorneosPage() {
       return x;
     }));
     setItems((xs) => xs.map((x) => (x.id === hasta && chip ? { ...x, jugadores: [...x.jugadores, chip].sort((a, b) => a.nombre.localeCompare(b.nombre)) } : x)));
-    try { await updParticipante(pid, { torneo: hasta }); setTick((n) => n + 1); }
+    try { await updParticipante(pid, { torneo: hasta }); setTick((n) => n + 1); cargarPendientes(); }
     catch (e) { setError(e.message); cargar(); }
+  }
+
+  // Confirmar o quitar desde «Por confirmar».
+  async function accionPendiente(fn) {
+    setError("");
+    try { await fn(); setTick((n) => n + 1); cargar(); cargarPendientes(); cargarResumen(); }
+    catch (e) { setError(e.message); }
   }
 
   // Una fila de torneo del calendario.
@@ -241,10 +289,10 @@ export default function TorneosPage() {
     <div>
       <div className="page-head">
         <h1>Calendario de torneos</h1>
-        {puedeEditar && (
+        {apunta && (
           <div className="row-actions">
-            <DeshacerTorneos tick={tick} onDeshecho={() => { cargar(); cargarResumen(); }} />
-            <Link href="/torneos/nuevo" className="btn">+ Nuevo torneo</Link>
+            <DeshacerTorneos tick={tick} onDeshecho={() => { cargar(); cargarResumen(); cargarPendientes(); }} />
+            {puedeEditar && <Link href="/torneos/nuevo" className="btn">+ Nuevo torneo</Link>}
           </div>
         )}
       </div>
@@ -253,15 +301,24 @@ export default function TorneosPage() {
           Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, desde la previa si la tiene. En «Acompaña»
           solo se ofrecen entrenadores que no están de vacaciones esas fechas. Los jugadores se pueden
           <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
-          Los nombres en <span className="jug-chip dudoso">naranja</span> vienen del Excel con dudas.
+          Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar: dudas del Excel o
+          jugadores que ha apuntado un entrenador.
+        </p>
+      ) : apunta ? (
+        <p className="help">
+          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, con quién
+          acompaña y qué jugadores van. Para <b>apuntar a uno de tus jugadores</b>, abre el torneo y elígelo: queda
+          pendiente hasta que tu head coach o dirección lo confirmen. Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar.
         </p>
       ) : (
         <p className="help">
           Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, con quién
           acompaña y qué jugadores van. Es solo consulta: los cambios los hacen los head coaches y dirección.
-          Los nombres en <span className="jug-chip dudoso">naranja</span> vienen del Excel con dudas.
+          Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar.
         </p>
       )}
+
+      <PorConfirmar filas={pendientes} puedeEditar={puedeEditar} onAccion={accionPendiente} />
 
       {resumen && (
         <div className="metrics">

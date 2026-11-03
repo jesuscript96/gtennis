@@ -83,6 +83,12 @@ class Participante(models.Model):
     # Entrenador de referencia del jugador en el Excel (no implica que viaje).
     entrenador_ref = models.CharField(max_length=120, blank=True)
     detalle = models.CharField(max_length=200, blank=True)
+    # Quién lo apuntó (03/11/2026). Los entrenadores apuntan a sus jugadores y
+    # quedan pendientes hasta que su head coach o dirección los confirman.
+    apuntado_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="torneos_apuntados",
+    )
 
     class Meta:
         verbose_name = "Participante"

@@ -331,6 +331,9 @@ export const addParticipante = (body) =>
 export const updParticipante = (id, body) =>
   req(`/torneos-participantes/${id}/`, { method: "PATCH", body: JSON.stringify(body) });
 export const delParticipante = (id) => req(`/torneos-participantes/${id}/`, { method: "DELETE" });
+// Lo que han apuntado los entrenadores y falta confirmar (al head coach, los de
+// su grupo; al entrenador, lo suyo).
+export const getPorConfirmar = () => req("/torneos-participantes/por_confirmar/");
 // Entrenadores activos con sus vacaciones en el tramo: para el desplegable de «acompaña».
 export const getTorneosEntrenadores = (desde, hasta) =>
   req(`/torneos/entrenadores/?${new URLSearchParams({ ...(desde && { desde }), ...(hasta && { hasta }) })}`);

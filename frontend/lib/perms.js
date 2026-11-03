@@ -63,6 +63,12 @@ const PATH_MIN = {
   "/torneos/nuevo": "coach",
 };
 
+// En torneos, además de head coaches y dirección, el entrenador apunta a sus
+// jugadores a torneos que ya existen; queda pendiente de confirmar (03/11/2026).
+export function apuntaATorneos(user = getUser()) {
+  return roleRank(user) >= 2 || Boolean(user?.entrenador_id);
+}
+
 export function canVisit(path, user = getUser()) {
   if (user?.is_preparador) {
     return RUTAS_PREPARADOR.some((r) => path === r || path.startsWith(r + "/"));

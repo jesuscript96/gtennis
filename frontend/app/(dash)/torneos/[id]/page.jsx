@@ -8,9 +8,9 @@ import {
   addParticipante, borrarTorneo, delParticipante, fusionarTorneo, getTorneo, getTorneos,
   getTorneosResumen, guardarTorneo, resource, updParticipante,
 } from "../../../../lib/api";
-import { canWrite } from "../../../../lib/perms";
+import { apuntaATorneos, canWrite } from "../../../../lib/perms";
 import DeshacerTorneos from "../../../../components/DeshacerTorneos";
-import { CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, diasHasta, fmtLarga, fmtRango, sumaDias } from "../../../../lib/torneos";
+import { CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, diasHasta, fmtLarga, fmtRango, hoyISO, sumaDias } from "../../../../lib/torneos";
 
 export default function TorneoDetallePage() {
   const { id } = useParams();
@@ -20,7 +20,7 @@ export default function TorneoDetallePage() {
   const [editando, setEditando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [circuitos, setCircuitos] = useState([]);
-  const [jugadores, setJugadores] = useState([]);
+  const [jugadores, setJugadores] = useState(null);
   const [nuevo, setNuevo] = useState({ jugador: "", nombre: "" });
   const [verFuente, setVerFuente] = useState(false);
   const [vecinos, setVecinos] = useState([]);
@@ -28,6 +28,9 @@ export default function TorneoDetallePage() {
   const [tick, setTick] = useState(0);
   const hecho = () => setTick((n) => n + 1);
   const puedeEditar = canWrite("torneos");
+  // El entrenador apunta a los suyos (el desplegable ya trae solo los que ve)
+  // y quita lo que apuntó mientras siga pendiente; el resto, head coach y dirección.
+  const apunta = puedeEditar || apuntaATorneos();
 
   const cargar = useCallback(() => getTorneo(id).then(setT).catch((e) => setError(e.message)), [id]);
   useEffect(() => { cargar(); }, [cargar]);
@@ -39,7 +42,7 @@ export default function TorneoDetallePage() {
   }, [t?.id, t?.fecha_inicio, t?.fecha_fin]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     getTorneosResumen().then((r) => setCircuitos(r.circuitos.map((c) => c.nombre))).catch(() => {});
-    resource("jugadores").list().then(setJugadores).catch(() => {});
+    resource("jugadores").list().then(setJugadores).catch(() => setJugadores([]));
   }, []);
 
   async function guardar(body) {
@@ -79,6 +82,10 @@ export default function TorneoDetallePage() {
 
   const dCierre = diasHasta(t.cierre_inscripcion);
   const yaApuntados = new Set(t.participantes.map((p) => p.jugador).filter(Boolean));
+  const quitaEntrenador = (p) => p.apuntado_por_mi && p.certeza === "PENDIENTE";
+  const conAcciones = puedeEditar || t.participantes.some(quitaEntrenador);
+  const sePuedeApuntar = t.fecha_fin >= hoyISO() && t.estado !== "CANCELADO";
+  const libres = (jugadores || []).filter((j) => !yaApuntados.has(j.id));
 
   return (
     <div>
@@ -92,15 +99,15 @@ export default function TorneoDetallePage() {
             {t.estado !== "VALIDADO" && <span className={`pill ${ESTADO_CLASS[t.estado]}`}>{t.estado_display}</span>}
           </div>
         </div>
-        {puedeEditar && !editando && (
+        {apunta && !editando && (
           <div className="row-actions">
             <DeshacerTorneos tick={tick} onDeshecho={(r) => {
               // Si lo deshecho era el alta de este torneo, ya no existe.
               if (r.torneos.includes(Number(id)) && !r.existen.includes(Number(id))) router.push("/torneos");
               else cargar();
             }} />
-            <button className="btn ghost" onClick={() => setEditando(true)}>Editar</button>
-            <button className="btn danger" onClick={borrar}>Borrar</button>
+            {puedeEditar && <button className="btn ghost" onClick={() => setEditando(true)}>Editar</button>}
+            {puedeEditar && <button className="btn danger" onClick={borrar}>Borrar</button>}
           </div>
         )}
       </div>
@@ -137,24 +144,27 @@ export default function TorneoDetallePage() {
           <p className="msg sin-margen">Todavía no hay nadie apuntado.</p>
         ) : (
           <table className="data">
-            <thead><tr><th>Jugador</th><th>Certeza</th><th>Entrenador de referencia</th><th>Detalle</th>{puedeEditar && <th></th>}</tr></thead>
+            <thead><tr><th>Jugador</th><th>Certeza</th><th>Entrenador de referencia</th><th>Detalle</th>{conAcciones && <th></th>}</tr></thead>
             <tbody>
               {t.participantes.map((p) => (
                 <tr key={p.id}>
                   <td>
                     {p.nombre}
                     {!p.jugador && <span className="pill gris" title="No está en las fichas de la academia">sin ficha</span>}
+                    {p.apuntado_por_nombre && <div className="apuntado-por">apuntado por {p.apuntado_por_mi ? "ti" : p.apuntado_por_nombre}</div>}
                   </td>
                   <td><span className={`pill ${CERTEZA_CLASS[p.certeza]}`}>{CERTEZA_LABEL[p.certeza]}</span></td>
                   <td className="muted">{p.entrenador_ref || "—"}</td>
                   <td className="muted">{p.detalle || "—"}</td>
-                  {puedeEditar && (
+                  {conAcciones && (
                     <td>
                       <div className="row-actions">
-                        {p.certeza !== "CONFIRMADO" && (
+                        {puedeEditar && p.certeza !== "CONFIRMADO" && (
                           <button className="btn sm ghost" onClick={() => accion(() => updParticipante(p.id, { certeza: "CONFIRMADO" }))}>Confirmar</button>
                         )}
-                        <button className="btn sm danger" onClick={() => accion(() => delParticipante(p.id))}>Quitar</button>
+                        {(puedeEditar || quitaEntrenador(p)) && (
+                          <button className="btn sm danger" onClick={() => accion(() => delParticipante(p.id))}>Quitar</button>
+                        )}
                       </div>
                     </td>
                   )}
@@ -163,11 +173,21 @@ export default function TorneoDetallePage() {
             </tbody>
           </table>
         )}
+        {!puedeEditar && apunta && sePuedeApuntar && (
+          <form className="apuntar" onSubmit={apuntar}>
+            <select value={nuevo.jugador} onChange={(e) => setNuevo({ jugador: e.target.value, nombre: "" })}>
+              <option value="">{!jugadores ? "Cargando tus jugadores…" : libres.length ? "Uno de tus jugadores…" : "No te queda ningún jugador por apuntar"}</option>
+              {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+            </select>
+            <button className="btn" disabled={!nuevo.jugador}>Apuntar</button>
+            <span className="muted apuntar-nota">Queda pendiente hasta que tu head coach o dirección lo confirmen.</span>
+          </form>
+        )}
         {puedeEditar && (
           <form className="apuntar" onSubmit={apuntar}>
             <select value={nuevo.jugador} onChange={(e) => setNuevo({ jugador: e.target.value, nombre: "" })}>
               <option value="">Jugador de la academia…</option>
-              {jugadores.filter((j) => !yaApuntados.has(j.id)).map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+              {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
             </select>
             <span className="muted">o</span>
             <input placeholder="Nombre de alguien que no está en las fichas" value={nuevo.nombre}

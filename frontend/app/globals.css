@@ -1775,3 +1775,10 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
   .inf-foto img, .inf-foto-vacia { width: 96px; height: 116px; grid-row: span 2; }
   .inf-fila-cab .pill:last-child, .inf-ultimo { margin-left: 0; }
 }
+
+/* Torneos: lo que apuntan los entrenadores (03/11/2026) */
+.por-confirmar { border-left-color: #e0a15c; }
+.por-confirmar .cierres-lista li { align-items: center; }
+.por-confirmar .row-actions { margin-left: auto; }
+.apuntado-por { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.apuntar-nota { font-size: 12px; flex-basis: 100%; }

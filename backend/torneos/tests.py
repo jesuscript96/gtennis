@@ -1,9 +1,11 @@
 """El calendario de torneos: quién entra, quién toca a quién y que fusionar
 no pierda a nadie. No toca faltas ni motor."""
+from datetime import date, timedelta
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from academy.models import Coach, Entrenador, Jugador, ResponsableJugador, VacacionesEntrenador
+from academy.models import Aviso, Coach, Entrenador, Jugador, ResponsableJugador, VacacionesEntrenador
 from users.models import User
 
 from .models import Participante, Torneo
@@ -41,11 +43,8 @@ class TorneosTests(TestCase):
                                                  "fecha_fin": "2026-11-02"}, format="json").status_code, 403)
         self.assertEqual(c.patch(f"/api/torneos/{self.t1.id}/", {"lugar": "Y"}, format="json").status_code, 403)
         self.assertEqual(c.delete(f"/api/torneos/{self.t1.id}/").status_code, 403)
-        self.assertEqual(c.post("/api/torneos-participantes/", {"torneo": self.t1.id, "jugador": self.ana.id},
-                                format="json").status_code, 403)
         self.assertEqual(c.post(f"/api/torneos/{self.t1.id}/fusionar/", {"con": self.t2.id},
                                 format="json").status_code, 403)
-        self.assertEqual(c.post("/api/torneos-cambios/deshacer/", {}, format="json").status_code, 403)
         self.assertTrue(Torneo.objects.filter(pk=self.t1.id, lugar="").exists())
 
     def test_head_coach_y_direccion_entran(self):
@@ -101,6 +100,126 @@ class TorneosTests(TestCase):
         r = self.api(self.u_dir).post("/api/torneos/", {
             "nombre": "X", "fecha_inicio": "2026-11-10", "fecha_fin": "2026-11-01"}, format="json")
         self.assertEqual(r.status_code, 400)
+
+
+class EntrenadorApuntaTests(TestCase):
+    """03/11/2026: el entrenador apunta a sus jugadores a torneos que ya
+    existen; queda pendiente y avisa a su head coach, que confirma, mueve o
+    quita. El entrenador solo quita lo suyo mientras siga pendiente."""
+
+    def setUp(self):
+        self.blas = Entrenador.objects.create(nombre="Blas")
+        self.mario = Entrenador.objects.create(nombre="Mario")
+        self.ana = Jugador.objects.create(nombre="Ana", entrenador_responsable=self.blas)
+        self.leo = Jugador.objects.create(nombre="Leo", entrenador_responsable=self.mario)
+        self.u_blas = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
+        self.blas.user = self.u_blas
+        self.blas.save(update_fields=["user"])
+        self.u_pablo = User.objects.create_user(username="pablo", password="x", role=User.Role.COACH)
+        Coach.objects.create(nombre="Pablo", user=self.u_pablo, color="turquesa").entrenadores.set([self.blas])
+        self.u_dir = User.objects.create_user(username="dir", password="x", role=User.Role.SUPERADMIN)
+        hoy = date.today()
+        self.t = Torneo.objects.create(nombre="ITF J30 Silla", fecha_inicio=hoy + timedelta(days=14),
+                                       fecha_fin=hoy + timedelta(days=20))
+        self.otro = Torneo.objects.create(nombre="ITF J30 Valencia", fecha_inicio=hoy + timedelta(days=21),
+                                          fecha_fin=hoy + timedelta(days=27))
+        self.pasado = Torneo.objects.create(nombre="W15 Villena", fecha_inicio=hoy - timedelta(days=10),
+                                            fecha_fin=hoy - timedelta(days=4))
+
+    def api(self, u):
+        c = APIClient()
+        c.force_authenticate(u)
+        return c
+
+    def apuntar(self, u, jugador, torneo=None, **extra):
+        return self.api(u).post("/api/torneos-participantes/",
+                                {"torneo": (torneo or self.t).id, "jugador": jugador and jugador.id, **extra},
+                                format="json")
+
+    def test_apunta_a_su_jugador_pendiente_y_avisa_al_head_coach(self):
+        r = self.apuntar(self.u_blas, self.ana, certeza="CONFIRMADO")
+        self.assertEqual(r.status_code, 201, r.data)
+        p = Participante.objects.get(pk=r.data["id"])
+        self.assertEqual((p.nombre, p.certeza, p.apuntado_por), ("Ana", "PENDIENTE", self.u_blas))
+        self.assertEqual((r.data["apuntado_por_nombre"], r.data["apuntado_por_mi"]), ("Blas", True))
+        aviso = Aviso.objects.get()
+        self.assertEqual(aviso.usuario, self.u_pablo)
+        self.assertIn("Blas apunta a Ana a «ITF J30 Silla»", aviso.titulo)
+
+    def test_sin_head_coach_avisa_a_direccion(self):
+        Coach.objects.update(color="")
+        self.apuntar(self.u_blas, self.ana)
+        self.assertTrue(Aviso.objects.get().para_direccion)
+
+    def test_no_apunta_a_los_que_no_son_suyos_ni_sin_ficha_ni_a_torneos_acabados(self):
+        self.assertEqual(self.apuntar(self.u_blas, self.leo).status_code, 403)
+        self.assertEqual(self.apuntar(self.u_blas, None, nombre="Invitado").status_code, 400)
+        self.assertEqual(self.apuntar(self.u_blas, self.ana, self.pasado).status_code, 400)
+        self.t.estado = Torneo.Estado.CANCELADO
+        self.t.save()
+        self.assertEqual(self.apuntar(self.u_blas, self.ana).status_code, 400)
+        self.assertFalse(Participante.objects.exists())
+
+    def test_no_mueve_ni_confirma(self):
+        pid = self.apuntar(self.u_blas, self.ana).data["id"]
+        c = self.api(self.u_blas)
+        self.assertEqual(c.patch(f"/api/torneos-participantes/{pid}/", {"torneo": self.otro.id},
+                                 format="json").status_code, 403)
+        self.assertEqual(c.patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"},
+                                 format="json").status_code, 403)
+        self.assertEqual(Participante.objects.get(pk=pid).torneo, self.t)
+
+    def test_quita_lo_suyo_mientras_esta_pendiente(self):
+        pid = self.apuntar(self.u_blas, self.ana).data["id"]
+        self.assertEqual(self.api(self.u_blas).delete(f"/api/torneos-participantes/{pid}/").status_code, 204)
+        # Lo confirmado ya no.
+        pid = self.apuntar(self.u_blas, self.ana).data["id"]
+        self.api(self.u_pablo).patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
+        self.assertEqual(self.api(self.u_blas).delete(f"/api/torneos-participantes/{pid}/").status_code, 403)
+        # Ni lo que apuntó otro.
+        otra = self.apuntar(self.u_dir, self.ana, self.otro).data["id"]
+        Participante.objects.filter(pk=otra).update(certeza="PENDIENTE")
+        self.assertEqual(self.api(self.u_blas).delete(f"/api/torneos-participantes/{otra}/").status_code, 403)
+
+    def test_el_head_coach_confirma_y_mueve(self):
+        pid = self.apuntar(self.u_blas, self.ana).data["id"]
+        c = self.api(self.u_pablo)
+        self.assertEqual(c.patch(f"/api/torneos-participantes/{pid}/", {"torneo": self.otro.id},
+                                 format="json").status_code, 200)
+        r = c.patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        p = Participante.objects.get(pk=pid)
+        self.assertEqual((p.torneo, p.certeza, p.apuntado_por), (self.otro, "CONFIRMADO", self.u_blas))
+
+    def test_lo_que_apunta_el_head_coach_va_confirmado(self):
+        r = self.apuntar(self.u_pablo, self.ana)
+        self.assertEqual((r.data["certeza"], r.data["apuntado_por_nombre"]), ("CONFIRMADO", "pablo"))
+        self.assertFalse(Aviso.objects.exists())
+
+    def test_por_confirmar(self):
+        pid = self.apuntar(self.u_blas, self.ana).data["id"]
+        url = "/api/torneos-participantes/por_confirmar/"
+        for u in (self.u_blas, self.u_pablo, self.u_dir):
+            r = self.api(u).get(url)
+            self.assertEqual([(x["id"], x["torneo_detalle"]["nombre"]) for x in r.data], [(pid, "ITF J30 Silla")])
+        # Un head coach de otro grupo no lo ve.
+        u_santi = User.objects.create_user(username="santi", password="x", role=User.Role.COACH)
+        Coach.objects.create(nombre="Santi", user=u_santi, color="naranja").entrenadores.set([self.mario])
+        self.assertEqual(self.api(u_santi).get(url).data, [])
+        self.api(self.u_pablo).patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
+        self.assertEqual(self.api(self.u_pablo).get(url).data, [])
+
+    def test_deshace_lo_suyo(self):
+        self.apuntar(self.u_blas, self.ana)
+        r = self.api(self.u_blas).post("/api/torneos-cambios/deshacer/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertFalse(Participante.objects.exists())
+
+    def test_deshacer_conserva_quien_lo_apunto(self):
+        pid = self.apuntar(self.u_blas, self.ana).data["id"]
+        self.api(self.u_dir).delete(f"/api/torneos-participantes/{pid}/")
+        self.api(self.u_dir).post("/api/torneos-cambios/deshacer/", {}, format="json")
+        self.assertEqual(Participante.objects.get(pk=pid).apuntado_por, self.u_blas)
 
 
 class DeshacerTests(TestCase):

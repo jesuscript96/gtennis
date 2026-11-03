@@ -20,7 +20,7 @@ CAMPOS = ("nombre", "circuito", "nivel", "lugar", "fecha_inicio", "fecha_fin",
 # Añadidos el 16/10: una foto anterior no los trae y entonces se respetan
 # los que tenga ahora el torneo.
 CAMPOS_NUEVOS = ("qualy_inicio", "qualy_fin", "solo_fines_semana")
-CAMPOS_P = ("id", "jugador_id", "nombre", "certeza", "entrenador_ref", "detalle")
+CAMPOS_P = ("id", "jugador_id", "nombre", "certeza", "entrenador_ref", "detalle", "apuntado_por_id")
 
 
 def _estado(tid):

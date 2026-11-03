@@ -10,9 +10,9 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.response import Response
 
-from academy.models import Entrenador, VacacionesEntrenador
+from academy.models import Aviso, Coach, Entrenador, VacacionesEntrenador
 from academy.permissions import es_coach, es_direccion
-from academy.scope import puede_ver_jugador
+from academy.scope import jugadores_visibles, puede_ver_jugador
 
 from . import historial
 from .models import CambioTorneo, Participante, Torneo
@@ -32,7 +32,52 @@ class SoloDireccionOCoach(BasePermission):
             return False
         if request.method in SAFE_METHODS:
             return True
-        return es_direccion(u) or es_coach(u)
+        return manda(u)
+
+
+def manda(user):
+    """Head coach o dirección: crean y editan torneos, y apuntan, confirman,
+    mueven y quitan jugadores."""
+    return es_direccion(user) or es_coach(user)
+
+
+def es_entrenador(user):
+    return getattr(user, "entrenador", None) is not None
+
+
+class ApuntanTambienEntrenadores(SoloDireccionOCoach):
+    """Quién va a cada torneo: además de head coaches y dirección, los
+    entrenadores apuntan a sus jugadores (03/11/2026). Qué puede tocar cada
+    uno lo decide el viewset."""
+
+    message = "Solo los entrenadores, los head coaches y dirección apuntan jugadores a los torneos."
+
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) or bool(
+            request.user and request.user.is_authenticated and es_entrenador(request.user))
+
+
+def avisar_head_coach(participante, usuario):
+    """Un entrenador ha apuntado a un jugador: lo sabe el head coach del grupo
+    del jugador (el color de quien lo gestiona) para confirmarlo, moverlo o
+    quitarlo. Si el jugador no tiene grupo, el del entrenador; si tampoco,
+    dirección."""
+    t, j = participante.torneo, participante.jugador
+    quien = getattr(usuario, "entrenador", None)
+    con_color = Coach.objects.filter(activo=True, user__isnull=False).exclude(color="")
+    gestores = [e for e in [j.entrenador_responsable, *j.cogestores.all()] if e is not None]
+    coaches = list(con_color.filter(entrenadores__in=gestores).distinct()) if gestores else []
+    if not coaches and quien is not None:
+        coaches = list(con_color.filter(entrenadores=quien).distinct())
+    fechas = f"{t.fecha_inicio:%d/%m}" + (f" al {t.fecha_fin:%d/%m}" if t.fecha_fin != t.fecha_inicio else "")
+    titulo = f"{quien.nombre if quien else usuario.username} apunta a {j.nombre} a «{t.nombre}»"[:160]
+    mensaje = (f"Torneo del {fechas}. Queda pendiente de confirmar: en Torneos, «Por confirmar», "
+               f"lo confirmas, lo mueves a otro torneo o lo quitas.")
+    destinos = [c.user for c in coaches if c.user_id != usuario.id]
+    if not destinos:
+        Aviso.objects.create(para_direccion=True, tipo=Aviso.Tipo.GENERAL, titulo=titulo, mensaje=mensaje)
+    for u in destinos:
+        Aviso.objects.create(usuario=u, tipo=Aviso.Tipo.GENERAL, titulo=titulo, mensaje=mensaje)
 
 
 class TorneoViewSet(viewsets.ModelViewSet):
@@ -51,7 +96,7 @@ class TorneoViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = (Torneo.objects
-              .prefetch_related("participantes", "acompanantes")
+              .prefetch_related("participantes__apuntado_por__entrenador", "acompanantes")
               .annotate(_n_jug=Count("participantes", distinct=True)))
         p = self.request.query_params
         if p.get("desde"):
@@ -203,14 +248,19 @@ class TorneoViewSet(viewsets.ModelViewSet):
 
 class ParticipanteViewSet(viewsets.ModelViewSet):
     """Quién va a cada torneo. Un head coach solo apunta, mueve o quita a
-    jugadores de su grupo; a los nombres sin ficha los toca cualquiera."""
+    jugadores de su grupo; a los nombres sin ficha los toca cualquiera.
+
+    Desde el 03/11/2026 los entrenadores apuntan a sus jugadores (los mismos
+    que ven en Mis jugadores) a torneos que ya existen. Lo suyo entra como
+    pendiente y avisa al head coach; solo pueden quitar lo que apuntaron ellos
+    mientras siga pendiente. Mover y confirmar, head coaches y dirección."""
 
     serializer_class = ParticipanteSerializer
-    permission_classes = [SoloDireccionOCoach]
+    permission_classes = [ApuntanTambienEntrenadores]
     pagination_class = None
 
     def get_queryset(self):
-        qs = Participante.objects.select_related("jugador", "torneo")
+        qs = Participante.objects.select_related("jugador", "torneo", "apuntado_por__entrenador")
         if self.request.query_params.get("torneo"):
             qs = qs.filter(torneo_id=self.request.query_params["torneo"])
         return qs
@@ -221,16 +271,38 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
             return
         raise PermissionDenied(f"{jugador.nombre} no es de tu grupo: lo gestiona otro head coach.")
 
+    def _puede_apuntar_entrenador(self, d):
+        user = self.request.user
+        jugador, t = d.get("jugador"), d["torneo"]
+        if jugador is None:
+            raise ValidationError({"jugador": "Elige a uno de tus jugadores."})
+        if not puede_ver_jugador(user, jugador):
+            raise PermissionDenied(f"{jugador.nombre} no es de tus jugadores.")
+        if t.fecha_fin < date.today():
+            raise ValidationError({"torneo": "Ese torneo ya ha terminado."})
+        if t.estado == Torneo.Estado.CANCELADO:
+            raise ValidationError({"torneo": "Ese torneo está cancelado."})
+
     def perform_create(self, serializer):
         d = serializer.validated_data
-        self._de_mi_grupo(d.get("jugador"))
+        user = self.request.user
+        extra = {"apuntado_por": user}
+        if manda(user):
+            self._de_mi_grupo(d.get("jugador"))
+        else:
+            self._puede_apuntar_entrenador(d)
+            extra["certeza"] = Participante.Certeza.PENDIENTE
         t = d["torneo"]
         nombre = d.get("nombre") or (d["jugador"].nombre if d.get("jugador") else "")
-        historial.registrar(self.request.user, f"Apuntar a {nombre} en «{t.nombre}»", t.id)
-        serializer.save()
+        historial.registrar(user, f"Apuntar a {nombre} en «{t.nombre}»", t.id)
+        p = serializer.save(**extra)
+        if not manda(user):
+            avisar_head_coach(p, user)
 
     def perform_update(self, serializer):
         p = serializer.instance
+        if not manda(self.request.user):
+            raise PermissionDenied("Mover o confirmar jugadores lo hacen los head coaches y dirección.")
         self._de_mi_grupo(p.jugador)
         destino = serializer.validated_data.get("torneo")
         if destino is not None and destino.pk != p.torneo_id:
@@ -243,16 +315,48 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        self._de_mi_grupo(instance.jugador)
-        historial.registrar(self.request.user, f"Quitar a {instance.nombre} de «{instance.torneo.nombre}»",
+        user = self.request.user
+        if manda(user):
+            self._de_mi_grupo(instance.jugador)
+        elif not (instance.apuntado_por_id == user.id
+                  and instance.certeza == Participante.Certeza.PENDIENTE):
+            raise PermissionDenied("Solo puedes quitar a quien apuntaste tú mientras siga pendiente; "
+                                   "lo demás lo cambian los head coaches y dirección.")
+        historial.registrar(user, f"Quitar a {instance.nombre} de «{instance.torneo.nombre}»",
                             instance.torneo_id)
         instance.delete()
 
+    @action(detail=False, methods=["get"])
+    def por_confirmar(self, request):
+        """Lo que han apuntado los entrenadores y falta confirmar, en torneos
+        que no han acabado. Dirección lo ve todo; un head coach, lo de su
+        grupo; un entrenador, lo que apuntó él."""
+        user = request.user
+        qs = (self.get_queryset()
+              .filter(certeza=Participante.Certeza.PENDIENTE, apuntado_por__isnull=False,
+                      torneo__fecha_fin__gte=date.today())
+              .order_by("torneo__fecha_inicio", "torneo__nombre", "nombre"))
+        if not user.is_superadmin:
+            if es_coach(user):
+                qs = qs.filter(jugador__in=jugadores_visibles(user))
+            else:
+                qs = qs.filter(apuntado_por=user)
+        filas = list(qs)
+        datos = ParticipanteSerializer(filas, many=True, context=self.get_serializer_context()).data
+        for fila, p in zip(datos, filas):
+            fila["torneo_detalle"] = {
+                "id": p.torneo_id, "nombre": p.torneo.nombre, "fecha_inicio": p.torneo.fecha_inicio,
+                "fecha_fin": p.torneo.fecha_fin, "qualy_inicio": p.torneo.qualy_inicio,
+                "cierre_inscripcion": p.torneo.cierre_inscripcion,
+            }
+        return Response(datos)
+
 
 class CambioTorneoViewSet(viewsets.ViewSet):
-    """Deshacer: cada uno, lo suyo, del último cambio hacia atrás."""
+    """Deshacer: cada uno, lo suyo, del último cambio hacia atrás (también
+    el entrenador, que solo apunta y quita lo que apuntó)."""
 
-    permission_classes = [SoloDireccionOCoach]
+    permission_classes = [ApuntanTambienEntrenadores]
 
     def list(self, request):
         cambios = CambioTorneo.objects.filter(creado_por=request.user)[:10]

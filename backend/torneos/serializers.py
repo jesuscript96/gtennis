@@ -9,11 +9,15 @@ class ParticipanteSerializer(serializers.ModelSerializer):
     certeza_display = serializers.CharField(source="get_certeza_display", read_only=True)
     # Opcional: si viene un jugador de la academia, el nombre se copia de su ficha.
     nombre = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    apuntado_por_nombre = serializers.SerializerMethodField()
+    # Lo apuntó quien pregunta: el entrenador puede quitarlo mientras siga pendiente.
+    apuntado_por_mi = serializers.SerializerMethodField()
 
     class Meta:
         model = Participante
         fields = ["id", "torneo", "jugador", "nombre", "certeza", "certeza_display",
-                  "entrenador_ref", "detalle"]
+                  "entrenador_ref", "detalle", "apuntado_por", "apuntado_por_nombre", "apuntado_por_mi"]
+        read_only_fields = ["apuntado_por"]
         # La restricción (torneo, nombre) se comprueba abajo, una vez resuelto el
         # nombre a partir de la ficha; el validador automático obligaría a mandarlo.
         validators = []
@@ -33,6 +37,22 @@ class ParticipanteSerializer(serializers.ModelSerializer):
         if repetido.exists():
             raise serializers.ValidationError({"nombre": f"{nombre} ya está apuntado a este torneo."})
         return data
+
+    def get_apuntado_por_nombre(self, obj):
+        return nombre_de(obj.apuntado_por)
+
+    def get_apuntado_por_mi(self, obj):
+        request = self.context.get("request")
+        return bool(request and obj.apuntado_por_id and obj.apuntado_por_id == request.user.id)
+
+
+def nombre_de(user):
+    """Cómo se llama un usuario en pantalla: su ficha de entrenador si la
+    tiene (los usuarios no siempre llevan nombre y apellidos)."""
+    if user is None:
+        return ""
+    ent = getattr(user, "entrenador", None)
+    return ent.nombre if ent is not None else (user.get_full_name() or user.username)
 
 
 class EntrenadorMiniSerializer(serializers.ModelSerializer):
@@ -99,5 +119,6 @@ class TorneoListaSerializer(TorneoSerializer):
         fields = [f for f in TorneoSerializer.Meta.fields if f != "participantes"] + ["jugadores"]
 
     def get_jugadores(self, obj):
-        return [{"id": p.id, "nombre": p.nombre, "jugador": p.jugador_id, "certeza": p.certeza}
+        return [{"id": p.id, "nombre": p.nombre, "jugador": p.jugador_id, "certeza": p.certeza,
+                 "apuntado_por_nombre": nombre_de(p.apuntado_por)}
                 for p in obj.participantes.all()]
