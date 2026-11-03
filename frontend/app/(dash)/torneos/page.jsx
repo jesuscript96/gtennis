@@ -11,7 +11,10 @@ import {
   ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, semanasDe, solapa,
 } from "../../../lib/torneos";
 
-const ANIO = 2026;
+// El año en curso y el siguiente: en otoño ya se apuntan torneos de enero
+// (03/11/2026: el calendario acababa el 31/12 y no salía uno de 2027).
+const ANIO = new Date().getFullYear();
+const ANIOS = [ANIO, ANIO + 1];
 // Cada semana lleva un color (se repiten cada cinco) para leer el calendario de un vistazo.
 const COLORES_SEMANA = 5;
 
@@ -157,10 +160,11 @@ export default function TorneosPage() {
   const [pendientes, setPendientes] = useState([]);
 
   const rango = useMemo(() => {
-    if (mes === "prox") return { desde: hoy, hasta: `${ANIO}-12-31` };
-    if (mes === "todo") return { desde: `${ANIO}-01-01`, hasta: `${ANIO}-12-31` };
-    const m = Number(mes);
-    return { desde: `${ANIO}-${String(m).padStart(2, "0")}-01`, hasta: `${ANIO}-${String(m).padStart(2, "0")}-${new Date(ANIO, m, 0).getDate()}` };
+    // «Desde hoy» no tiene final; «todo-2027» es el año entero; «2027-01», un mes.
+    if (mes === "prox") return { desde: hoy, hasta: "" };
+    if (mes.startsWith("todo-")) { const a = mes.slice(5); return { desde: `${a}-01-01`, hasta: `${a}-12-31` }; }
+    const [a, m] = mes.split("-").map(Number);
+    return { desde: `${a}-${String(m).padStart(2, "0")}-01`, hasta: `${a}-${String(m).padStart(2, "0")}-${new Date(a, m, 0).getDate()}` };
   }, [mes, hoy]);
 
   const cargar = useCallback(() => getTorneos({ q, circuito, ...rango, con_jugadores: soloConJug ? 1 : "" })
@@ -186,7 +190,7 @@ export default function TorneosPage() {
     for (const t of items || []) {
       const ss = semanasDe(t);
       ss.forEach((lunes, i) => {
-        if (lunes < primerLunes || lunes > rango.hasta) return;
+        if (lunes < primerLunes || (rango.hasta && lunes > rango.hasta)) return;
         let g = porLunes.get(lunes);
         if (!g) { g = { lunes, items: [], con: [], sin: [] }; porLunes.set(lunes, g); }
         const fila = { t, lunes, n: i + 1, total: ss.length };
@@ -298,7 +302,7 @@ export default function TorneosPage() {
       </div>
       {puedeEditar ? (
         <p className="help">
-          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, desde la previa si la tiene. En «Acompaña»
+          Semana a semana: cada torneo sale en todas las semanas que dura, desde la previa si la tiene. En «Acompaña»
           solo se ofrecen entrenadores que no están de vacaciones esas fechas. Los jugadores se pueden
           <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
           Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar: dudas del Excel o
@@ -306,13 +310,13 @@ export default function TorneosPage() {
         </p>
       ) : apunta ? (
         <p className="help">
-          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, con quién
+          Semana a semana: cada torneo sale en todas las semanas que dura, con quién
           acompaña y qué jugadores van. Para <b>apuntar a uno de tus jugadores</b>, abre el torneo y elígelo: queda
           pendiente hasta que tu head coach o dirección lo confirmen. Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar.
         </p>
       ) : (
         <p className="help">
-          Semana a semana, lo que queda de <b>{ANIO}</b>: cada torneo sale en todas las semanas que dura, con quién
+          Semana a semana: cada torneo sale en todas las semanas que dura, con quién
           acompaña y qué jugadores van. Es solo consulta: los cambios los hacen los head coaches y dirección.
           Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar.
         </p>
@@ -354,8 +358,14 @@ export default function TorneosPage() {
           onChange={(e) => setQ(e.target.value)} />
         <select className="filtro-select" value={mes} onChange={(e) => setMes(e.target.value)}>
           <option value="prox">Desde hoy</option>
-          <option value="todo">Todo {ANIO}</option>
-          {MESES.map((m, i) => <option key={m} value={i + 1}>{m[0].toUpperCase() + m.slice(1)}</option>)}
+          {ANIOS.map((a) => (
+            <optgroup key={a} label={String(a)}>
+              <option value={`todo-${a}`}>Todo {a}</option>
+              {MESES.map((m, i) => (
+                <option key={m} value={`${a}-${i + 1}`}>{m[0].toUpperCase() + m.slice(1)} {a}</option>
+              ))}
+            </optgroup>
+          ))}
         </select>
         <select className="filtro-select" value={circuito} onChange={(e) => setCircuito(e.target.value)}>
           <option value="">Todos los circuitos</option>
