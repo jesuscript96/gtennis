@@ -56,9 +56,14 @@ export const solapa = (a1, a2, b1, b2) => a1 <= b2 && b1 <= a2;
 // Primer día que el torneo ocupa: la previa si la tiene, si no el cuadro final.
 export const inicioEfectivo = (t) =>
   (t.qualy_inicio && t.qualy_inicio < t.fecha_inicio ? t.qualy_inicio : t.fecha_inicio);
-// Lunes de todas las semanas que toca, de la previa al último día.
-export function semanasDe(t) {
+const lunesEntre = (ini, fin) => {
   const out = [];
-  for (let l = lunesDe(inicioEfectivo(t)); l <= t.fecha_fin; l = sumaDias(l, 7)) out.push(l);
+  for (let l = lunesDe(ini); l <= fin; l = sumaDias(l, 7)) out.push(l);
   return out;
-}
+};
+// Semanas en las que sale el torneo en el calendario: las de sus fechas. La
+// previa no lo adelanta a la semana anterior (03/11/2026); se ve en la fila.
+export const semanasDe = (t) => lunesEntre(t.fecha_inicio, t.fecha_fin);
+// Semanas que ocupa contando la previa: un entrenador que acompaña ya está
+// de viaje esos días.
+export const semanasOcupadas = (t) => lunesEntre(inicioEfectivo(t), t.fecha_fin);

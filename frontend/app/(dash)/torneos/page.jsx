@@ -8,7 +8,7 @@ import {
 import { apuntaATorneos, canWrite } from "../../../lib/perms";
 import DeshacerTorneos from "../../../components/DeshacerTorneos";
 import {
-  ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, semanasDe, solapa,
+  ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, semanasDe, semanasOcupadas, solapa,
 } from "../../../lib/torneos";
 
 // El año en curso y el siguiente: en otoño ya se apuntan torneos de enero
@@ -181,9 +181,9 @@ export default function TorneosPage() {
     getTorneosEntrenadores(rango.desde, rango.hasta).then(setEntrenadores).catch(() => {});
   }, [rango]);
 
-  // Semanas: cada torneo sale en todas las que ocupa, desde la previa si la
-  // tiene (un circuito de fines de semana de un mes sale en las cuatro). Solo
-  // las semanas del tramo elegido.
+  // Semanas: cada torneo sale en todas las de sus fechas (un circuito de fines
+  // de semana de un mes sale en las cuatro); la previa no cuenta. Solo las
+  // semanas del tramo elegido.
   const semanas = useMemo(() => {
     const primerLunes = lunesDe(rango.desde);
     const porLunes = new Map();
@@ -205,7 +205,7 @@ export default function TorneosPage() {
   // ¿Este entrenador ya acompaña a otro torneo que también ocupa esta semana?
   const enSemana = useCallback((entId, t, lunes) => {
     const otro = (items || []).find((x) => x.id !== t.id && (x.acompanantes || []).includes(entId)
-      && semanasDe(x).includes(lunes));
+      && semanasOcupadas(x).includes(lunes));
     return otro ? otro.nombre.slice(0, 28) : "";
   }, [items]);
 
@@ -302,7 +302,7 @@ export default function TorneosPage() {
       </div>
       {puedeEditar ? (
         <p className="help">
-          Semana a semana: cada torneo sale en todas las semanas que dura, desde la previa si la tiene. En «Acompaña»
+          Semana a semana: cada torneo sale en las semanas de sus fechas; la previa no cuenta y se indica en la fila. En «Acompaña»
           solo se ofrecen entrenadores que no están de vacaciones esas fechas. Los jugadores se pueden
           <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
           Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar: dudas del Excel o
