@@ -165,4 +165,5 @@ DRIVE_INFORMES_ID = os.environ.get("DRIVE_INFORMES_ID", "")
 # La cuenta de servicio entra en su nombre (delegación en todo el dominio).
 DRIVE_CT_USUARIO = os.environ.get("DRIVE_CT_USUARIO", "")
 DRIVE_CT_RUTA = os.environ.get(
-    "DRIVE_CT_RUTA", "gtennis › Gestión deportiva › Competición tardes › 26/27 › Seguimiento y Evaluación")
+    "DRIVE_CT_RUTA",
+    "GTENNIS 2.0 - OPERACIONES › Gestion deportiva › Competicion tardes › 26/27 › Seguimiento y evaluaciones")
