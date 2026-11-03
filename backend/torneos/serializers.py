@@ -12,11 +12,15 @@ class ParticipanteSerializer(serializers.ModelSerializer):
     apuntado_por_nombre = serializers.SerializerMethodField()
     # Lo apuntó quien pregunta: el entrenador puede quitarlo mientras siga pendiente.
     apuntado_por_mi = serializers.SerializerMethodField()
+    # Su entrenador hoy, según Grupos (03/11/2026). `entrenador_ref` es el
+    # nombre que traía el Excel y ya no se enseña.
+    entrenador = serializers.SerializerMethodField()
 
     class Meta:
         model = Participante
         fields = ["id", "torneo", "jugador", "nombre", "certeza", "certeza_display",
-                  "entrenador_ref", "detalle", "apuntado_por", "apuntado_por_nombre", "apuntado_por_mi"]
+                  "entrenador_ref", "entrenador", "detalle", "apuntado_por", "apuntado_por_nombre",
+                  "apuntado_por_mi"]
         read_only_fields = ["apuntado_por"]
         # La restricción (torneo, nombre) se comprueba abajo, una vez resuelto el
         # nombre a partir de la ficha; el validador automático obligaría a mandarlo.
@@ -38,12 +42,22 @@ class ParticipanteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"nombre": f"{nombre} ya está apuntado a este torneo."})
         return data
 
+    def get_entrenador(self, obj):
+        return entrenador_de(obj.jugador) if obj.jugador_id else ""
+
     def get_apuntado_por_nombre(self, obj):
         return nombre_de(obj.apuntado_por)
 
     def get_apuntado_por_mi(self, obj):
         request = self.context.get("request")
         return bool(request and obj.apuntado_por_id and obj.apuntado_por_id == request.user.id)
+
+
+def entrenador_de(jugador):
+    """Su entrenador según Grupos: el responsable y quien comparte con él la
+    gestión («Mario Muniesa y Jorge Ibañez»)."""
+    nombres = [e.nombre for e in [jugador.entrenador_responsable, *jugador.cogestores.all()] if e is not None]
+    return " y ".join(dict.fromkeys(nombres))
 
 
 def nombre_de(user):

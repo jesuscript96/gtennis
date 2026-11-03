@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import TorneoForm from "../../../../components/TorneoForm";
 import {
-  addParticipante, borrarTorneo, delParticipante, fusionarTorneo, getTorneo, getTorneos,
-  getTorneosResumen, guardarTorneo, resource, updParticipante,
+  addParticipante, borrarTorneo, delParticipante, fusionarTorneo, getJugadoresApuntables, getTorneo, getTorneos,
+  getTorneosResumen, guardarTorneo, updParticipante,
 } from "../../../../lib/api";
 import { apuntaATorneos, canWrite } from "../../../../lib/perms";
 import DeshacerTorneos from "../../../../components/DeshacerTorneos";
@@ -21,15 +21,16 @@ export default function TorneoDetallePage() {
   const [guardando, setGuardando] = useState(false);
   const [circuitos, setCircuitos] = useState([]);
   const [jugadores, setJugadores] = useState(null);
-  const [nuevo, setNuevo] = useState({ jugador: "", nombre: "" });
+  const [nuevo, setNuevo] = useState({ jugador: "", nombre: "", notas: "" });
   const [verFuente, setVerFuente] = useState(false);
   const [vecinos, setVecinos] = useState([]);
   const [dup, setDup] = useState("");
   const [tick, setTick] = useState(0);
   const hecho = () => setTick((n) => n + 1);
   const puedeEditar = canWrite("torneos");
-  // El entrenador apunta a los suyos (el desplegable ya trae solo los que ve)
-  // y quita lo que apuntó mientras siga pendiente; el resto, head coach y dirección.
+  // El entrenador apunta a los de su columna en Grupos (el desplegable ya trae
+  // solo esos) y quita lo que apuntó mientras siga pendiente; el resto, head
+  // coach y dirección.
   const apunta = puedeEditar || apuntaATorneos();
 
   const cargar = useCallback(() => getTorneo(id).then(setT).catch((e) => setError(e.message)), [id]);
@@ -42,7 +43,7 @@ export default function TorneoDetallePage() {
   }, [t?.id, t?.fecha_inicio, t?.fecha_fin]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     getTorneosResumen().then((r) => setCircuitos(r.circuitos.map((c) => c.nombre))).catch(() => {});
-    resource("jugadores").list().then(setJugadores).catch(() => setJugadores([]));
+    getJugadoresApuntables().then(setJugadores).catch(() => setJugadores([]));
   }, []);
 
   async function guardar(body) {
@@ -59,8 +60,9 @@ export default function TorneoDetallePage() {
     e.preventDefault();
     if (!nuevo.jugador && !nuevo.nombre.trim()) return;
     try {
-      await addParticipante({ torneo: Number(id), jugador: nuevo.jugador ? Number(nuevo.jugador) : null, nombre: nuevo.nombre.trim() });
-      setNuevo({ jugador: "", nombre: "" });
+      await addParticipante({ torneo: Number(id), jugador: nuevo.jugador ? Number(nuevo.jugador) : null,
+        nombre: nuevo.nombre.trim(), detalle: nuevo.notas.trim() });
+      setNuevo({ jugador: "", nombre: "", notas: "" });
       await cargar();
       hecho();
     } catch (e) { setError(e.message); }
@@ -86,6 +88,10 @@ export default function TorneoDetallePage() {
   const conAcciones = puedeEditar || t.participantes.some(quitaEntrenador);
   const sePuedeApuntar = t.fecha_fin >= hoyISO() && t.estado !== "CANCELADO";
   const libres = (jugadores || []).filter((j) => !yaApuntados.has(j.id));
+  const notasInput = (
+    <input className="apuntar-notas" placeholder="Notas (opcional): solo la previa, va con su padre…" maxLength={200}
+      value={nuevo.notas} onChange={(e) => setNuevo({ ...nuevo, notas: e.target.value })} />
+  );
 
   return (
     <div>
@@ -144,7 +150,7 @@ export default function TorneoDetallePage() {
           <p className="msg sin-margen">Todavía no hay nadie apuntado.</p>
         ) : (
           <table className="data">
-            <thead><tr><th>Jugador</th><th>Certeza</th><th>Entrenador de referencia</th><th>Detalle</th>{conAcciones && <th></th>}</tr></thead>
+            <thead><tr><th>Jugador</th><th>Certeza</th><th>Entrenador</th><th>Notas</th>{conAcciones && <th></th>}</tr></thead>
             <tbody>
               {t.participantes.map((p) => (
                 <tr key={p.id}>
@@ -154,7 +160,7 @@ export default function TorneoDetallePage() {
                     {p.apuntado_por_nombre && <div className="apuntado-por">apuntado por {p.apuntado_por_mi ? "ti" : p.apuntado_por_nombre}</div>}
                   </td>
                   <td><span className={`pill ${CERTEZA_CLASS[p.certeza]}`}>{CERTEZA_LABEL[p.certeza]}</span></td>
-                  <td className="muted">{p.entrenador_ref || "—"}</td>
+                  <td className="muted">{p.entrenador || "—"}</td>
                   <td className="muted">{p.detalle || "—"}</td>
                   {conAcciones && (
                     <td>
@@ -175,23 +181,25 @@ export default function TorneoDetallePage() {
         )}
         {!puedeEditar && apunta && sePuedeApuntar && (
           <form className="apuntar" onSubmit={apuntar}>
-            <select value={nuevo.jugador} onChange={(e) => setNuevo({ jugador: e.target.value, nombre: "" })}>
+            <select value={nuevo.jugador} onChange={(e) => setNuevo({ ...nuevo, jugador: e.target.value, nombre: "" })}>
               <option value="">{!jugadores ? "Cargando tus jugadores…" : libres.length ? "Uno de tus jugadores…" : "No te queda ningún jugador por apuntar"}</option>
               {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
             </select>
+            {notasInput}
             <button className="btn" disabled={!nuevo.jugador}>Apuntar</button>
             <span className="muted apuntar-nota">Queda pendiente hasta que tu head coach o dirección lo confirmen.</span>
           </form>
         )}
         {puedeEditar && (
           <form className="apuntar" onSubmit={apuntar}>
-            <select value={nuevo.jugador} onChange={(e) => setNuevo({ jugador: e.target.value, nombre: "" })}>
+            <select value={nuevo.jugador} onChange={(e) => setNuevo({ ...nuevo, jugador: e.target.value, nombre: "" })}>
               <option value="">Jugador de la academia…</option>
-              {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+              {libres.map((j) => <option key={j.id} value={j.id}>{j.nombre}{j.entrenador ? ` · ${j.entrenador}` : ""}</option>)}
             </select>
             <span className="muted">o</span>
             <input placeholder="Nombre de alguien que no está en las fichas" value={nuevo.nombre}
-              onChange={(e) => setNuevo({ jugador: "", nombre: e.target.value })} />
+              onChange={(e) => setNuevo({ ...nuevo, jugador: "", nombre: e.target.value })} />
+            {notasInput}
             <button className="btn" disabled={!nuevo.jugador && !nuevo.nombre.trim()}>Apuntar</button>
           </form>
         )}

@@ -118,6 +118,7 @@ function PorConfirmar({ filas, puedeEditar, onAccion }) {
               {fmtRango(p.torneo_detalle.qualy_inicio || p.torneo_detalle.fecha_inicio, p.torneo_detalle.fecha_fin)}
               {p.torneo_detalle.cierre_inscripcion && ` · cierra el ${fmtCorta(p.torneo_detalle.cierre_inscripcion)}`}
               {puedeEditar && ` · apuntado por ${p.apuntado_por_nombre}`}
+              {p.detalle && ` · «${p.detalle}»`}
             </span>
             <span className="row-actions">
               {puedeEditar && (

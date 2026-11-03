@@ -5,7 +5,9 @@ from datetime import date, timedelta
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from academy.models import Aviso, Coach, Entrenador, Jugador, ResponsableJugador, VacacionesEntrenador
+from academy.models import (
+    Aviso, Coach, Entrenador, Invitado, Jugador, ResponsableJugador, VacacionesEntrenador,
+)
 from users.models import User
 
 from .models import Participante, Torneo
@@ -214,6 +216,38 @@ class EntrenadorApuntaTests(TestCase):
         r = self.api(self.u_blas).post("/api/torneos-cambios/deshacer/", {}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertFalse(Participante.objects.exists())
+
+    def test_solo_los_de_su_columna_en_grupos(self):
+        # Entrena con Blas (porcentaje) pero es de Mario: no es suyo.
+        pau = Jugador.objects.create(nombre="Pau", entrenador_responsable=self.mario)
+        ResponsableJugador.objects.create(jugador=pau, entrenador=self.blas, prioridad=2)
+        # Comparte la gestión con Blas: sí.
+        iris = Jugador.objects.create(nombre="Iris", entrenador_responsable=self.mario)
+        iris.cogestores.add(self.blas)
+        # Invitado de Blas: no va a torneos.
+        inv = Jugador.objects.create(nombre="Kira (invitado)", entrenador_responsable=self.blas)
+        Invitado.objects.create(nombre="Kira", entrenador_solicitante=self.blas, jugador_creado=inv)
+        lista = self.api(self.u_blas).get("/api/torneos-participantes/jugadores/").data
+        self.assertEqual([(j["nombre"], j["entrenador"]) for j in lista],
+                         [("Ana", "Blas"), ("Iris", "Mario y Blas")])
+        self.assertEqual(self.apuntar(self.u_blas, pau).status_code, 403)
+        self.assertEqual(self.apuntar(self.u_blas, iris).status_code, 201)
+        # El head coach de Blas: su columna entera, no los que solo entrenan con él.
+        # (más las altas sin entrenador, que en la base de pruebas ya hay).
+        nombres = {j["nombre"] for j in self.api(self.u_pablo).get("/api/torneos-participantes/jugadores/").data}
+        self.assertTrue({"Ana", "Iris"} <= nombres)
+        self.assertFalse({"Pau", "Leo", "Kira (invitado)"} & nombres)
+        self.assertEqual(self.apuntar(self.u_pablo, pau).status_code, 403)
+        nombres = {j["nombre"] for j in self.api(self.u_dir).get("/api/torneos-participantes/jugadores/").data}
+        self.assertTrue({"Ana", "Iris", "Pau", "Leo"} <= nombres)
+        self.assertNotIn("Kira (invitado)", nombres)
+
+    def test_notas_y_entrenador_al_apuntar(self):
+        r = self.apuntar(self.u_blas, self.ana, detalle="Solo la previa")
+        self.assertEqual((r.data["detalle"], r.data["entrenador"]), ("Solo la previa", "Blas"))
+        r = self.api(self.u_pablo).get(f"/api/torneos/{self.t.id}/")
+        self.assertEqual([(p["nombre"], p["entrenador"], p["detalle"]) for p in r.data["participantes"]],
+                         [("Ana", "Blas", "Solo la previa")])
 
     def test_deshacer_conserva_quien_lo_apunto(self):
         pid = self.apuntar(self.u_blas, self.ana).data["id"]

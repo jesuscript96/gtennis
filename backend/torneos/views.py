@@ -10,13 +10,12 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.response import Response
 
-from academy.models import Aviso, Coach, Entrenador, VacacionesEntrenador
+from academy.models import Aviso, Coach, Entrenador, Jugador, VacacionesEntrenador
 from academy.permissions import es_coach, es_direccion
-from academy.scope import jugadores_visibles, puede_ver_jugador
 
 from . import historial
 from .models import CambioTorneo, Participante, Torneo
-from .serializers import ParticipanteSerializer, TorneoListaSerializer, TorneoSerializer
+from .serializers import ParticipanteSerializer, TorneoListaSerializer, TorneoSerializer, entrenador_de
 
 
 class SoloDireccionOCoach(BasePermission):
@@ -55,6 +54,42 @@ class ApuntanTambienEntrenadores(SoloDireccionOCoach):
     def has_permission(self, request, view):
         return super().has_permission(request, view) or bool(
             request.user and request.user.is_authenticated and es_entrenador(request.user))
+
+
+def _q_de_mi_grupo(user):
+    """Los jugadores que alguien lleva en los torneos, según Grupos: el
+    entrenador, los de su columna (es su responsable o comparte la gestión);
+    el head coach, los de las columnas de sus entrenadores y las altas que aún
+    no tienen entrenador. None = todos (dirección).
+
+    03/11/2026: antes valía lo que cada uno ve en Mis jugadores, y ahí entran
+    los porcentajes (con quién entrena), el resto de su color y los invitados:
+    a Álvaro le salían 24 jugadores para apuntar y en Grupos tiene 6."""
+    if user.is_superadmin:
+        return None
+    coach = getattr(user, "coach", None)
+    if coach is not None and coach.activo:
+        ents = coach.entrenadores.all()
+        return (Q(entrenador_responsable__isnull=True) | Q(entrenador_responsable__in=ents)
+                | Q(cogestores__in=ents))
+    ent = getattr(user, "entrenador", None)
+    if ent is None:
+        return Q(pk__in=[])
+    return Q(entrenador_responsable=ent) | Q(cogestores=ent)
+
+
+def jugadores_apuntables(user):
+    """A quién ofrece el desplegable de apuntar: los de su grupo que siguen
+    entrenando, sin invitados."""
+    qs = (Jugador.objects.filter(activo=True, invitaciones__isnull=True)
+          .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=date.today())))
+    q = _q_de_mi_grupo(user)
+    return (qs if q is None else qs.filter(q)).distinct().order_by("nombre")
+
+
+def es_de_mi_grupo(user, jugador):
+    q = _q_de_mi_grupo(user)
+    return q is None or Jugador.objects.filter(q, pk=jugador.pk).exists()
 
 
 def avisar_head_coach(participante, usuario):
@@ -96,7 +131,9 @@ class TorneoViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = (Torneo.objects
-              .prefetch_related("participantes__apuntado_por__entrenador", "acompanantes")
+              .prefetch_related("participantes__apuntado_por__entrenador", "acompanantes",
+                                "participantes__jugador__entrenador_responsable",
+                                "participantes__jugador__cogestores")
               .annotate(_n_jug=Count("participantes", distinct=True)))
         p = self.request.query_params
         if p.get("desde"):
@@ -250,8 +287,8 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
     """Quién va a cada torneo. Un head coach solo apunta, mueve o quita a
     jugadores de su grupo; a los nombres sin ficha los toca cualquiera.
 
-    Desde el 03/11/2026 los entrenadores apuntan a sus jugadores (los mismos
-    que ven en Mis jugadores) a torneos que ya existen. Lo suyo entra como
+    Desde el 03/11/2026 los entrenadores apuntan a sus jugadores (los de su
+    columna en Grupos) a torneos que ya existen. Lo suyo entra como
     pendiente y avisa al head coach; solo pueden quitar lo que apuntaron ellos
     mientras siga pendiente. Mover y confirmar, head coaches y dirección."""
 
@@ -260,14 +297,16 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        qs = Participante.objects.select_related("jugador", "torneo", "apuntado_por__entrenador")
+        qs = (Participante.objects
+              .select_related("jugador__entrenador_responsable", "torneo", "apuntado_por__entrenador")
+              .prefetch_related("jugador__cogestores"))
         if self.request.query_params.get("torneo"):
             qs = qs.filter(torneo_id=self.request.query_params["torneo"])
         return qs
 
     def _de_mi_grupo(self, jugador):
         user = self.request.user
-        if jugador is None or user.is_superadmin or puede_ver_jugador(user, jugador):
+        if jugador is None or es_de_mi_grupo(user, jugador):
             return
         raise PermissionDenied(f"{jugador.nombre} no es de tu grupo: lo gestiona otro head coach.")
 
@@ -276,8 +315,8 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         jugador, t = d.get("jugador"), d["torneo"]
         if jugador is None:
             raise ValidationError({"jugador": "Elige a uno de tus jugadores."})
-        if not puede_ver_jugador(user, jugador):
-            raise PermissionDenied(f"{jugador.nombre} no es de tus jugadores.")
+        if not jugadores_apuntables(user).filter(pk=jugador.pk).exists():
+            raise PermissionDenied(f"{jugador.nombre} no está en tu columna de Grupos.")
         if t.fecha_fin < date.today():
             raise ValidationError({"torneo": "Ese torneo ya ha terminado."})
         if t.estado == Torneo.Estado.CANCELADO:
@@ -338,7 +377,7 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
               .order_by("torneo__fecha_inicio", "torneo__nombre", "nombre"))
         if not user.is_superadmin:
             if es_coach(user):
-                qs = qs.filter(jugador__in=jugadores_visibles(user))
+                qs = qs.filter(jugador__in=Jugador.objects.filter(_q_de_mi_grupo(user)))
             else:
                 qs = qs.filter(apuntado_por=user)
         filas = list(qs)
@@ -350,6 +389,14 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
                 "cierre_inscripcion": p.torneo.cierre_inscripcion,
             }
         return Response(datos)
+
+    @action(detail=False, methods=["get"])
+    def jugadores(self, request):
+        """El desplegable de apuntar: los jugadores de su grupo, con su
+        entrenador según Grupos."""
+        qs = jugadores_apuntables(request.user).select_related(
+            "entrenador_responsable").prefetch_related("cogestores")
+        return Response([{"id": j.id, "nombre": j.nombre, "entrenador": entrenador_de(j)} for j in qs])
 
 
 class CambioTorneoViewSet(viewsets.ViewSet):
