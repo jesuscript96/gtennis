@@ -257,6 +257,11 @@ class JugadorViewSet(viewsets.ModelViewSet):
         )
         if self.action == "list" and not pide_todos:
             base = base.filter(activo=True)
+        # El invitado es un Jugador para que el motor lo coloque, pero no un
+        # alumno del club: se lleva en «Invitados». Es opcional porque los
+        # desplegables (faltas, rencillas…) sí tienen que seguir viéndolo.
+        if self.action == "list" and self.request.query_params.get("sin_invitados"):
+            base = base.filter(invitaciones__isnull=True)
         escuela = self.request.query_params.get("escuela")
         if escuela == "sin":
             base = base.filter(escuela__isnull=True)

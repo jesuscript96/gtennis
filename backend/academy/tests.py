@@ -1359,6 +1359,46 @@ class InvitadoComoJugadorTests(TestCase):
         self.assertEqual(Invitado.objects.get(pk=r.json()["id"]).estado, "PENDIENTE")
 
 
+class InvitadosFueraDelListadoTests(TestCase):
+    """09/11/2026: la pantalla «Jugadores» no enseña a los invitados; los
+    desplegables, que piden la lista sin el parámetro, siguen recibiéndolos."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        ent = Entrenador.objects.create(nombre="Uno")
+        Jugador.objects.create(nombre="Zalumno Prueba", activo=True)
+        self.kira = Jugador.objects.create(nombre="Zkira (invitado)", activo=True)
+        Invitado.objects.create(nombre="Zkira", entrenador_solicitante=ent,
+                                estado="APROBADO", jugador_creado=self.kira)
+        self.api = APIClient()
+        self.api.force_authenticate(User.objects.create_user(
+            username="dir", password="x", role=User.Role.SUPERADMIN))
+
+    def _nombres(self, query):
+        # Con `search`: la lista va paginada y hay alumnos sembrados.
+        r = self.api.get(f"/api/jugadores/?{query}")
+        self.assertEqual(r.status_code, 200)
+        datos = r.json()
+        return [j["nombre"] for j in datos.get("results", datos)]
+
+    def test_el_listado_no_los_ensena(self):
+        self.assertEqual(self._nombres("search=Zkira&sin_invitados=1"), [])
+        self.assertEqual(self._nombres("search=Zalumno&sin_invitados=1"), ["Zalumno Prueba"])
+
+    def test_tampoco_al_ver_los_dados_de_baja(self):
+        self.assertEqual(self._nombres("search=Zkira&sin_invitados=1&todos=1"), [])
+
+    def test_los_desplegables_siguen_recibiendolos(self):
+        self.assertEqual(self._nombres("search=Zkira"), ["Zkira (invitado)"])
+
+    def test_su_ficha_se_sigue_abriendo(self):
+        r = self.api.get(f"/api/jugadores/{self.kira.id}/?sin_invitados=1")
+        self.assertEqual(r.status_code, 200)
+
+
 class InvitadoEnElMotorTests(TestCase):
     """El invitado entra en el cuadrante los días de sus visitas aprobadas, y
     en ningún otro."""

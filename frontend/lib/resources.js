@@ -60,6 +60,8 @@ export const RESOURCES = {
     endpoint: "jugadores",
     title: "Jugadores",
     singular: "jugador",
+    // Los invitados se llevan en su propia pantalla.
+    listParams: { sin_invitados: "1" },
     search: true,
     numbered: true,
     filters: [

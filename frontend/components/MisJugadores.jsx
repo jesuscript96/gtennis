@@ -32,7 +32,7 @@ export default function MisJugadores() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.list().then(setJugadores).catch((e) => setError(e.message));
+    api.list("?sin_invitados=1").then(setJugadores).catch((e) => setError(e.message));
     resource("turnos").list().then(setTurnos).catch(() => {});
   }, [api]);
 

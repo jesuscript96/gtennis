@@ -58,7 +58,7 @@ export default function ResourceCrud({ config }) {
     setLoading(true);
     setError(null);
     try {
-      const p = new URLSearchParams();
+      const p = new URLSearchParams(config.listParams);
       if (config.search && search) p.set("search", search);
       for (const f of config.filters || []) {
         const v = filtrosAhora[f.name];
