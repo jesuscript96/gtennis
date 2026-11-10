@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from academy.models import (
-    Aviso, Coach, Entrenador, Invitado, Jugador, ResponsableJugador, VacacionesEntrenador,
+    Aviso, Coach, Entrenador, Escuela, Invitado, Jugador, ResponsableJugador, VacacionesEntrenador,
 )
 from users.models import User
 
@@ -543,3 +543,64 @@ class PeticionesDiezNoviembreTests(TestCase):
         # Al fusionar se conserva.
         r = self.api(self.u_dir).post(f"/api/torneos/{self.t2.id}/fusionar/", {"con": self.t1.id}, format="json")
         self.assertEqual(r.data["fecha_borrado"], "2026-10-20")
+
+
+class PabloTodaLaAcademiaTests(TestCase):
+    """10/11/2026: Pablo (pablo.gil) apunta y quita en torneos a cualquier
+    jugador de la academia, no solo a los de su grupo; los de Competición de
+    tardes, no. El resto de head coaches sigue con su grupo."""
+
+    setUp_base = TorneosTests.setUp
+    api = TorneosTests.api
+
+    def setUp(self):
+        self.setUp_base()
+        self.u_pablo_gil = User.objects.create_user(username="pablo.gil", password="x", role=User.Role.COACH)
+        Coach.objects.create(nombre="Pablo Gil", user=self.u_pablo_gil).entrenadores.set([self.blas])
+        tardes = Escuela.objects.create(nombre="Competición de tardes", solo_informes=True)
+        self.tito = Jugador.objects.create(nombre="Tito", escuela=tardes, entrenador_responsable=self.mario)
+        hoy = date.today()
+        self.tf = Torneo.objects.create(nombre="Futuro", fecha_inicio=hoy + timedelta(days=20),
+                                        fecha_fin=hoy + timedelta(days=22))
+
+    def test_le_salen_todos_menos_los_de_tardes(self):
+        nombres = {j["nombre"] for j in
+                   self.api(self.u_pablo_gil).get("/api/torneos-participantes/jugadores/").data}
+        self.assertTrue({"Ana", "Leo"} <= nombres)
+        self.assertNotIn("Tito", nombres)
+        # El otro head coach, solo los de su grupo: Leo es de Mario.
+        nombres = {j["nombre"] for j in self.api(self.u_pablo).get("/api/torneos-participantes/jugadores/").data}
+        self.assertIn("Ana", nombres)
+        self.assertNotIn("Leo", nombres)
+
+    def test_apunta_mueve_y_quita_a_uno_de_otro_grupo(self):
+        c = self.api(self.u_pablo_gil)
+        r = c.post("/api/torneos-participantes/", {"torneo": self.tf.id, "jugador": self.leo.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertNotEqual(Participante.objects.get(pk=r.data["id"]).certeza, Participante.Certeza.PENDIENTE)
+        r = c.patch(f"/api/torneos-participantes/{r.data['id']}/", {"torneo": self.t2.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        # Uno que apuntó dirección, también lo quita.
+        p = Participante.objects.create(torneo=self.t1, jugador=self.leo, nombre="Leo")
+        self.assertEqual(c.delete(f"/api/torneos-participantes/{p.id}/").status_code, 204)
+        # El otro head coach no puede.
+        p = Participante.objects.create(torneo=self.t1, jugador=self.leo, nombre="Leo")
+        self.assertEqual(self.api(self.u_pablo).delete(f"/api/torneos-participantes/{p.id}/").status_code, 403)
+
+    def test_los_de_tardes_no(self):
+        c = self.api(self.u_pablo_gil)
+        r = c.post("/api/torneos-participantes/", {"torneo": self.tf.id, "jugador": self.tito.id}, format="json")
+        self.assertEqual(r.status_code, 403)
+        p = Participante.objects.create(torneo=self.t1, jugador=self.tito, nombre="Tito")
+        self.assertEqual(c.delete(f"/api/torneos-participantes/{p.id}/").status_code, 403)
+
+    def test_ve_por_confirmar_de_toda_la_academia(self):
+        u_mario = User.objects.create_user(username="mario", password="x", role=User.Role.ENTRENADOR)
+        self.mario.user = u_mario
+        self.mario.save(update_fields=["user"])
+        r = self.api(u_mario).post("/api/torneos-participantes/", {"torneo": self.tf.id, "jugador": self.leo.id},
+                                   format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        nombres = [p["nombre"] for p in
+                   self.api(self.u_pablo_gil).get("/api/torneos-participantes/por_confirmar/").data]
+        self.assertEqual(nombres, ["Leo"])

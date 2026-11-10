@@ -57,11 +57,18 @@ class ApuntanTambienEntrenadores(SoloDireccionOCoach):
             request.user and request.user.is_authenticated and es_entrenador(request.user))
 
 
+# Head coaches que en torneos llevan a toda la academia y no solo a su grupo:
+# apuntan, mueven, confirman y quitan a cualquiera (10/11/2026, Pablo). Los de
+# Competición de tardes no: esos solo existen para los informes.
+TORNEOS_TODA_LA_ACADEMIA = {"pablo.gil"}
+
+
 def _q_de_mi_grupo(user):
     """Los jugadores que alguien lleva en los torneos, según Grupos: el
     entrenador, los de su columna (es su responsable o comparte la gestión);
     el head coach, los de las columnas de sus entrenadores y las altas que aún
-    no tienen entrenador. None = todos (dirección).
+    no tienen entrenador (si está en TORNEOS_TODA_LA_ACADEMIA, todos menos
+    los de Competición de tardes). None = todos (dirección).
 
     03/11/2026: antes valía lo que cada uno ve en Mis jugadores, y ahí entran
     los porcentajes (con quién entrena), el resto de su color y los invitados:
@@ -70,6 +77,8 @@ def _q_de_mi_grupo(user):
         return None
     coach = getattr(user, "coach", None)
     if coach is not None and coach.activo:
+        if user.username in TORNEOS_TODA_LA_ACADEMIA:
+            return ~Q(escuela__solo_informes=True)
         ents = coach.entrenadores.all()
         return (Q(entrenador_responsable__isnull=True) | Q(entrenador_responsable__in=ents)
                 | Q(cogestores__in=ents))
@@ -302,7 +311,8 @@ class TorneoViewSet(viewsets.ModelViewSet):
 
 class ParticipanteViewSet(viewsets.ModelViewSet):
     """Quién va a cada torneo. Un head coach solo apunta, mueve o quita a
-    jugadores de su grupo; a los nombres sin ficha los toca cualquiera.
+    jugadores de su grupo (Pablo, a toda la academia: TORNEOS_TODA_LA_ACADEMIA);
+    a los nombres sin ficha los toca cualquiera.
 
     Desde el 03/11/2026 los entrenadores apuntan a sus jugadores (los de su
     columna en Grupos) a torneos que ya existen. Lo suyo entra como
