@@ -1505,6 +1505,8 @@ tbody.sem-4 { --sem: #7b54e0; --sem-bg: #fff; }
 .acomp-cell select.anadir { color: var(--muted); border-style: dashed; background: transparent; }
 .acomp-cell select.vacas { border-color: #e6b3b3; color: var(--st-ausencia); }
 .acomp-cell .nota { font-size: 12px; }
+.td-cierre .borrado { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
+.jug-chip.baja { text-decoration: line-through; opacity: .55; }
 /* Jugadores: todos a la vista, arrastrables */
 .td-jug { min-width: 260px; }
 .torneo-jug { min-height: 30px; padding: 3px; border-radius: 8px; border: 1px dashed transparent; }

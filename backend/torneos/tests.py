@@ -476,3 +476,70 @@ class CategoriasTests(TestCase):
         # Deshacer devuelve también las categorías.
         self.c.post("/api/torneos-cambios/deshacer/", {}, format="json")
         self.assertEqual(Torneo.objects.get(pk=self.t.id).categorias, ["SUB12", "SUB14"])
+
+
+class PeticionesDiezNoviembreTests(TestCase):
+    """10/11/2026: varios entrenadores por torneo, fuera los dados de baja y
+    fecha límite de borrado. Mismo escenario que TorneosTests."""
+
+    setUp = TorneosTests.setUp
+    api = TorneosTests.api
+
+    def test_varios_entrenadores_acompanan(self):
+        c = self.api(self.u_pablo)
+        r = c.patch(f"/api/torneos/{self.t1.id}/", {"acompanantes": [self.blas.id, self.mario.id]}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual({e["nombre"] for e in r.data["acompanantes_detalle"]}, {"Blas", "Mario"})
+        c.post("/api/torneos-cambios/deshacer/", {}, format="json")
+        self.assertFalse(Torneo.objects.get(pk=self.t1.id).acompanantes.exists())
+
+    def test_ir_de_torneo_no_le_esconde_del_desplegable(self):
+        # En el cuadrante se le marca «Torneo» justo porque acompaña: no cuenta.
+        VacacionesEntrenador.objects.create(entrenador=self.mario, fecha_inicio="2026-10-26",
+                                            fecha_fin="2026-11-01", motivo="Torneo")
+        VacacionesEntrenador.objects.create(entrenador=self.blas, fecha_inicio="2026-10-26",
+                                            fecha_fin="2026-11-01", motivo="Vacaciones")
+        r = self.api(self.u_pablo).get("/api/torneos/entrenadores/?desde=2026-10-26&hasta=2026-11-01")
+        vac = {e["nombre"]: len(e["vacaciones"]) for e in r.data}
+        self.assertEqual((vac["Mario"], vac["Blas"]), (0, 1))
+
+    def test_los_dados_de_baja_no_se_ofrecen_ni_se_apuntan(self):
+        hoy = date.today()
+        tf = Torneo.objects.create(nombre="Futuro", fecha_inicio=hoy + timedelta(days=20),
+                                   fecha_fin=hoy + timedelta(days=22))
+        # Ana se va antes de que empiece; Leo ya no está.
+        self.ana.fecha_baja = hoy + timedelta(days=5)
+        self.ana.save()
+        self.leo.activo = False
+        self.leo.save()
+        c = self.api(self.u_dir)
+        nombres = {j["nombre"] for j in c.get(f"/api/torneos-participantes/jugadores/?torneo={tf.id}").data}
+        self.assertFalse({"Ana", "Leo"} & nombres)
+        # Sin torneo, Ana sigue: aún entrena.
+        nombres = {j["nombre"] for j in c.get("/api/torneos-participantes/jugadores/").data}
+        self.assertIn("Ana", nombres)
+        self.assertNotIn("Leo", nombres)
+        r = c.post("/api/torneos-participantes/", {"torneo": tf.id, "jugador": self.ana.id}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("dado de baja", str(r.data))
+        # Lo de antes se queda, marcado.
+        Participante.objects.create(torneo=self.t1, jugador=self.leo, nombre="Leo")
+        filas = {f["nombre"]: f["de_baja"] for f in c.get("/api/torneos/por_jugador/").data}
+        self.assertTrue(filas["Leo"])
+        lista = c.get("/api/torneos/?desde=2026-10-26&hasta=2026-11-01").data
+        jug = next(t for t in lista if t["id"] == self.t1.id)["jugadores"]
+        self.assertEqual([(j["nombre"], j["de_baja"]) for j in jug], [("Leo", True)])
+        self.assertTrue(c.get(f"/api/torneos/{self.t1.id}/").data["participantes"][0]["de_baja"])
+
+    def test_fecha_limite_de_borrado(self):
+        c = self.api(self.u_pablo)
+        r = c.patch(f"/api/torneos/{self.t1.id}/", {"fecha_borrado": "2026-10-20"}, format="json")
+        self.assertEqual((r.status_code, r.data["fecha_borrado"]), (200, "2026-10-20"))
+        r = c.patch(f"/api/torneos/{self.t1.id}/", {"fecha_borrado": "2026-11-05"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        c.patch(f"/api/torneos/{self.t1.id}/", {"fecha_borrado": "2026-10-22"}, format="json")
+        c.post("/api/torneos-cambios/deshacer/", {}, format="json")
+        self.assertEqual(str(Torneo.objects.get(pk=self.t1.id).fecha_borrado), "2026-10-20")
+        # Al fusionar se conserva.
+        r = self.api(self.u_dir).post(f"/api/torneos/{self.t2.id}/fusionar/", {"con": self.t1.id}, format="json")
+        self.assertEqual(r.data["fecha_borrado"], "2026-10-20")

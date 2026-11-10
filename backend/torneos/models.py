@@ -31,6 +31,9 @@ class Torneo(models.Model):
     fecha_inicio = models.DateField()
     fecha_fin = models.DateField()
     cierre_inscripcion = models.DateField(null=True, blank=True)
+    # Último día para borrar (retirar) a un jugador inscrito sin que cuente
+    # como baja tardía (10/11/2026, petición de Sergio).
+    fecha_borrado = models.DateField(null=True, blank=True, verbose_name="Fecha límite de borrado")
     # Previa (clasificación / pre-qualy): días antes del cuadro final. Ocupan
     # semana igual que el torneo, así que cuentan para saber dónde sale.
     qualy_inicio = models.DateField(null=True, blank=True, verbose_name="Previa desde")

@@ -6,7 +6,7 @@ import { CATEGORIAS } from "../lib/torneos";
 
 const VACIO = {
   nombre: "", circuito: "", nivel: "", categorias: [], lugar: "", fecha_inicio: "", fecha_fin: "",
-  cierre_inscripcion: "", qualy_inicio: "", qualy_fin: "", solo_fines_semana: false, estado: "VALIDADO", acompanantes: [], acompanante_nota: "", notas: "",
+  cierre_inscripcion: "", fecha_borrado: "", qualy_inicio: "", qualy_fin: "", solo_fines_semana: false, estado: "VALIDADO", acompanantes: [], acompanante_nota: "", notas: "",
 };
 
 // Alta y edición de un torneo. `inicial` = el torneo a editar (o nada para
@@ -14,6 +14,7 @@ const VACIO = {
 export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCancelar, guardando, error }) {
   const [f, setF] = useState(() => ({
     ...VACIO, ...(inicial || {}), cierre_inscripcion: inicial?.cierre_inscripcion || "",
+    fecha_borrado: inicial?.fecha_borrado || "",
     qualy_inicio: inicial?.qualy_inicio || "", qualy_fin: inicial?.qualy_fin || "",
   }));
   const [entrenadores, setEntrenadores] = useState([]);
@@ -39,7 +40,7 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
   function submit(e) {
     e.preventDefault();
     const body = {
-      ...f, cierre_inscripcion: f.cierre_inscripcion || null,
+      ...f, cierre_inscripcion: f.cierre_inscripcion || null, fecha_borrado: f.fecha_borrado || null,
       qualy_inicio: f.qualy_inicio || null, qualy_fin: f.qualy_fin || null,
     };
     // Si no hay fecha fin, el torneo dura un día.
@@ -76,6 +77,11 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
         <label className="field"><span>Cierre de inscripción</span>
           <input type="date" value={f.cierre_inscripcion} onChange={set("cierre_inscripcion")} />
         </label>
+        <label className="field"><span>Fecha límite de borrado</span>
+          <input type="date" value={f.fecha_borrado} max={f.fecha_fin || f.fecha_inicio || undefined}
+            onChange={set("fecha_borrado")} />
+          <small className="muted">Último día para borrar a un jugador inscrito.</small>
+        </label>
         <label className="field"><span>Previa desde (si tiene clasificación)</span>
           <input type="date" value={f.qualy_inicio} max={f.fecha_inicio || undefined} onChange={set("qualy_inicio")} />
         </label>
@@ -98,7 +104,7 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
           </div>
           <small className="muted">Se apuntan los de esas categorías y los más pequeños, según los años que cumplen en el año del torneo.</small>
         </div>
-        <div className="field col-2"><span>Coach que acompaña</span>
+        <div className="field col-2"><span>Entrenadores que acompañan (puedes marcar varios)</span>
           <div className="chips-acomp">
             {entrenadores.map((e) => (
               <button type="button" key={e.id}

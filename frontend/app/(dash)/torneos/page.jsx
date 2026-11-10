@@ -53,7 +53,7 @@ function AcompanaCell({ t, lunes, entrenadores, enSemana, onGuardar, puedeEditar
         );
       })}
       <select value="" className="anadir" onChange={(e) => e.target.value && onGuardar(t.id, { acompanantes: [...new Set([...ids, Number(e.target.value)])] })}>
-        <option value="">{ids.length ? "+ otro…" : "Elegir…"}</option>
+        <option value="">{ids.length ? "+ añadir otro entrenador…" : "Elegir…"}</option>
         {disponibles.filter((e) => !ids.includes(e.id)).map(opcion)}
       </select>
       {t.acompanante_nota && <span className="muted nota">{t.acompanante_nota}</span>}
@@ -79,7 +79,7 @@ function JugadoresCell({ t, sel, setSel, onMover, puedeEditar }) {
       onClick={() => { if (esDestino) { onMover(sel.id, sel.torneo, t.id); setSel(null); } }}>
       {t.jugadores.map((j) => (
         <span key={j.id} draggable={puedeEditar}
-          className={`jug-chip${j.certeza !== "CONFIRMADO" ? " dudoso" : ""}${sel?.id === j.id ? " sel" : ""}${puedeEditar ? " movible" : ""}`}
+          className={`jug-chip${j.certeza !== "CONFIRMADO" ? " dudoso" : ""}${j.de_baja ? " baja" : ""}${sel?.id === j.id ? " sel" : ""}${puedeEditar ? " movible" : ""}`}
           onDragStart={(e) => {
             e.dataTransfer.setData("participante", String(j.id));
             e.dataTransfer.setData("torneo", String(t.id));
@@ -90,7 +90,7 @@ function JugadoresCell({ t, sel, setSel, onMover, puedeEditar }) {
             if (!puedeEditar) return;
             setSel(sel?.id === j.id ? null : { id: j.id, torneo: t.id, nombre: j.nombre });
           }}
-          title={[j.apuntado_por_nombre && `Apuntado por ${j.apuntado_por_nombre}${j.certeza === "PENDIENTE" ? ", pendiente de confirmar" : ""}`,
+          title={[j.de_baja && "Dado de baja: ya no entrena en el club", j.apuntado_por_nombre && `Apuntado por ${j.apuntado_por_nombre}${j.certeza === "PENDIENTE" ? ", pendiente de confirmar" : ""}`,
             puedeEditar && "Arrastra a otro torneo, o toca y luego toca el torneo de destino"].filter(Boolean).join(". ")}>
           {j.nombre}
         </span>
@@ -246,6 +246,7 @@ export default function TorneosPage() {
     const enCurso = inicioEfectivo(t) <= hoy && t.fecha_fin >= hoy;
     const enPrevia = enCurso && hoy < t.fecha_inicio;
     const dCierre = diasHasta(t.cierre_inscripcion);
+    const dBorrado = diasHasta(t.fecha_borrado);
     return (
       <tr key={`${lunes}-${t.id}`} className={pasado ? "pasado" : enCurso ? "en-curso" : ""}>
         <td className="td-fechas" data-label="Fechas">
@@ -269,7 +270,7 @@ export default function TorneosPage() {
             {t.lugar && <span className="muted">· {t.lugar}</span>}
           </div>
         </td>
-        <td className="td-cierre" data-label="Cierre insc.">
+        <td className="td-cierre" data-label="Cierre / borrado">
           {t.cierre_inscripcion ? (
             <>
               {fmtCorta(t.cierre_inscripcion)}
@@ -278,6 +279,14 @@ export default function TorneosPage() {
               )}
             </>
           ) : <span className="muted">—</span>}
+          {t.fecha_borrado && (
+            <div className="borrado" title="Fecha límite de borrado">
+              borrado {fmtCorta(t.fecha_borrado)}
+              {dBorrado !== null && dBorrado >= 0 && dBorrado <= 7 && !pasado && (
+                <span className="pill pend">{dBorrado === 0 ? "hoy" : `${dBorrado} d`}</span>
+              )}
+            </div>
+          )}
         </td>
         <td className="td-coach" data-label="Acompaña">
           <AcompanaCell t={t} lunes={lunes} entrenadores={entrenadores} enSemana={enSemana}
@@ -306,7 +315,8 @@ export default function TorneosPage() {
       {puedeEditar ? (
         <p className="help">
           Semana a semana: cada torneo sale en las semanas de sus fechas; la previa no cuenta y se indica en la fila. En «Acompaña»
-          solo se ofrecen entrenadores que no están de vacaciones esas fechas. Los jugadores se pueden
+          caben varios entrenadores («+ añadir otro entrenador…»); solo se ofrecen los que no están de vacaciones esas fechas
+          (ir de torneo no cuenta como vacaciones). Los jugadores se pueden
           <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
           Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar: dudas del Excel o
           jugadores que ha apuntado un entrenador.
@@ -348,7 +358,7 @@ export default function TorneosPage() {
                     {dias === 0 ? "hoy" : dias === 1 ? "mañana" : `${dias} días`}
                   </span>
                   <Link href={`/torneos/${t.id}`}>{t.nombre}</Link>
-                  <span className="muted">cierra el {fmtCorta(t.cierre_inscripcion)} · empieza el {fmtCorta(t.fecha_inicio)} · {t.n_jugadores} jug.</span>
+                  <span className="muted">cierra el {fmtCorta(t.cierre_inscripcion)}{t.fecha_borrado ? ` · borrado hasta el ${fmtCorta(t.fecha_borrado)}` : ""} · empieza el {fmtCorta(t.fecha_inicio)} · {t.n_jugadores} jug.</span>
                 </li>
               );
             })}
@@ -394,7 +404,7 @@ export default function TorneosPage() {
         <div className="card">
           <table className="data tabla-torneos">
             <thead>
-              <tr><th>Fechas</th><th>Torneo</th><th>Cierre insc.</th><th>Acompaña</th><th>Jugadores</th><th></th></tr>
+              <tr><th>Fechas</th><th>Torneo</th><th>Cierre / borrado</th><th>Acompaña</th><th>Jugadores</th><th></th></tr>
             </thead>
             {semanas.map((s, i) => {
               const color = `sem-${i % COLORES_SEMANA}`;

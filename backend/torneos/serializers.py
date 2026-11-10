@@ -1,3 +1,5 @@
+from datetime import date
+
 from rest_framework import serializers
 
 from academy.models import Entrenador
@@ -20,12 +22,14 @@ class ParticipanteSerializer(serializers.ModelSerializer):
     # se cambian las categorías después de apuntarle).
     categoria = serializers.SerializerMethodField()
     fuera_de_categoria = serializers.SerializerMethodField()
+    # Ya no entrena en el club (10/11/2026: salían en las listas de torneos).
+    de_baja = serializers.SerializerMethodField()
 
     class Meta:
         model = Participante
         fields = ["id", "torneo", "jugador", "nombre", "certeza", "certeza_display",
                   "entrenador_ref", "entrenador", "detalle", "apuntado_por", "apuntado_por_nombre",
-                  "apuntado_por_mi", "categoria", "fuera_de_categoria"]
+                  "apuntado_por_mi", "categoria", "fuera_de_categoria", "de_baja"]
         read_only_fields = ["apuntado_por"]
         # La restricción (torneo, nombre) se comprueba abajo, una vez resuelto el
         # nombre a partir de la ficha; el validador automático obligaría a mandarlo.
@@ -56,6 +60,9 @@ class ParticipanteSerializer(serializers.ModelSerializer):
     def get_fuera_de_categoria(self, obj):
         return obj.jugador is not None and not cats.puede_jugar(obj.jugador, obj.torneo)
 
+    def get_de_baja(self, obj):
+        return de_baja(obj.jugador)
+
     def get_entrenador(self, obj):
         return entrenador_de(obj.jugador) if obj.jugador_id else ""
 
@@ -72,6 +79,14 @@ def entrenador_de(jugador):
     gestión («Mario Muniesa y Jorge Ibañez»)."""
     nombres = [e.nombre for e in [jugador.entrenador_responsable, *jugador.cogestores.all()] if e is not None]
     return " y ".join(dict.fromkeys(nombres))
+
+
+def de_baja(jugador, dia=None):
+    """Dado de baja: ficha desactivada o su último día de entrenamiento ya
+    pasó (o es anterior a `dia`). Un nombre sin ficha no está de baja."""
+    if jugador is None:
+        return False
+    return not jugador.activo or (jugador.fecha_baja is not None and jugador.fecha_baja < (dia or date.today()))
 
 
 def nombre_de(user):
@@ -100,7 +115,7 @@ class TorneoSerializer(serializers.ModelSerializer):
         model = Torneo
         fields = [
             "id", "nombre", "circuito", "nivel", "lugar", "fecha_inicio", "fecha_fin",
-            "cierre_inscripcion", "qualy_inicio", "qualy_fin", "solo_fines_semana", "categorias",
+            "cierre_inscripcion", "fecha_borrado", "qualy_inicio", "qualy_fin", "solo_fines_semana", "categorias",
             "estado", "estado_display", "acompanantes",
             "acompanantes_detalle", "acompanante_nota", "notas", "fuente", "alias",
             "participantes", "n_jugadores", "creado_por", "creado_por_nombre",
@@ -142,6 +157,10 @@ class TorneoSerializer(serializers.ModelSerializer):
         if cierre and ini and cierre > fin:
             raise serializers.ValidationError(
                 {"cierre_inscripcion": "El cierre de inscripción no puede ser posterior al torneo."})
+        borrado = data.get("fecha_borrado")
+        if borrado and fin and borrado > fin:
+            raise serializers.ValidationError(
+                {"fecha_borrado": "La fecha límite de borrado no puede ser posterior al torneo."})
         return data
 
 
@@ -154,5 +173,5 @@ class TorneoListaSerializer(TorneoSerializer):
 
     def get_jugadores(self, obj):
         return [{"id": p.id, "nombre": p.nombre, "jugador": p.jugador_id, "certeza": p.certeza,
-                 "apuntado_por_nombre": nombre_de(p.apuntado_por)}
+                 "apuntado_por_nombre": nombre_de(p.apuntado_por), "de_baja": de_baja(p.jugador)}
                 for p in obj.participantes.all()]

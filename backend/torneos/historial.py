@@ -17,10 +17,10 @@ from .models import CambioTorneo, Participante, Torneo
 CAMPOS = ("nombre", "circuito", "nivel", "lugar", "fecha_inicio", "fecha_fin",
           "cierre_inscripcion", "estado", "acompanante_nota", "notas", "fuente",
           "alias", "creado_por_id", "created_at", "qualy_inicio", "qualy_fin", "solo_fines_semana",
-          "categorias")
-# Añadidos el 16/10: una foto anterior no los trae y entonces se respetan
-# los que tenga ahora el torneo.
-CAMPOS_NUEVOS = ("qualy_inicio", "qualy_fin", "solo_fines_semana", "categorias")
+          "categorias", "fecha_borrado")
+# Añadidos después de la primera versión (16/10, 03/11, 10/11): una foto
+# anterior no los trae y entonces se respetan los que tenga ahora el torneo.
+CAMPOS_NUEVOS = ("qualy_inicio", "qualy_fin", "solo_fines_semana", "categorias", "fecha_borrado")
 CAMPOS_P = ("id", "jugador_id", "nombre", "certeza", "entrenador_ref", "detalle", "apuntado_por_id")
 
 

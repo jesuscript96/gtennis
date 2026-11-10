@@ -16,7 +16,7 @@ from academy.permissions import es_coach, es_direccion
 from . import categorias as cats
 from . import historial
 from .models import CambioTorneo, Participante, Torneo
-from .serializers import ParticipanteSerializer, TorneoListaSerializer, TorneoSerializer, entrenador_de
+from .serializers import ParticipanteSerializer, TorneoListaSerializer, TorneoSerializer, de_baja, entrenador_de
 
 
 class SoloDireccionOCoach(BasePermission):
@@ -79,11 +79,18 @@ def _q_de_mi_grupo(user):
     return Q(entrenador_responsable=ent) | Q(cogestores=ent)
 
 
-def jugadores_apuntables(user):
+def inicio_de(torneo):
+    """Primer día que ocupa el torneo: la previa, si la tiene."""
+    return min(d for d in (torneo.qualy_inicio, torneo.fecha_inicio) if d)
+
+
+def jugadores_apuntables(user, torneo=None):
     """A quién ofrece el desplegable de apuntar: los de su grupo que siguen
-    entrenando, sin invitados."""
+    entrenando, sin invitados. Con `torneo`, tampoco los que se dan de baja
+    antes de que empiece (10/11/2026)."""
+    dia = max(date.today(), inicio_de(torneo)) if torneo is not None else date.today()
     qs = (Jugador.objects.filter(activo=True, invitaciones__isnull=True)
-          .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=date.today())))
+          .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=dia)))
     q = _q_de_mi_grupo(user)
     return (qs if q is None else qs.filter(q)).distinct().order_by("nombre")
 
@@ -191,7 +198,7 @@ class TorneoViewSet(viewsets.ModelViewSet):
             "en_curso": base.filter(Q(fecha_inicio__lte=hoy) | Q(qualy_inicio__lte=hoy), fecha_fin__gte=hoy).count(),
             "proximos_cierres": [
                 {"id": t.id, "nombre": t.nombre, "cierre_inscripcion": t.cierre_inscripcion,
-                 "fecha_inicio": t.fecha_inicio, "n_jugadores": t.n}
+                 "fecha_borrado": t.fecha_borrado, "fecha_inicio": t.fecha_inicio, "n_jugadores": t.n}
                 for t in proximos_cierres
             ],
             "circuitos": [{"nombre": c, "n": n} for c, n in
@@ -204,11 +211,15 @@ class TorneoViewSet(viewsets.ModelViewSet):
         """Entrenadores activos con sus vacaciones en el tramo pedido, para
         que el desplegable de «acompaña» ofrezca solo a los que no están de
         vacaciones esa semana. Las franjas sueltas (M1, T2…) no cuentan: una
-        tarde libre no impide viajar."""
+        tarde libre no impide viajar.
+
+        Tampoco cuenta la ausencia con motivo «Torneo» (10/11/2026): es la que
+        se le pone en el cuadrante justo porque acompaña, y le escondía del
+        desplegable del torneo al que va."""
         p = request.query_params
         vac = VacacionesEntrenador.objects.filter(
             ambito__in=[VacacionesEntrenador.Ambito.DIA, VacacionesEntrenador.Ambito.MANANA,
-                        VacacionesEntrenador.Ambito.TARDE])
+                        VacacionesEntrenador.Ambito.TARDE]).exclude(motivo__icontains="torneo")
         if p.get("desde"):
             vac = vac.filter(fecha_fin__gte=p["desde"])
         if p.get("hasta"):
@@ -252,6 +263,7 @@ class TorneoViewSet(viewsets.ModelViewSet):
             if otro.acompanante_nota and otro.acompanante_nota not in t.acompanante_nota:
                 t.acompanante_nota = ", ".join(x for x in (t.acompanante_nota, otro.acompanante_nota) if x)[:120]
             t.cierre_inscripcion = t.cierre_inscripcion or otro.cierre_inscripcion
+            t.fecha_borrado = t.fecha_borrado or otro.fecha_borrado
             if otro.qualy_inicio and (not t.qualy_inicio or otro.qualy_inicio < t.qualy_inicio):
                 t.qualy_inicio = otro.qualy_inicio
             t.qualy_fin = t.qualy_fin or otro.qualy_fin
@@ -268,14 +280,16 @@ class TorneoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def por_jugador(self, request):
-        """Una fila por jugador con sus torneos ordenados por fecha."""
+        """Una fila por jugador con sus torneos ordenados por fecha. Los
+        dados de baja van marcados (`de_baja`): la pantalla los esconde si no
+        se piden (10/11/2026)."""
         por = {}
         qs = Participante.objects.select_related("torneo", "jugador").order_by("torneo__fecha_inicio")
         for p in qs:
             clave = p.jugador_id or f"n:{p.nombre}"
             d = por.setdefault(clave, {
                 "jugador": p.jugador_id, "nombre": p.jugador.nombre if p.jugador else p.nombre,
-                "en_academia": p.jugador is not None, "torneos": [],
+                "en_academia": p.jugador is not None, "de_baja": de_baja(p.jugador), "torneos": [],
             })
             d["torneos"].append({
                 "id": p.torneo_id, "nombre": p.torneo.nombre, "circuito": p.torneo.circuito,
@@ -319,12 +333,20 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         jugador, t = d.get("jugador"), d["torneo"]
         if jugador is None:
             raise ValidationError({"jugador": "Elige a uno de tus jugadores."})
+        self._no_de_baja(jugador, t)
         if not jugadores_apuntables(user).filter(pk=jugador.pk).exists():
             raise PermissionDenied(f"{jugador.nombre} no está en tu columna de Grupos.")
         if t.fecha_fin < date.today():
             raise ValidationError({"torneo": "Ese torneo ya ha terminado."})
         if t.estado == Torneo.Estado.CANCELADO:
             raise ValidationError({"torneo": "Ese torneo está cancelado."})
+
+    def _no_de_baja(self, jugador, torneo):
+        """Para todos: no se apunta a quien ya no entrena cuando empieza el
+        torneo (10/11/2026)."""
+        if jugador is not None and de_baja(jugador, inicio_de(torneo)):
+            cuando = f" desde el {jugador.fecha_baja:%d/%m/%Y}" if jugador.fecha_baja else ""
+            raise ValidationError({"detail": f"{jugador.nombre} está dado de baja{cuando}."})
 
     def _de_su_categoria(self, jugador, torneo):
         """Para todos, también dirección: solo los de la categoría del torneo
@@ -339,6 +361,7 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         extra = {"apuntado_por": user}
         if manda(user):
             self._de_mi_grupo(d.get("jugador"))
+            self._no_de_baja(d.get("jugador"), d["torneo"])
         else:
             self._puede_apuntar_entrenador(d)
             extra["certeza"] = Participante.Certeza.PENDIENTE
@@ -408,11 +431,11 @@ class ParticipanteViewSet(viewsets.ModelViewSet):
         """El desplegable de apuntar: los jugadores de su grupo, con su
         entrenador según Grupos. Con `?torneo=`, solo los que entran por
         categoría, con la suya ese año (None si no consta su nacimiento)."""
-        qs = jugadores_apuntables(request.user).select_related(
-            "entrenador_responsable", "categoria_torneos").prefetch_related("cogestores")
         t = None
         if request.query_params.get("torneo"):
             t = get_object_or_404(Torneo, pk=request.query_params["torneo"])
+        qs = jugadores_apuntables(request.user, t).select_related(
+            "entrenador_responsable", "categoria_torneos").prefetch_related("cogestores")
         filas = []
         for j in qs:
             if t is not None and not cats.puede_jugar(j, t):

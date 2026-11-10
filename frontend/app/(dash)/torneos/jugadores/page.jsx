@@ -11,12 +11,14 @@ export default function TorneosPorJugadorPage() {
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [soloAcademia, setSoloAcademia] = useState(false);
+  // Los dados de baja, escondidos salvo que se pidan (10/11/2026).
+  const [verBajas, setVerBajas] = useState(false);
   const [abierto, setAbierto] = useState(null);
 
   useEffect(() => { getTorneosPorJugador().then(setFilas).catch((e) => setError(e.message)); }, []);
 
   const vis = useMemo(() => (filas || []).filter((f) =>
-    (!soloAcademia || f.en_academia) && f.nombre.toLowerCase().includes(q.toLowerCase())), [filas, q, soloAcademia]);
+    (!soloAcademia || f.en_academia) && (verBajas || !f.de_baja) && f.nombre.toLowerCase().includes(q.toLowerCase())), [filas, q, soloAcademia, verBajas]);
 
   if (error) return <p className="err">{error}</p>;
   if (!filas) return <p className="msg">Cargando…</p>;
@@ -34,6 +36,10 @@ export default function TorneosPorJugadorPage() {
           <input type="checkbox" checked={soloAcademia} onChange={(e) => setSoloAcademia(e.target.checked)} />
           Solo jugadores con ficha en la academia
         </label>
+        <label className="check filtro-check">
+          <input type="checkbox" checked={verBajas} onChange={(e) => setVerBajas(e.target.checked)} />
+          Ver también los dados de baja
+        </label>
         <span className="muted">{vis.length} jugadores</span>
       </div>
       <div className="card">
@@ -49,7 +55,8 @@ export default function TorneosPorJugadorPage() {
               return (
                 <Fragment key={clave}>
                   <tr className="fila-click" onClick={() => setAbierto(abierto === clave ? null : clave)}>
-                    <td><b>{f.nombre}</b>{!f.en_academia && <span className="pill gris">sin ficha</span>}</td>
+                    <td><b>{f.nombre}</b>{!f.en_academia && <span className="pill gris">sin ficha</span>}
+                      {f.de_baja && <span className="pill no">de baja</span>}</td>
                     <td>{f.torneos.length}</td>
                     <td className="muted">{jugados}</td>
                     <td>{prox ? <><Link href={`/torneos/${prox.id}`} onClick={(e) => e.stopPropagation()}>{prox.nombre}</Link> <span className="muted">· {fmtRango(prox.fecha_inicio, prox.fecha_fin)}</span></> : <span className="muted">—</span>}</td>

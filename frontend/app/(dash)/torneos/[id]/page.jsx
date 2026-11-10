@@ -90,6 +90,7 @@ export default function TorneoDetallePage() {
   if (!t) return <p className="msg">Cargando torneo…</p>;
 
   const dCierre = diasHasta(t.cierre_inscripcion);
+  const dBorrado = diasHasta(t.fecha_borrado);
   const yaApuntados = new Set(t.participantes.map((p) => p.jugador).filter(Boolean));
   const quitaEntrenador = (p) => p.apuntado_por_mi && p.certeza === "PENDIENTE";
   const conAcciones = puedeEditar || t.participantes.some(quitaEntrenador);
@@ -145,8 +146,13 @@ export default function TorneoDetallePage() {
             {dCierre !== null && <small className={dCierre >= 0 && dCierre <= 7 ? "aviso" : ""}>
               {dCierre < 0 ? "cerrado" : dCierre === 0 ? "¡cierra hoy!" : `faltan ${dCierre} días`}</small>}
           </div>
+          <div className="dato"><span>Fecha límite de borrado</span>
+            <b>{t.fecha_borrado ? fmtLarga(t.fecha_borrado) : "Sin fecha"}</b>
+            {dBorrado !== null && <small className={dBorrado >= 0 && dBorrado <= 7 ? "aviso" : ""}>
+              {dBorrado < 0 ? "ya no se puede borrar" : dBorrado === 0 ? "¡último día para borrar!" : `faltan ${dBorrado} días`}</small>}
+          </div>
           <div className="dato"><span>Lugar</span><b>{t.lugar || "—"}</b></div>
-          <div className="dato"><span>Coach que acompaña</span>
+          <div className="dato"><span>{t.acompanantes_detalle.length > 1 ? "Entrenadores que acompañan" : "Coach que acompaña"}</span>
             <b>{t.acompanantes_detalle.map((e) => e.nombre).join(", ") || (t.acompanante_nota ? "" : "Sin decidir")}</b>
             {t.acompanante_nota && <small>{t.acompanante_nota}</small>}
           </div>
@@ -168,6 +174,7 @@ export default function TorneoDetallePage() {
                   <td>
                     {p.nombre}
                     {!p.jugador && <span className="pill gris" title="No está en las fichas de la academia">sin ficha</span>}
+                    {p.de_baja && <span className="pill no" title="Ya no entrena en el club">de baja</span>}
                     {p.categoria && <span className="muted cat-jug"> · {p.categoria}</span>}
                     {p.fuera_de_categoria && <span className="pill no" title="Su categoría es mayor que las del torneo">fuera de categoría</span>}
                     {p.apuntado_por_nombre && <div className="apuntado-por">apuntado por {p.apuntado_por_mi ? "ti" : p.apuntado_por_nombre}</div>}
