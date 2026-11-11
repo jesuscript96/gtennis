@@ -178,7 +178,7 @@ function Informes() {
         El informe trimestral de cada jugador de <b>Competición de tardes</b>: la evaluación de tenis y la
         de preparación física van en un solo PDF. El coordinador asigna a cada jugador el entrenador que
         hace su parte de tenis (los demás también pueden evaluarle). Cuando las dos partes están
-        terminadas, pasa a dirección deportiva, que lo aprueba o lo devuelve con una nota. El siguiente
+        terminadas, pasa al coordinador, que lo aprueba o lo devuelve con una nota. El siguiente
         toca a los 90 días de validarlo.
       </p>
       {panel.puede_validar && (

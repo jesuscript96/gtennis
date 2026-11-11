@@ -176,7 +176,7 @@ def aprobar(inf, usuario, destinatarios):
     inf.save()
     aviso_drive = guardar_en_drive(inf)
     _avisar(autores(inf), f"Informe de {inf.jugador.nombre} validado",
-            "Ya está en «Validados y enviados». El siguiente toca en unos 90 días.")
+            "Ya está en la carpeta «Validados» de Drive. El siguiente toca en unos 90 días.")
     return aviso_drive
 
 
