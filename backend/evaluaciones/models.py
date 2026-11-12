@@ -70,14 +70,16 @@ class Evaluacion(models.Model):
         """Quién cambia esta evaluación (10/11/2026): su autor, quien coordina
         Competición de tardes y quien valida (corrige antes de aprobar). Un
         informe ya aprobado no se toca: primero se reabre."""
-        from academy.permissions import (
-            coordina_informes, es_direccion, evalua_tenis_solo_informes, valida_informes,
-        )
+        from academy.permissions import coordina_informes, es_direccion, evalua_tenis_solo_informes
+        from .informes import puede_validar
+
         if self._informe_cerrado():
             return False
         if es_direccion(user) or (self.evaluador_id and self.evaluador_id == user.id):
             return True
-        if getattr(self, "informe", None) is not None and valida_informes(user):
+        # Quien valida ese informe (en Alto rendimiento, solo dirección).
+        inf = getattr(self, "informe", None)
+        if inf is not None and puede_validar(user, inf):
             return True
         # Competición de tardes: «todos evalúan a todos» (29/10/2026). Quien
         # coordina y el equipo de tenis siguen o corrigen la parte de tenis de
@@ -91,8 +93,9 @@ class Evaluacion(models.Model):
         from academy.permissions import coordina_informes, es_direccion
         if self._informe_cerrado():
             return False
+        de_tardes = bool(self.jugador.escuela_id and self.jugador.escuela.solo_informes)
         return bool(es_direccion(user) or (self.evaluador_id and self.evaluador_id == user.id)
-                    or coordina_informes(user))
+                    or (de_tardes and coordina_informes(user)))
 
 
 class CarpetaJugador(models.Model):

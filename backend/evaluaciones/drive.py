@@ -193,34 +193,60 @@ def _hija(s, padre, nombre, crear=False):
                       json={"name": nombre, "mimeType": CARPETA, "parents": [padre]}), "crear una carpeta")["id"]
 
 
-def _carpeta_ct(s, destino):
-    """La carpeta «Por validar» o «Validados»; recuerda cada tramo en `CarpetaDrive`."""
+def _tramos(texto):
+    return [p.strip() for p in texto.split("›") if p.strip()]
+
+
+def _carpeta_club(s, ruta, destino, prefijo, existen):
+    """La carpeta «Por validar» o «Validados» dentro de `ruta` (en «Mi unidad»
+    de DRIVE_CT_USUARIO). Los `existen` primeros tramos tienen que estar ya
+    (si no, avisa en vez de inventarse la ruta); los siguientes se crean la
+    primera vez. Recuerda cada tramo en `CarpetaDrive`."""
     from .models import CarpetaDrive
 
-    partes = [p.strip() for p in settings.DRIVE_CT_RUTA.split("›") if p.strip()] + [CARPETA_CT[destino]]
+    partes = _tramos(ruta) + [CARPETA_CT[destino]]
     padre = "root"
     for i, nombre in enumerate(partes):
-        ruta = "ct:" + " › ".join(partes[: i + 1])
-        guardada = CarpetaDrive.objects.filter(ruta=ruta).first()
+        clave = prefijo + " › ".join(partes[: i + 1])
+        guardada = CarpetaDrive.objects.filter(ruta=clave).first()
         if guardada and _sigue_ahi(s, guardada.folder_id):
             padre = guardada.folder_id
             continue
-        padre = _hija(s, padre, nombre, crear=i == len(partes) - 1)
-        CarpetaDrive.objects.update_or_create(ruta=ruta, defaults={"folder_id": padre})
+        padre = _hija(s, padre, nombre, crear=i >= existen)
+        CarpetaDrive.objects.update_or_create(ruta=clave, defaults={"folder_id": padre})
     return padre
 
 
+def _carpeta_ct(s, destino):
+    """Competición de tardes: la ruta entera ya existe; solo se crean «Por
+    validar» y «Validados»."""
+    return _carpeta_club(s, settings.DRIVE_CT_RUTA, destino, "ct:", len(_tramos(settings.DRIVE_CT_RUTA)))
+
+
+# Alto rendimiento (12/11/2026): como tardes, dentro de su carpeta de «Gestion
+# deportiva». Hasta «Alto rendimiento» ya existe en el Drive del club (junto a
+# «Jugadores activos», «Metodologia»…); «26/27 › Seguimiento y evaluaciones» y
+# las dos carpetas de dentro se crean con el primer informe.
+AR_TRAMOS_QUE_EXISTEN = 3
+
+
+def _carpeta_ar(s, destino):
+    return _carpeta_club(s, settings.DRIVE_AR_RUTA, destino, "ar:",
+                         min(AR_TRAMOS_QUE_EXISTEN, len(_tramos(settings.DRIVE_AR_RUTA))))
+
+
 def subir_informe(inf, idioma="ES"):
-    """Deja el PDF conjunto del informe en la carpeta que le toca por su estado
-    y reescribe el mismo fichero: solo se guarda la última versión. Con
-    DRIVE_CT_USUARIO, en «Por validar» o «Validados» de su Drive; si no, en la
-    unidad compartida, Escuela › Jugador › «Pendientes de validar» o
-    «Validados y enviados»."""
+    """Deja el PDF del informe en la carpeta que le toca por su estado y
+    reescribe el mismo fichero: solo se guarda la última versión. Con
+    DRIVE_CT_USUARIO, en «Por validar» o «Validados» de su Drive, dentro de
+    la ruta de su circuito (tardes o Alto rendimiento); si no, en la unidad
+    compartida, Escuela › Jugador › «Pendientes de validar» o «Validados y
+    enviados»."""
     try:
         destino = "validados" if inf.estado == inf.Estado.VALIDADO else "pendientes"
         if ct_configurado():
             s = _sesion(settings.DRIVE_CT_USUARIO)
-            carpeta = _carpeta_ct(s, destino)
+            carpeta = _carpeta_ar(s, destino) if inf.circuito == "alto_rendimiento" else _carpeta_ct(s, destino)
         else:
             s = _sesion()
             escuela = inf.jugador.escuela.nombre if inf.jugador.escuela_id else "Sin escuela"

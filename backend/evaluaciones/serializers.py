@@ -25,18 +25,24 @@ class EvaluacionSerializer(_ConInforme, serializers.ModelSerializer):
     puede_borrar = serializers.SerializerMethodField()
     informe = serializers.SerializerMethodField()
     idioma_familia = serializers.SerializerMethodField()
+    de_tardes = serializers.SerializerMethodField()
 
     class Meta:
         model = Evaluacion
         fields = ["id", "jugador", "jugador_nombre", "evaluador", "nombre_evaluador", "fecha", "idioma",
                   "estado", "puntuaciones", "comentarios", "fortalezas", "mejoras", "fortalezas_original",
                   "mejoras_original", "idioma_familia", "puntuados",
-                  "puede_editar", "puede_borrar", "drive_url", "informe", "creada", "actualizada", "terminada_en"]
+                  "puede_editar", "puede_borrar", "drive_url", "informe", "de_tardes", "creada", "actualizada",
+                  "terminada_en"]
         read_only_fields = ["evaluador", "nombre_evaluador", "estado", "drive_url", "creada",
                             "actualizada", "terminada_en"]
 
     def get_puntuados(self, ev):
         return sum(1 for k in catalogo.CRITERIOS if k in ev.puntuaciones)
+
+    def get_de_tardes(self, ev):
+        """Competición de tardes (informe con física, se lleva en Informes) o Alto rendimiento."""
+        return bool(ev.jugador.escuela_id and ev.jugador.escuela.solo_informes)
 
     def get_idioma_familia(self, ev):
         """En qué idioma sale el PDF que se le envía a la familia."""
@@ -229,10 +235,11 @@ class InformeSerializer(serializers.ModelSerializer):
         return FotoJugador.objects.filter(jugador_id=inf.jugador_id).exists()
 
     def get_puede_validar(self, inf):
-        from academy.permissions import valida_informes
+        """Este informe en concreto: los de Alto rendimiento, solo dirección."""
+        from .informes import puede_validar
 
         req = self.context.get("request")
-        return bool(req and valida_informes(req.user))
+        return bool(req and puede_validar(req.user, inf))
 
 
 class JugadorTardesSerializer(serializers.ModelSerializer):

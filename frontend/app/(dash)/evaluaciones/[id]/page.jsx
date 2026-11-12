@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import AsistenteEvaluacion from "../../../../components/AsistenteEvaluacion";
+import FotoJugador from "../../../../components/FotoJugador";
 import InformeDeLaEvaluacion from "../../../../components/InformeDeLaEvaluacion";
 import {
   borrarEvaluacion, cambiarIdiomaFamilia, descargarPdfEvaluacion, getCatalogoEvaluacion, getEvaluacion, guardarEvaluacionEnDrive,
@@ -104,11 +105,18 @@ export default function EvaluacionPage() {
           onCambio={setEv} onTerminada={(e) => { setEv(e); setEditando(false); if (catalogo.drive && !e.informe) subirADrive(); }} />
       ) : (
         <>
-          <p className="eval-cabecera">
-            {fmtLarga(ev.fecha)} · evaluado por <b>{ev.nombre_evaluador}</b>
-            {ev.estado === "BORRADOR" && <span className="pill pend"> A medias · {ev.puntuados}/34</span>}
-          </p>
-          <InformeDeLaEvaluacion informe={ev.informe} parte="tenis" />
+          {/* Alto rendimiento (12/11/2026): la foto del informe se sube aquí,
+              porque su entrenador no entra en Informes. */}
+          <div className={ev.de_tardes ? "" : "inf-cabecera"}>
+            {!ev.de_tardes && <FotoJugador jugadorId={ev.jugador} nombre={ev.jugador_nombre} />}
+            <div className={ev.de_tardes ? "" : "inf-resumen"}>
+              <p className="eval-cabecera">
+                {fmtLarga(ev.fecha)} · evaluado por <b>{ev.nombre_evaluador}</b>
+                {ev.estado === "BORRADOR" && <span className="pill pend"> A medias · {ev.puntuados}/34</span>}
+              </p>
+              <InformeDeLaEvaluacion informe={ev.informe} parte="tenis" />
+            </div>
+          </div>
           <div className="eval-acciones">
             {ev.puede_editar && <button type="button" className="btn" onClick={() => setEditando(true)}>
               {ev.estado === "BORRADOR" ? "Seguir" : "Editar"}</button>}
@@ -117,7 +125,7 @@ export default function EvaluacionPage() {
               <button type="button" className="btn ghost" disabled={drive === "subiendo"} onClick={subirADrive}>Guardar en Drive</button>
             )}
             {ev.estado === "TERMINADA" && <button type="button" className="btn ghost" onClick={descargar}>Descargar PDF</button>}
-            {ev.estado === "TERMINADA" && !ev.informe && (
+            {ev.estado === "TERMINADA" && !ev.de_tardes && (
               <label className="inf-asignado">PDF para la familia en
                 <select value={ev.idioma_familia} disabled={!ev.puede_editar}
                   onChange={(e) => cambiarIdiomaFamilia(ev.id, e.target.value).then(setEv).catch((err) => setError(err.message))}>

@@ -76,6 +76,34 @@ def puede_ver_jugador(user, jugador):
     return jugadores_visibles(user).filter(pk=jugador.pk).exists()
 
 
+def jugadores_que_evalua(user, base=None):
+    """Los jugadores de Alto rendimiento a los que `user` hace el informe de
+    tenis (12/11/2026), sin reparto de nadie:
+
+      * Dirección → todos.
+      * Head coach → los de su color: los que gestionan los entrenadores de su
+        bloque.
+      * Entrenador → su grupo: su columna de Grupos (los que gestiona o cuya
+        gestión comparte). Ni los demás de su color ni los que solo entrena.
+
+    Competición de tardes va aparte (su equipo, `MiembroTardes`) y a los
+    invitados no se les hace informe. `base` por defecto son los activos; para
+    ver informes de antes, `Jugador.objects.all()`.
+    """
+    qs = base if base is not None else Jugador.objects.filter(activo=True)
+    qs = qs.exclude(escuela__solo_informes=True).filter(invitaciones__isnull=True)
+    if user.is_superadmin:
+        return qs
+    coach = _coach(user)
+    if coach is not None:
+        ents = coach.entrenadores.all()
+        return qs.filter(Q(entrenador_responsable__in=ents) | Q(cogestores__in=ents)).distinct()
+    ent = getattr(user, "entrenador", None)
+    if ent is not None:
+        return qs.filter(Q(entrenador_responsable=ent) | Q(cogestores=ent)).distinct()
+    return qs.none()
+
+
 def coaches_del_entrenador(entrenador):
     """Usuarios Coach a los que notificar sobre un entrenador (#5/#4)."""
     if entrenador is None:

@@ -605,13 +605,20 @@ class InformesTests(Base):
         # Solo tenis: ya está completo y pendiente de validar.
         self.assertTrue(inf.completo)
         self.assertEqual(inf.estado, "PENDIENTE")
-        self.assertTrue(Aviso.objects.filter(usuario=self.validador, titulo__contains="listo para validar").exists())
-        # Quien valida lo abre y lo corrige aunque el jugador no sea de los suyos.
+        # Los de Alto rendimiento los valida dirección (12/11/2026): el aviso
+        # es para dirección, no para quien valida los de tardes.
+        listo = Aviso.objects.filter(titulo__contains="listo para validar")
+        self.assertEqual(set(listo.values_list("usuario__username", flat=True)), {"dir"})
         v = self.api(self.validador)
-        r = v.get(f"/api/evaluaciones/{ev_id}/")
-        self.assertEqual(r.status_code, 200, "quien valida no puede abrir la evaluación de Alto rendimiento")
-        self.assertEqual(v.patch(f"/api/evaluaciones/{ev_id}/", {"idioma": "EN"}, format="json").status_code, 200)
-        r = v.post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
+        self.assertEqual(v.get(f"/api/evaluaciones/{ev_id}/").status_code, 404)
+        self.assertEqual(v.post(f"/api/informes/{inf.id}/aprobar/", {}, format="json").status_code, 404)
+        self.assertEqual(v.get("/api/informes/", {"estado": "PENDIENTE"}).json(), [])
+        # Dirección lo abre, lo corrige y lo aprueba.
+        d = self.api(self.dir)
+        r = d.get(f"/api/informes/{inf.id}/")
+        self.assertIs(r.json()["puede_validar"], True)
+        self.assertEqual(d.patch(f"/api/evaluaciones/{ev_id}/", {"idioma": "EN"}, format="json").status_code, 200)
+        r = d.post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(c.patch(f"/api/evaluaciones/{ev_id}/", {"idioma": "ES"}, format="json").status_code, 403)
 

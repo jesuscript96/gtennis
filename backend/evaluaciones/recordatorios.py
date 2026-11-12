@@ -15,7 +15,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from academy.models import Aviso, Jugador
-from academy.permissions import usuarios_valida_informes, ve_informes
+from academy.permissions import usuarios_direccion, usuarios_valida_informes, ve_informes
 
 from . import informes
 from .models import AsignacionInforme, Informe, RecordatorioInforme
@@ -35,7 +35,7 @@ def _jugadores():
 def _jugadores_alto_rendimiento():
     hoy = timezone.localdate()
     from django.db.models import Q
-    return (Jugador.objects.filter(activo=True).exclude(escuela__solo_informes=True)
+    return (Jugador.objects.filter(activo=True, invitaciones__isnull=True).exclude(escuela__solo_informes=True)
             .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy))
             .select_related("entrenador_responsable__user").prefetch_related("cogestores__user"))
 
@@ -87,8 +87,11 @@ def revisar(hoy=None):
     # Alto rendimiento (10/11/2026, decisión 12): mismo ciclo de 75 y 90 días
     # desde su último informe validado, a quien le gestiona (su columna de
     # Grupos). Sin informe validado todavía no se recuerda nada: así no salta
-    # un aviso por cada alumno el primer día.
-    for j in _jugadores_alto_rendimiento():
+    # un aviso por cada alumno el primer día (el club no quiere ese aviso
+    # inicial, 12/11/2026). Lo vencido o sin gestor, también a dirección, que
+    # es quien valida los de Alto rendimiento.
+    direccion = usuarios_direccion()
+    for j in _jugadores_alto_rendimiento().distinct():
         if informes.ultimo_validado(j) is None:
             continue
         c = informes.ciclo(j, hoy)
@@ -107,7 +110,7 @@ def revisar(hoy=None):
                     if e is not None and e.user_id and e.user.is_active]
         destinatarios = [(u, c["estado"]) for u in gestores]
         if c["estado"] == "vencido" or not gestores:
-            destinatarios += [(u, c["estado"]) for u in validadores]
+            destinatarios += [(u, c["estado"]) for u in direccion]
         for u, etapa in destinatarios:
             usuarios[u.pk] = u
             if j.nombre not in por_usuario[u.pk][etapa]:

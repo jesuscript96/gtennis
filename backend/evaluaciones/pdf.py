@@ -233,10 +233,12 @@ def datos_fisico(inf, idioma):
 
 
 def datos_informe(inf, idioma="ES"):
-    """El informe conjunto: en español para la app y dirección; en el idioma de
-    la familia para el PDF que se le envía (02/11/2026)."""
+    """El informe: en español para la app y dirección; en el idioma de la
+    familia para el PDF que se le envía (02/11/2026). Tardes lleva además la
+    página física; Alto rendimiento, solo tenis (12/11/2026)."""
     d = datos(inf.tenis, idioma)
-    d["t"] = {**d["t"], "academia": d["t"]["academia_tardes"]}
+    if inf.circuito == "tardes":
+        d["t"] = {**d["t"], "academia": d["t"]["academia_tardes"]}
     previo = anterior(inf)
     if previo and previo.tenis:
         for b, cat in zip(d["bloques"], catalogo.BLOQUES):

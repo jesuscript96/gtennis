@@ -11,9 +11,10 @@ from rest_framework.response import Response
 
 from academy.models import Jugador
 from academy.permissions import (
-    coordina_informes, envia_informes, evalua_fisico, evalua_tenis_solo_informes, valida_informes, ve_informes,
+    coordina_informes, envia_informes, es_direccion, evalua_fisico, evalua_tenis_solo_informes, valida_informes,
+    ve_informes,
 )
-from academy.scope import jugadores_visibles, puede_ver_jugador
+from academy.scope import jugadores_que_evalua
 
 from . import catalogo, drive, fichero, ia, informes, pdf, traduccion
 from .models import (
@@ -40,11 +41,14 @@ def _nombre_evaluador(user):
 
 
 class EvaluacionViewSet(viewsets.ModelViewSet):
-    """Informes de rendimiento.
+    """Informes de rendimiento (la parte de tenis).
 
-    Las ve quien ve al jugador (también las de alumnos ya dados de baja, para no
-    perder el historial); evalúa cualquiera que tenga al jugador en su alcance y
-    la cambia o borra quien la hizo o dirección. Filtros: `?jugador=`, `?estado=`.
+    Alto rendimiento (12/11/2026): el entrenador evalúa a su grupo y el head
+    coach a todo su color (`academy.scope.jugadores_que_evalua`), sin reparto.
+    Cada uno ve las de esos jugadores (también de alumnos ya de baja, para no
+    perder el historial) y las que ha hecho él. Competición de tardes, su
+    equipo. La cambia quien la hizo o quien valida ese informe.
+    Filtros: `?jugador=`, `?estado=`.
     """
 
     serializer_class = EvaluacionSerializer
@@ -52,26 +56,28 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def _jugadores(self):
-        """A quién puede evaluar de tenis: los suyos de siempre y, si es de los
-        entrenadores de Competición de tardes o de gestión deportiva, también
-        los alumnos de las escuelas «solo informes» (que están inactivos)."""
+        """A quién puede evaluar de tenis: en Alto rendimiento, su grupo (el
+        head coach, su color; dirección, todos) y, si es del equipo de
+        Competición de tardes o valida, también los alumnos de las escuelas
+        «solo informes» (que están inactivos)."""
         user = self.request.user
-        filtro = Q(pk__in=jugadores_visibles(user).values("pk"))
+        filtro = Q(pk__in=jugadores_que_evalua(user).values("pk"))
         if evalua_tenis_solo_informes(user):
             filtro |= Q(pk__in=jugadores_evaluables_fisico().values("pk"))
         return Jugador.objects.filter(filtro)
 
     def get_queryset(self):
         user = self.request.user
-        visibles = jugadores_visibles(user, base=Jugador.objects.all())
-        filtro = Q(jugador__in=visibles)
-        if evalua_tenis_solo_informes(user):
-            filtro |= Q(jugador__escuela__solo_informes=True)
-        # Quien valida abre cualquier evaluación que esté en un informe, también
-        # las de Alto rendimiento (decisiones 11 y 12).
-        if valida_informes(user):
-            filtro |= Q(informe__isnull=False)
-        qs = Evaluacion.objects.filter(filtro).select_related("jugador").distinct()
+        if es_direccion(user):
+            filtro = Q()
+        else:
+            filtro = Q(jugador__in=jugadores_que_evalua(user, base=Jugador.objects.all())) | Q(evaluador=user)
+            if evalua_tenis_solo_informes(user):
+                filtro |= Q(jugador__escuela__solo_informes=True)
+            # Quien valida los de tardes abre cualquier evaluación de su informe.
+            if valida_informes(user):
+                filtro |= Q(informe__isnull=False, jugador__escuela__solo_informes=True)
+        qs = Evaluacion.objects.filter(filtro).select_related("jugador__escuela", "informe").distinct()
         p = self.request.query_params
         if p.get("jugador"):
             qs = qs.filter(jugador_id=p["jugador"])
@@ -217,15 +223,22 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, url_path="pdf")
     def informe_pdf(self, request, pk=None):
-        """El informe maquetado, para descargarlo: en el idioma de la familia."""
+        """El informe maquetado, para descargarlo. Si la evaluación va en un
+        informe de Alto rendimiento, el PDF de ese informe (con la foto y la
+        evolución): en español hasta que se valida y después en el de la
+        familia. Si no, la evaluación sola en el idioma de la familia."""
         ev = self.get_object()
-        idioma = informes.idioma_familia(ev.jugador, ev.idioma)
+        inf = getattr(ev, "informe", None)
         try:
-            contenido = pdf.generar(ev, idioma)
+            if inf is not None and inf.circuito == "alto_rendimiento":
+                nombre, contenido = informes.pdf_de(inf, informes.idioma_pdf(inf))
+            else:
+                idioma = informes.idioma_familia(ev.jugador, ev.idioma)
+                nombre, contenido = pdf.nombre(ev, idioma), pdf.generar(ev, idioma)
         except ia.IANoDisponible as e:
             raise ValidationError({"detail": f"No se ha podido traducir el PDF: {e}"})
         respuesta = HttpResponse(contenido, content_type="application/pdf")
-        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre(ev, idioma))
+        respuesta["Content-Disposition"] = content_disposition_header(True, nombre)
         return respuesta
 
     @action(detail=True, methods=["post"], url_path="idioma-familia")
@@ -341,16 +354,19 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if not ve_informes(request.user):
+        # La foto la sube también el entrenador de Alto rendimiento, que no
+        # entra en Informes: esa acción mira el permiso jugador a jugador.
+        if self.action != "foto" and not ve_informes(request.user):
             raise PermissionDenied("Los informes son de quien evalúa, quien valida y quien los envía.")
 
     def get_queryset(self):
         """Tardes y, desde el 10/11/2026, Alto rendimiento (decisión 12). Los de
-        Alto rendimiento los ven quien valida, quien envía y su evaluador."""
+        Alto rendimiento los ven dirección (que los valida), quien envía y su
+        evaluador."""
         u = self.request.user
         qs = Informe.objects.select_related("jugador", "jugador__escuela", "tenis", "fisica",
                                             "validado_por", "devuelto_por", "enviado_por")
-        if not (valida_informes(u) or envia_informes(u)):
+        if not (es_direccion(u) or envia_informes(u)):
             qs = qs.filter(Q(jugador__escuela__solo_informes=True) | Q(tenis__evaluador=u))
         p = self.request.query_params
         if p.get("estado"):
@@ -359,9 +375,12 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(jugador_id=p["jugador"])
         return qs
 
-    def _validador(self):
-        if not valida_informes(self.request.user):
+    def _validador(self, inf):
+        if not informes.puede_validar(self.request.user, inf):
+            if inf.circuito == "alto_rendimiento":
+                raise PermissionDenied("Los informes de Alto rendimiento los valida dirección.")
             raise PermissionDenied("Validan quienes tienen la función «Valida informes» (Club → Personas y funciones).")
+        return inf
 
     @action(detail=False)
     def panel(self, request):
@@ -440,8 +459,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def aprobar(self, request, pk=None):
         """`{destinatarios: [{email, quien}]}`: se guardan para cuando haya envío por correo."""
-        self._validador()
-        inf = self.get_object()
+        inf = self._validador(self.get_object())
         destinatarios = [
             {"email": str(d.get("email", "")).strip(), "quien": str(d.get("quien", "")).strip()}
             for d in (request.data.get("destinatarios") or []) if isinstance(d, dict) and str(d.get("email", "")).strip()
@@ -474,8 +492,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def reabrir(self, request, pk=None):
         """Reabre un informe aprobado para corregirlo; después vuelve a validar."""
-        self._validador()
-        inf = self.get_object()
+        inf = self._validador(self.get_object())
         try:
             informes.reabrir(inf, request.user)
         except informes.InformeError as e:
@@ -485,8 +502,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def devolver(self, request, pk=None):
         """`{partes: ["tenis", "fisico"], nota}`."""
-        self._validador()
-        inf = self.get_object()
+        inf = self._validador(self.get_object())
         try:
             informes.devolver(inf, request.user, request.data.get("partes") or [], str(request.data.get("nota") or ""))
         except informes.InformeError as e:
@@ -505,10 +521,18 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get", "post"], url_path=r"foto/(?P<jugador_id>\d+)")
     def foto(self, request, jugador_id=None):
-        """La foto del jugador para el informe. POST con el fichero en `foto`."""
-        jugador = jugadores_evaluables_fisico().filter(pk=jugador_id).first()
+        """La foto del jugador para el informe. POST con el fichero en `foto`.
+        De Competición de tardes, quien entra en Informes; de Alto rendimiento
+        (12/11/2026), quien le evalúa: su entrenador, el head coach de su color
+        y dirección."""
+        u = request.user
+        jugador = None
+        if ve_informes(u):
+            jugador = jugadores_evaluables_fisico().filter(pk=jugador_id).first()
         if jugador is None:
-            raise ValidationError({"detail": "Ese jugador no está en Competición de tardes."})
+            jugador = jugadores_que_evalua(u, base=Jugador.objects.all()).filter(pk=jugador_id).first()
+        if jugador is None:
+            raise PermissionDenied("Ese jugador no es de los que evalúas.")
         if request.method == "GET":
             f = FotoJugador.objects.filter(jugador=jugador).first()
             if f is None:

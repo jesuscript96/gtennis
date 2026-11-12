@@ -115,8 +115,9 @@ def es_coordinador_tardes(user):
 
 
 def valida_informes(user):
-    """Aprueba, corrige o devuelve los informes. Abre y corrige las dos partes
-    (decisión 11)."""
+    """Aprueba, corrige o devuelve los informes de Competición de tardes. Abre y
+    corrige las dos partes (decisión 11). Los de Alto rendimiento, solo
+    dirección: `valida_alto_rendimiento`."""
     return tiene_funcion(user, VALIDA_INFORMES)
 
 
@@ -152,6 +153,21 @@ def _usuarios_con(codigo, con_direccion=True):
     if con_direccion:
         q |= Q(role="SUPERADMIN") | Q(is_superuser=True)
     return list(get_user_model().objects.filter(is_active=True).filter(q).distinct())
+
+
+def valida_alto_rendimiento(user):
+    """Los informes de Alto rendimiento los valida solo dirección (12/11/2026):
+    «Valida informes» es para los de Competición de tardes."""
+    return es_direccion(user)
+
+
+def usuarios_direccion():
+    """Usuarios activos de dirección (para avisarles)."""
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    return list(get_user_model().objects.filter(is_active=True)
+                .filter(Q(role="SUPERADMIN") | Q(is_superuser=True)).distinct())
 
 
 def usuarios_valida_informes():

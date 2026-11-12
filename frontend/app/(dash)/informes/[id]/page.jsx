@@ -1,48 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  aprobarInforme, descargarPdfInforme, devolverInforme, enviarInforme, getFotoJugador, getInforme, getUser,
-  guardarInformeEnDrive, reabrirInforme, subirFotoJugador,
+  aprobarInforme, descargarPdfInforme, devolverInforme, enviarInforme, getInforme, getUser,
+  guardarInformeEnDrive, reabrirInforme,
 } from "../../../../lib/api";
+import FotoJugador from "../../../../components/FotoJugador";
 import { ESTADO_INFORME, abrirParte, textoParte } from "../../../../lib/informes";
 import { fmtLarga } from "../../../../lib/torneos";
 
 const fecha = (iso) => (iso ? fmtLarga(iso.slice(0, 10)) : "");
-
-function Foto({ inf }) {
-  const [url, setUrl] = useState(null);
-  const [estado, setEstado] = useState("");
-  const input = useRef(null);
-
-  function cargar() {
-    getFotoJugador(inf.jugador).then((f) => setUrl(f ? URL.createObjectURL(f.blob) : null)).catch(() => {});
-  }
-  useEffect(cargar, [inf.jugador]);
-
-  async function subir(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setEstado("Subiendo…");
-    try { await subirFotoJugador(inf.jugador, file); cargar(); setEstado(""); }
-    catch (err) { setEstado(err.message); }
-  }
-
-  return (
-    <div className="inf-foto">
-      {url ? <img src={url} alt={`Foto de ${inf.jugador_nombre}`} />
-        : <div className="inf-foto-vacia">Sin foto</div>}
-      <input ref={input} type="file" accept="image/*" hidden onChange={subir} />
-      <button type="button" className="btn ghost sm" onClick={() => input.current?.click()}>
-        {url ? "Cambiar foto" : "Subir foto"}
-      </button>
-      {estado && <p className="eval-nota" role="status">{estado}</p>}
-    </div>
-  );
-}
 
 function Partes({ inf, user }) {
   const router = useRouter();
@@ -251,7 +220,7 @@ export default function InformePage() {
       </div>
 
       <div className="inf-cabecera">
-        <Foto inf={inf} />
+        <FotoJugador jugadorId={inf.jugador} nombre={inf.jugador_nombre} />
         <div className="inf-resumen">
           <p><span className={`pill ${pill}`}>{estado}</span>
             {inf.idioma === "EN" && <span className="eval-nota"> · a la familia se le envía en inglés</span>}

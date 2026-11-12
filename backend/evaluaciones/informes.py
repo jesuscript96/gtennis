@@ -1,4 +1,5 @@
-"""El circuito del informe de Competición de tardes (27/10/2026).
+"""El circuito del informe de Competición de tardes (27/10/2026) y, desde el
+10/11/2026, también de Alto rendimiento (solo tenis; lo valida dirección).
 
 Tenis y físico se hacen por separado; cada uno queda colgando del informe
 abierto de su jugador. Cuando las dos partes están terminadas, el informe pasa
@@ -16,7 +17,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from academy.models import Aviso
-from academy.permissions import COORDINA_TARDES, usuarios_avisar_validar, usuarios_valida_informes
+from academy.permissions import (
+    COORDINA_TARDES, usuarios_avisar_validar, usuarios_direccion, valida_alto_rendimiento, valida_informes,
+)
 
 from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, MiembroTardes
 
@@ -117,47 +120,35 @@ def idioma_pdf(inf):
 
 
 def pdf_de(inf, idioma="ES"):
-    """(nombre, contenido) del PDF del informe: el conjunto de tardes o, en
-    Alto rendimiento, el de su evaluación de tenis."""
+    """(nombre, contenido) del PDF del informe. Tardes lleva tenis y físico;
+    Alto rendimiento, solo tenis, con la misma maqueta (foto subida y
+    evolución respecto al último validado)."""
     from . import pdf
 
-    if inf.circuito == "alto_rendimiento":
-        return pdf.nombre(inf.tenis, idioma), pdf.generar(inf.tenis, idioma)
     return pdf.nombre_informe(inf, idioma), pdf.generar_informe(inf, idioma)
 
 
-def _drive_alto_rendimiento(inf, idioma):
-    """Alto rendimiento va a la carpeta del jugador, como antes, pero solo
-    una vez validado."""
-    from . import drive
+def puede_validar(user, inf):
+    """Quién aprueba, devuelve o reabre este informe: los de Alto rendimiento,
+    solo dirección (12/11/2026); los de tardes, quien tiene «Valida informes»."""
+    if inf.circuito == "alto_rendimiento":
+        return valida_alto_rendimiento(user)
+    return valida_informes(user)
 
-    if inf.estado != Informe.Estado.VALIDADO or not drive.configurado():
-        return None
-    ev = inf.tenis
-    try:
-        ev.drive_file_id, ev.drive_url = drive.subir(ev, idioma)
-        ev.save(update_fields=["drive_file_id", "drive_url", "actualizada"])
-        inf.drive_file_id, inf.drive_url, inf.drive_carpeta = ev.drive_file_id, ev.drive_url, "validados"
-        inf.save(update_fields=["drive_file_id", "drive_url", "drive_carpeta", "actualizado"])
-    except drive.DriveNoDisponible as e:
-        return f"{e} El informe está en la app; se reintenta al validar."
-    return None
+
+def usuarios_validan(inf):
+    """A quién se avisa de que este informe está listo para validar."""
+    if inf.circuito == "alto_rendimiento":
+        return usuarios_direccion()
+    return usuarios_avisar_validar()
 
 
 def guardar_en_drive(inf):
-    """Genera el PDF conjunto y lo deja en la carpeta que toca según el
-    estado. Devuelve un aviso si Drive o la traducción fallan (el informe
-    sigue en la app)."""
+    """Genera el PDF del informe y lo deja en la carpeta que toca según el
+    estado y el circuito. Devuelve un aviso si Drive o la traducción fallan
+    (el informe sigue en la app)."""
     from . import drive, ia, traduccion
 
-    if inf.circuito == "alto_rendimiento":
-        idioma = idioma_pdf(inf)
-        try:
-            if idioma != "ES":
-                traduccion.tenis(inf.tenis, idioma)
-        except ia.IANoDisponible:
-            idioma = "ES"
-        return _drive_alto_rendimiento(inf, idioma)
     if not (drive.configurado() or drive.ct_configurado()):
         return None
     idioma, aviso = idioma_pdf(inf), None
@@ -180,6 +171,10 @@ def parte_terminada(ev):
     """Se llama al terminar (o volver a terminar) una parte. Si con ella el
     informe queda completo, pasa a pendiente de validar."""
     inf = getattr(ev, "informe", None)
+    if inf is None and isinstance(ev, Evaluacion) and parte_existente(ev.jugador, "tenis") is None:
+        # Una de Alto rendimiento empezada antes de que entrara en el circuito
+        # (10/11/2026): al terminarla se cuelga de su informe como las nuevas.
+        inf = vincular(ev)
     if inf is None:
         return None
     inf.refresh_from_db()
@@ -198,13 +193,13 @@ def parte_terminada(ev):
     inf.save()
     guardar_en_drive(inf)
     nombre = inf.jugador.nombre
-    # Tardes: se avisa a quien coordina (decisión 11). Alto rendimiento no tiene
-    # coordinador: a quien valida.
+    # Tardes: se avisa a quien coordina (decisión 11). Alto rendimiento, a
+    # dirección, que es quien lo valida (12/11/2026).
     if inf.circuito == "alto_rendimiento":
-        quienes, partes = usuarios_valida_informes(), "La evaluación de tenis está terminada."
+        partes = f"{inf.tenis.nombre_evaluador} ha terminado la evaluación de tenis."
     else:
-        quienes, partes = usuarios_avisar_validar(), "Tenis y preparación física están terminados."
-    _avisar(quienes,
+        partes = "Tenis y preparación física están terminados."
+    _avisar(usuarios_validan(inf),
             f"Informe de {nombre} {'corregido, ' if corregido else ''}listo para validar",
             f"{partes} Revísalo en Rendimiento → Informes y apruébalo o devuélvelo con una nota.")
     return inf

@@ -9,6 +9,19 @@ import {
 } from "../../../lib/api";
 import { fmtLarga } from "../../../lib/torneos";
 
+// En qué punto está el informe de una evaluación terminada (10/11/2026).
+const ESTADO_INFORME = {
+  PENDIENTE: ["Pendiente de validar", "pend"],
+  DEVUELTO: ["Devuelta: corregir", "no"],
+  VALIDADO: ["Validada", "ok"],
+};
+
+function EstadoEvaluacion({ e }) {
+  if (e.estado === "BORRADOR") return <span className="pill pend">A medias · {e.puntuados}/34</span>;
+  const [texto, pill] = ESTADO_INFORME[e.informe?.estado] || ["Terminada", "ok"];
+  return <span className={`pill ${pill}`}>{texto}</span>;
+}
+
 function Tenis({ pestanas }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -52,9 +65,11 @@ function Tenis({ pestanas }) {
       {pestanas}
       <p className="help">
         El <b>Informe de Rendimiento</b> de un jugador: notas del 1 al 5 por bloque y, si quieres, un
-        comentario, escrito o dictado con el micrófono del teclado. Claude deja el comentario bien
-        redactado sin cambiarle el sentido y, al final, propone tres fortalezas y tres mejoras que
-        puedes retocar.
+        comentario, escrito o dictado con el micrófono del teclado. Al final escribes sus fortalezas y
+        lo que tiene que mejorar, y Claude lo deja bien redactado sin cambiarle el sentido.
+        En <b>Alto rendimiento</b> evalúas a los jugadores de tu grupo (el head coach, a los de su
+        color); al terminar, el informe pasa a <b>dirección</b> para validarlo y, si te lo devuelve, te
+        llega un aviso con lo que hay que corregir.
       </p>
 
       <div className="card eval-nueva">
@@ -92,9 +107,7 @@ function Tenis({ pestanas }) {
                     <span className="eval-lista-meta">
                       {fmtLarga(e.fecha)} · {e.nombre_evaluador}
                     </span>
-                    {e.estado === "BORRADOR"
-                      ? <span className="pill pend">A medias · {e.puntuados}/34</span>
-                      : <span className="pill ok">Terminada</span>}
+                    <EstadoEvaluacion e={e} />
                   </Link>
                 </li>
               ))}

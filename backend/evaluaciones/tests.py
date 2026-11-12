@@ -60,9 +60,13 @@ class EvaluacionesTests(TestCase):
 
     def test_otro_entrenador_no_la_cambia_y_direccion_si(self):
         ev = self.crear().data
-        # Mario la ve si se le da a Ana, pero no la cambia: no es suya.
-        ResponsableJugador.objects.create(jugador=self.ana, entrenador=self.mario, prioridad=2)
         url = f"/api/evaluaciones/{ev['id']}/"
+        # Entrenarla (porcentaje) no basta: los informes son de su grupo de Grupos (12/11/2026).
+        ResponsableJugador.objects.create(jugador=self.ana, entrenador=self.mario, prioridad=2)
+        self.assertEqual(self.api(self.u_mario).get(url).status_code, 404)
+        # Si comparte su gestión la ve, pero no la cambia: no es suya.
+        self.ana.cogestores.add(self.mario)
+        self.assertEqual(self.api(self.u_mario).get(url).status_code, 200)
         self.assertEqual(self.api(self.u_mario).patch(url, {"idioma": "EN"}, format="json").status_code, 403)
         self.assertEqual(self.api(self.u_dir).patch(url, {"idioma": "EN"}, format="json").status_code, 200)
 

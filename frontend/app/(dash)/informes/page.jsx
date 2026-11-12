@@ -144,7 +144,9 @@ function PorValidar({ informes }) {
           <Link href={`/informes/${i.id}`} className="card">
             <span className="eval-lista-nombre">{i.jugador_nombre}</span>
             <span className="eval-lista-meta">
-              Tenis: {i.tenis?.evaluador || "—"} · Físico: {i.fisica?.evaluador || "—"}
+              {i.circuito === "alto_rendimiento"
+                ? `Alto rendimiento · Tenis: ${i.tenis?.evaluador || "—"}`
+                : `Tenis: ${i.tenis?.evaluador || "—"} · Físico: ${i.fisica?.evaluador || "—"}`}
               {i.version > 1 && ` · corregido (v${i.version})`}
             </span>
             <span className="pill pend">Desde {fmtLarga(i.actualizado.slice(0, 10))}</span>
@@ -165,7 +167,9 @@ function Informes() {
   useEffect(() => {
     getPanelInformes().then((p) => {
       setPanel(p);
-      if (p.puede_validar) getInformes({ estado: "PENDIENTE" }).then(setPendientes).catch(() => {});
+      if (p.puede_validar) {
+        getInformes({ estado: "PENDIENTE" }).then((l) => setPendientes(l.filter((i) => i.puede_validar))).catch(() => {});
+      }
     }).catch((e) => setError(e.message));
   }, []);
 
@@ -180,8 +184,9 @@ function Informes() {
         de preparación física van en un solo PDF. Quien coordina asigna a cada jugador el entrenador que
         hace su parte de tenis. Cuando las dos partes están terminadas, se avisa a quien coordina y pasa
         a validar: quien tiene la función «Valida informes» lo aprueba (y lo envía a la familia) o lo
-        devuelve con una nota. Los de <b>Alto rendimiento</b> (solo tenis) también pasan por aquí, en
-        «Por validar». El siguiente toca a los 90 días de validarlo.
+        devuelve con una nota. Los de <b>Alto rendimiento</b> (solo tenis, los hace el entrenador de su
+        grupo) los valida <b>dirección</b>, también aquí en «Por validar». El siguiente toca a los 90 días
+        de validarlo.
       </p>
       {panel.puede_validar && (
         <div className="tabs-inv" role="tablist">
