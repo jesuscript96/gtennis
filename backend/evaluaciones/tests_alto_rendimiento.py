@@ -1,6 +1,7 @@
 """Informes de Alto rendimiento (12/11/2026): el entrenador evalúa el tenis de
-su grupo y el head coach todo su color, sin reparto; lo valida dirección; el
-PDF va a su carpeta del Drive del club; foto y recordatorios como en tardes."""
+su grupo y el head coach todo su color, sin reparto, del 1 al 10; lo validan
+dirección y el head coach de su color; el PDF va a su carpeta del Drive del
+club; foto y recordatorios como en tardes."""
 from datetime import timedelta
 from io import BytesIO
 from unittest import mock
@@ -16,7 +17,7 @@ from . import catalogo, drive, pdf, recordatorios
 from .models import Evaluacion, Informe
 from .tests import SIN_CAPTURA_DE_PLANTILLAS, FakeDrive, FakeResp
 
-TENIS = {k: 3 for k in catalogo.CRITERIOS}
+TENIS = {k: 7 for k in catalogo.CRITERIOS}
 
 
 class Base(TestCase):
@@ -130,17 +131,21 @@ class QuienEvaluaTests(Base):
 @SIN_CAPTURA_DE_PLANTILLAS
 @override_settings(ANTHROPIC_API_KEY="", GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")
 class ValidaDireccionTests(Base):
-    def test_lo_valida_direccion_y_nadie_mas(self):
+    def test_lo_validan_direccion_y_el_head_coach_de_su_color(self):
         ev_id = self.evaluar(self.u_blas, self.ana)
         inf = Informe.objects.get(jugador=self.ana)
         self.assertEqual((inf.circuito, inf.estado, inf.tenis_id), ("alto_rendimiento", "PENDIENTE", ev_id))
         listo = Aviso.objects.filter(titulo__contains="listo para validar")
-        self.assertEqual(set(listo.values_list("usuario__username", flat=True)), {"dir"})
-        self.assertIn("Blas", listo.get().mensaje)
-        # Ni el head coach, ni quien valida tardes, ni el autor.
-        for u in (self.u_dani, self.valida, self.u_blas):
+        self.assertEqual(set(listo.values_list("usuario__username", flat=True)), {"dir", "dani"})
+        self.assertIn("Blas", listo.first().mensaje)
+        # Ni el head coach de otro color, ni quien valida tardes, ni el autor.
+        for u in (self.u_pablo, self.valida, self.u_blas):
             r = self.api(u).post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
             self.assertIn(r.status_code, (403, 404), u.username)
+        # Dani lo ve en su «Por validar» y puede validarlo; Pablo no lo ve.
+        r = self.api(self.u_dani).get("/api/informes/", {"estado": "PENDIENTE"}).json()
+        self.assertEqual([(i["jugador_nombre"], i["puede_validar"]) for i in r], [("Ana Blas", True)])
+        self.assertEqual(self.api(self.u_pablo).get("/api/informes/", {"estado": "PENDIENTE"}).json(), [])
         # Dirección lo devuelve: le llega a Blas con la nota y puede corregirla.
         d = self.api(self.dir)
         r = d.post(f"/api/informes/{inf.id}/devolver/", {"partes": ["tenis"], "nota": "Más detalle en el revés"},
@@ -154,11 +159,20 @@ class ValidaDireccionTests(Base):
                          .status_code, 200)
         inf.refresh_from_db()
         self.assertEqual(inf.estado, "PENDIENTE")
-        r = d.post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
+        # Esta vez lo aprueba el head coach de su color.
+        r = self.api(self.u_dani).post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         inf.refresh_from_db()
-        self.assertEqual((inf.estado, inf.validado_por), ("VALIDADO", self.dir))
+        self.assertEqual((inf.estado, inf.validado_por), ("VALIDADO", self.u_dani))
         self.assertTrue(Aviso.objects.filter(usuario=self.u_blas, titulo__contains="validado").exists())
+
+    def test_el_head_coach_entra_en_informes_sin_ver_tardes(self):
+        me = self.api(self.u_pablo).get("/api/auth/me/").json()
+        self.assertEqual((me["ve_informes"], me["ve_tardes"], me["valida_alto_rendimiento"]), (True, False, True))
+        panel = self.api(self.u_pablo).get("/api/informes/panel/").json()
+        self.assertEqual((panel["jugadores"], panel["ve_tardes"], panel["puede_validar"]), ([], False, True))
+        # Un entrenador sin más sigue sin entrar.
+        self.assertEqual(self.api(self.u_blas).get("/api/informes/panel/").status_code, 403)
 
     def test_tardes_sigue_con_quien_valida(self):
         from .models import EvaluacionFisica
@@ -185,6 +199,58 @@ class ValidaDireccionTests(Base):
         datos = pdf.datos_informe(inf)
         self.assertEqual(datos["t"]["academia"], "Alto rendimiento")
         self.assertIsNone(datos["fisico"])
+        # Del 1 al 10: diez segmentos, textos y anillos con su escala.
+        self.assertEqual(datos["escala"], 10)
+        self.assertEqual(len(datos["bloques"][0]["criterios"][0]["segmentos"]), 10)
+        self.assertIn("del 1 al 10", datos["t"]["escala_corta"])
+        self.assertEqual(datos["bloques"][0]["ancho"], "70.0")
+        # La portada destaca lo que escribió el entrenador.
+        self.assertEqual(datos["punto_fuerte"]["texto"], "Saque")
+        self.assertEqual(datos["a_trabajar"]["texto"], "Revés")
+
+
+class EscalaTests(Base):
+    def test_del_1_al_10_en_alto_rendimiento_y_del_1_al_5_en_tardes(self):
+        c = self.api(self.u_blas)
+        ar = c.post("/api/evaluaciones/", {"jugador": self.ana.id}, format="json").json()
+        self.assertEqual(ar["escala"], 10)
+        url = f"/api/evaluaciones/{ar['id']}/"
+        self.assertEqual(c.patch(url, {"puntuaciones": {"drive_impact": 10}}, format="json").status_code, 200)
+        self.assertEqual(c.patch(url, {"puntuaciones": {"drive_impact": 11}}, format="json").status_code, 400)
+        # Tardes sigue del 1 al 5.
+        ct = self.api(self.dir).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json").json()
+        self.assertEqual(ct["escala"], 5)
+        r = self.api(self.dir).patch(f"/api/evaluaciones/{ct['id']}/", {"puntuaciones": {"drive_impact": 6}},
+                                     format="json")
+        self.assertEqual(r.status_code, 400)
+
+    @SIN_CAPTURA_DE_PLANTILLAS
+    @override_settings(ANTHROPIC_API_KEY="", GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")
+    def test_la_evolucion_compara_en_la_misma_escala(self):
+        """Un informe anterior del 1 al 5 se lleva al 1 al 10 para comparar."""
+        antes = Evaluacion.objects.create(jugador=self.ana, evaluador=self.u_blas, escala=5, estado="TERMINADA",
+                                          puntuaciones={k: 3 for k in catalogo.CRITERIOS})
+        Informe.objects.create(jugador=self.ana, tenis=antes, estado="VALIDADO",
+                               validado_en=timezone.now() - timedelta(days=90))
+        self.evaluar(self.u_blas, self.ana)  # todo a 7 sobre 10
+        datos = pdf.datos_informe(Informe.objects.get(jugador=self.ana, estado="PENDIENTE"))
+        self.assertEqual(datos["evol_media"]["dir"], "sube")  # 6 → 7, no 3 → 7
+        self.assertEqual(datos["evol_media"]["txt"], "▲ 1,0")
+
+
+@override_settings(ANTHROPIC_API_KEY="", GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")
+class BorrarTests(Base):
+    @SIN_CAPTURA_DE_PLANTILLAS
+    def test_borrar_la_evaluacion_borra_su_informe_y_su_pdf(self):
+        ev_id = self.evaluar(self.u_blas, self.ana)
+        inf = Informe.objects.get(jugador=self.ana)
+        inf.drive_file_id = "pdf-en-drive"
+        inf.save()
+        with mock.patch.object(drive, "a_la_papelera") as papelera:
+            r = self.api(self.dir).delete(f"/api/evaluaciones/{ev_id}/")
+        self.assertEqual(r.status_code, 204)
+        self.assertFalse(Informe.objects.filter(pk=inf.pk).exists())
+        papelera.assert_called_once_with("pdf-en-drive")
 
 
 @override_settings(ANTHROPIC_API_KEY="", GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")

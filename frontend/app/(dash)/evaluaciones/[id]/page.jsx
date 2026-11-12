@@ -22,8 +22,9 @@ function Informe({ ev, bloques }) {
             {b.criterios.map((c) => (
               <li key={c.clave}>
                 <span>{c.etiqueta}</span>
-                <span className="eval-puntos" aria-label={`${ev.puntuaciones[c.clave] ?? "—"} de 5`}>
-                  {[1, 2, 3, 4, 5].map((n) => <i key={n} className={n <= (ev.puntuaciones[c.clave] || 0) ? "on" : ""} />)}
+                <span className="eval-puntos" aria-label={`${ev.puntuaciones[c.clave] ?? "—"} de ${ev.escala || 5}`}>
+                  {Array.from({ length: ev.escala || 5 }, (_, i) => i + 1).map((n) => (
+                    <i key={n} className={n <= (ev.puntuaciones[c.clave] || 0) ? "on" : ""} />))}
                   <b>{ev.puntuaciones[c.clave] ?? "—"}</b>
                 </span>
               </li>

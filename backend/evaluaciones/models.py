@@ -31,8 +31,12 @@ class Evaluacion(models.Model):
     idioma = models.CharField(max_length=2, choices=Idioma.choices, default=Idioma.ES)
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.BORRADOR)
 
-    # {"drive_preparation": 4, …}: las 34 claves de `catalogo.CRITERIOS`, del 1 al 5.
+    # {"drive_preparation": 4, …}: las 34 claves de `catalogo.CRITERIOS`, del 1 a `escala`.
     puntuaciones = models.JSONField(default=dict, blank=True)
+    # Nota máxima de cada criterio (12/11/2026): Alto rendimiento puntúa del
+    # 1 al 10; Competición de tardes y lo anterior, del 1 al 5. db_default:
+    # durante el despliegue el código anterior crea evaluaciones sin esta columna.
+    escala = models.PositiveSmallIntegerField(default=5, db_default=5)
     # {"drive": {"original": "…", "pulido": "…", "idioma": "ES"}, …, "competicion": {…}}
     # `original` es lo que escribió o dictó el entrenador; `pulido`, lo que va al informe.
     comentarios = models.JSONField(default=dict, blank=True)

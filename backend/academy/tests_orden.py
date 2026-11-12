@@ -605,10 +605,10 @@ class InformesTests(Base):
         # Solo tenis: ya está completo y pendiente de validar.
         self.assertTrue(inf.completo)
         self.assertEqual(inf.estado, "PENDIENTE")
-        # Los de Alto rendimiento los valida dirección (12/11/2026): el aviso
-        # es para dirección, no para quien valida los de tardes.
+        # Los de Alto rendimiento los validan dirección y el head coach de su
+        # color (12/11/2026), no quien valida los de tardes.
         listo = Aviso.objects.filter(titulo__contains="listo para validar")
-        self.assertEqual(set(listo.values_list("usuario__username", flat=True)), {"dir"})
+        self.assertEqual(set(listo.values_list("usuario__username", flat=True)), {"dir", "pablo"})
         v = self.api(self.validador)
         self.assertEqual(v.get(f"/api/evaluaciones/{ev_id}/").status_code, 404)
         self.assertEqual(v.post(f"/api/informes/{inf.id}/aprobar/", {}, format="json").status_code, 404)

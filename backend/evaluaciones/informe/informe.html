@@ -81,7 +81,9 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
 .cifra.clara { background: var(--fondo); border: 0.75pt solid var(--linea); }
 .cifra.clara .etq { color: var(--gris); }
 .cifra .etq { white-space: nowrap; }
-.cifra .que { font: 600 17pt/1.1 "Fraunces"; margin-top: 8pt; }
+.cifra .que { font: 600 15pt/1.15 "Fraunces"; margin-top: 8pt; }
+.cifra .que.larga { font-size: 12pt; line-height: 1.2; }
+.cifra .que.muy-larga { font-size: 9.5pt; line-height: 1.2; }
 .cifra .cuanto { margin-top: 4pt; font-size: 9pt; color: var(--gris); }
 .cifra .cuanto b { color: var(--arcilla-osc); font-weight: 600; font-size: 11pt; }
 .cifra .icono { float: right; margin-top: -1pt; }
@@ -156,6 +158,9 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
 .crits .seg { width: 66pt; white-space: nowrap; font-size: 0; text-align: right; }
 .crits .seg i { display: inline-block; width: 11pt; height: 5.5pt; border-radius: 1.5pt; background: var(--pista); margin-left: 2pt; }
 .crits .seg i.on { background: var(--arcilla); }
+/* Del 1 al 10 (Alto rendimiento, 12/11/2026): diez segmentos en el mismo ancho. */
+.crits .seg.diez i { width: 4.9pt; margin-left: 1.6pt; }
+.banda .leyenda.diez i { width: 5pt; margin-left: 1.5pt; }
 .crits .n { width: 14pt; text-align: right; font-weight: 600; }
 .comentario { margin: 6pt 0 0; padding: 6pt 0 0 9pt; border-left: 2pt solid var(--arcilla);
   font: italic 400 8.5pt/1.4 "Fraunces"; color: #3a3835; }
@@ -203,20 +208,18 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
   <table class="cifras"><tr>
     <td><div class="cifra principal">
       <span class="etq">{{ t.media }}</span>
-      <div class="num">{{ media }}<small> / 5</small></div>
+      <div class="num">{{ media }}<small> / {{ escala }}</small></div>
       {% if evol_media %}<div class="evol-media">{{ evol_media.txt }} {{ t.vs_anterior }}</div>{% endif %}
     </div></td>
     <td><div class="cifra clara">
       <span class="icono"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#c96442"/><path d="M9 4.5 L13 9.5 H10.3 V13.5 H7.7 V9.5 H5 Z" fill="#fff"/></svg></span>
       <span class="etq">{{ t.punto_fuerte }}</span>
-      <div class="que">{{ mejor.corto }}</div>
-      <div class="cuanto"><b>{{ mejor.media }}</b> / 5</div>
+      <div class="que {{ punto_fuerte.tam }}">{{ punto_fuerte.texto }}</div>
     </div></td>
     <td><div class="cifra clara">
       <span class="icono"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8.2" fill="none" stroke="#c96442" stroke-width="1.6"/><circle cx="9" cy="9" r="4.6" fill="none" stroke="#c96442" stroke-width="1.6"/><circle cx="9" cy="9" r="1.6" fill="#c96442"/></svg></span>
       <span class="etq">{{ t.a_trabajar }}</span>
-      <div class="que">{{ peor.corto }}</div>
-      <div class="cuanto"><b>{{ peor.media }}</b> / 5</div>
+      <div class="que {{ a_trabajar.tam }}">{{ a_trabajar.texto }}</div>
     </div></td>
   </tr></table>
 
@@ -233,7 +236,7 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
               <circle cx="31" cy="31" r="26" fill="none" stroke="#c96442" stroke-width="6" stroke-linecap="round"
                 stroke-dasharray="{{ b.arco }} 200" transform="rotate(-90 31 31)"/>
             </svg>
-            <div class="valor">{{ b.media }}<small>/ 5</small></div>
+            <div class="valor">{{ b.media }}<small>/ {{ escala }}</small></div>
           </div>
           <div class="nombre">{{ b.corto }}{% if b.evol %} <span class="evol {{ b.evol.dir }}">{{ b.evol.txt }}</span>{% endif %}</div>
         </td>
@@ -273,7 +276,7 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
 <section class="detalle">
   <div class="banda">
     <div class="txt"><h2>{{ t.detalle }}</h2><p>{{ t.escala }}</p></div>
-    <div class="leyenda">1 – 5 <i></i><i></i><i></i><i class="off"></i><i class="off"></i></div>
+    <div class="leyenda{% if escala > 5 %} diez{% endif %}">1 – {{ escala }} {% for on in leyenda %}<i{% if not on %} class="off"{% endif %}></i>{% endfor %}</div>
   </div>
 
   <div class="ancho">
@@ -285,12 +288,12 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
           <table class="bloque-cab"><tr>
             <td class="num"><div class="chapa">{{ b.n }}</div></td>
             <td class="tit">{{ b.titulo }}</td>
-            <td class="prom">{{ b.media }} <small>/ 5</small></td>
+            <td class="prom">{{ b.media }} <small>/ {{ escala }}</small></td>
           </tr></table>
           <div class="bloque-cuerpo">
             <table class="crits">
               {% for c in b.criterios %}
-              <tr><td>{{ c.etiqueta }}</td><td class="seg">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
+              <tr><td>{{ c.etiqueta }}</td><td class="seg{% if escala > 5 %} diez{% endif %}">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
               {% endfor %}
             </table>
             {% if b.comentario %}<p class="comentario">{{ b.comentario }}</p>

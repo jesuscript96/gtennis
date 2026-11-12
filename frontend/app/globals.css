@@ -1610,6 +1610,9 @@ td.cell.forzada { background: #fffaf0; }
 }
 .eval-notas button:hover { border-color: var(--accent); }
 .eval-notas button.activa { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+/* Del 1 al 10 (Alto rendimiento, 12/11/2026): diez botones más pequeños. */
+.eval-notas.diez { gap: 4px; }
+.eval-notas.diez button { width: 38px; height: 38px; font-size: 15px; }
 .eval-comentario { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 14px; }
 .eval-comentario label { display: block; font-size: 14px; margin-bottom: 6px; }
 .eval-comentario textarea, .eval-frases input {
@@ -1643,6 +1646,9 @@ td.cell.forzada { background: #fffaf0; }
   .eval-criterio { flex-direction: column; align-items: stretch; }
   .eval-notas { justify-content: space-between; }
   .eval-notas button { width: 52px; height: 52px; }
+  /* En el móvil, diez en dos filas de cinco. */
+  .eval-notas.diez { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .eval-notas.diez button { width: 100%; height: 46px; border-radius: 12px; }
   .eval-pie .btn { flex: 1 1 auto; }
 }
 /* Torneos: previa y torneos de varias semanas */

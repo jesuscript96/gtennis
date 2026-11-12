@@ -21,14 +21,16 @@ export function pasoInicial(ev, bloques) {
   return i === -1 ? PASO_COMPETICION : i + 1;
 }
 
-function Notas({ bloque, notas, onNota }) {
+// Del 1 al 10 en Alto rendimiento (12/11/2026); del 1 al 5 en tardes y en las de antes.
+function Notas({ bloque, notas, onNota, escala = 5 }) {
+  const valores = Array.from({ length: escala }, (_, i) => i + 1);
   return (
     <div className="eval-criterios">
       {bloque.criterios.map((c) => (
         <div key={c.clave} className="eval-criterio">
           <span className="eval-criterio-nombre" id={`lbl-${c.clave}`}>{c.etiqueta}</span>
-          <div className="eval-notas" role="radiogroup" aria-labelledby={`lbl-${c.clave}`}>
-            {[1, 2, 3, 4, 5].map((n) => (
+          <div className={`eval-notas${escala > 5 ? " diez" : ""}`} role="radiogroup" aria-labelledby={`lbl-${c.clave}`}>
+            {valores.map((n) => (
               <button key={n} type="button" role="radio" aria-checked={notas[c.clave] === n}
                 className={notas[c.clave] === n ? "activa" : ""} onClick={() => onNota(c.clave, n)}>
                 {n}
@@ -243,8 +245,9 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
       {bloque && (
         <div className="card eval-paso">
           <h2>{bloque.titulo}</h2>
-          <p className="eval-nota">Puntúa del 1 al 5.</p>
-          <Notas bloque={bloque} notas={notas} onNota={(k, n) => setNotas((prev) => ({ ...prev, [k]: n }))} />
+          <p className="eval-nota">Puntúa del 1 al {ev.escala || 5}.</p>
+          <Notas bloque={bloque} notas={notas} escala={ev.escala || 5}
+            onNota={(k, n) => setNotas((prev) => ({ ...prev, [k]: n }))} />
           {comentario(bloque.habilidad)}
           {mensajes}
           {pie(

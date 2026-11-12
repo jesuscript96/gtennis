@@ -138,11 +138,17 @@ def evalua_fisico(user):
     return es_preparador(user) or _en_tardes(user, "FISICO") or valida_informes(user)
 
 
-def ve_informes(user):
-    """Entra en los informes: quien evalúa tenis o físico, quien valida y
-    quien los envía."""
+def ve_tardes(user):
+    """Ve los informes de Competición de tardes: quien evalúa su tenis o su
+    física, quien los valida y quien los envía."""
     return (evalua_tenis_solo_informes(user) or evalua_fisico(user)
             or valida_informes(user) or envia_informes(user))
+
+
+def ve_informes(user):
+    """Entra en Informes: lo de tardes (`ve_tardes`) y, desde el 12/11/2026,
+    los head coaches, que validan los de Alto rendimiento de su color."""
+    return ve_tardes(user) or es_coach(user)
 
 
 def _usuarios_con(codigo, con_direccion=True):
@@ -156,9 +162,10 @@ def _usuarios_con(codigo, con_direccion=True):
 
 
 def valida_alto_rendimiento(user):
-    """Los informes de Alto rendimiento los valida solo dirección (12/11/2026):
+    """Valida informes de Alto rendimiento (12/11/2026): dirección, todos; cada
+    head coach, los de su color (`evaluaciones.informes.puede_validar`).
     «Valida informes» es para los de Competición de tardes."""
-    return es_direccion(user)
+    return es_direccion(user) or es_coach(user)
 
 
 def usuarios_direccion():
@@ -199,6 +206,8 @@ def resumen(user):
         "evalua_fisico": evalua_fisico(user),
         "evalua_tenis_informes": evalua_tenis_solo_informes(user),
         "ve_informes": ve_informes(user),
+        "ve_tardes": ve_tardes(user),
+        "valida_alto_rendimiento": valida_alto_rendimiento(user),
         # Compatibilidad con pantallas que aún lo leen.
         "gestion_deportiva": es_direccion(user),
     }

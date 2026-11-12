@@ -1,7 +1,7 @@
 """Bloques y criterios del Informe de Rendimiento de Alto Rendimiento.
 
 Sale de la especificación del club (apartado 4.2): ocho bloques técnicos, 34
-criterios del 1 al 5 y un comentario por bloque. El orden de cada lista es el
+criterios del 1 al 5 (del 1 al 10 en Alto rendimiento desde el 12/11/2026) y un comentario por bloque. El orden de cada lista es el
 orden en que se puntúa y en que sale en el fichero. Las claves (`drive_impact`…)
 van siempre en inglés y en minúsculas, sea cual sea el idioma del informe.
 """
@@ -107,6 +107,17 @@ _NADA = {"no", "nada", "ninguno", "ninguna", "sin comentarios", "sin observacion
 def es_nada(texto):
     t = (texto or "").strip().strip(".!¡").strip().lower()
     return not t or t in _NADA
+
+
+# Del 1 al 10 en Alto rendimiento (Sergio, 12/11/2026); tardes sigue del 1 al 5.
+ESCALA_ALTO_RENDIMIENTO = 10
+ESCALA_TARDES = 5
+
+
+def escala_de(jugador):
+    """La escala con la que se puntúa a este jugador en una evaluación nueva."""
+    de_tardes = bool(jugador.escuela_id and jugador.escuela.solo_informes)
+    return ESCALA_TARDES if de_tardes else ESCALA_ALTO_RENDIMIENTO
 
 
 def para_api():

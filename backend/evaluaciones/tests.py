@@ -82,7 +82,8 @@ class EvaluacionesTests(TestCase):
     def test_notas_fuera_de_rango_o_desconocidas(self):
         url = f"/api/evaluaciones/{self.crear().data['id']}/"
         c = self.api(self.u_blas)
-        for malas in ({"drive_impact": 6}, {"drive_impact": 0}, {"drive_impact": "4"}, {"forehand": 3}):
+        # Alto rendimiento puntúa del 1 al 10 (12/11/2026).
+        for malas in ({"drive_impact": 11}, {"drive_impact": 0}, {"drive_impact": "4"}, {"forehand": 3}):
             self.assertEqual(c.patch(url, {"puntuaciones": malas}, format="json").status_code, 400, malas)
 
     @mock.patch.object(ia, "pulir", return_value="Prepara tarde la derecha cuando la bola viene alta.")
@@ -282,9 +283,15 @@ class PdfTests(TestCase):
         self.assertEqual(d["ordenados"][-1]["ancho"], "40.0")  # CSS: punto decimal siempre
         self.assertEqual(d["fecha"], "20 de octubre de 2026")
         self.assertIn('\\"Anita\\"', d["pie"])
-        self.assertEqual(d["mejor"]["corto"], "Saque")
-        self.assertEqual(d["peor"]["corto"], "Volea")
-        self.assertEqual(d["peor"]["arco"], "65.35")  # 2/5 del anillo, con punto decimal
+        self.assertEqual(d["ordenados"][-1]["arco"], "65.35")  # 2/5 del anillo, con punto decimal
+        # La portada destaca lo que escribió el entrenador, no el bloque con más o menos nota.
+        self.assertEqual((d["punto_fuerte"]["texto"], d["a_trabajar"]["texto"]), ("—", "—"))
+        self.ev.fortalezas, self.ev.mejoras = ["Buena coordinación."], ["Debe mejorar la táctica en los puntos largos."]
+        d = pdf.datos(self.ev)
+        self.assertEqual(d["punto_fuerte"], {"texto": "Buena coordinación.", "tam": ""})
+        self.assertEqual(d["a_trabajar"]["texto"], "Debe mejorar la táctica en los puntos largos.")
+        self.assertEqual(d["a_trabajar"]["tam"], "muy-larga")
+        self.ev.fortalezas, self.ev.mejoras = [], []
         self.assertEqual(d["iniciales"], "AA")  # solo letras, aunque el nombre lleve comillas
         self.assertEqual(d["foto"], "")  # sin foto_url: la plantilla pone las iniciales
         self.ev.idioma = "EN"

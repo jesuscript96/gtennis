@@ -11,8 +11,8 @@ from rest_framework.response import Response
 
 from academy.models import Jugador
 from academy.permissions import (
-    coordina_informes, envia_informes, es_direccion, evalua_fisico, evalua_tenis_solo_informes, valida_informes,
-    ve_informes,
+    coordina_informes, envia_informes, es_coach, es_direccion, evalua_fisico, evalua_tenis_solo_informes,
+    valida_alto_rendimiento, valida_informes, ve_informes, ve_tardes,
 )
 from academy.scope import jugadores_que_evalua
 
@@ -91,7 +91,8 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         if not self._jugadores().filter(pk=jugador.pk).exists():
             raise PermissionDenied("Ese jugador no está entre los tuyos.")
         _sin_duplicar(jugador, "tenis")
-        ev = serializer.save(evaluador=user, nombre_evaluador=_nombre_evaluador(user))
+        ev = serializer.save(evaluador=user, nombre_evaluador=_nombre_evaluador(user),
+                             escala=catalogo.escala_de(jugador))
         informes.vincular(ev)
 
     @action(detail=False)
@@ -120,7 +121,9 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not instance.puede_borrar(self.request.user):
             raise PermissionDenied("La borran quien la hizo y quien coordina; un informe aprobado no se borra.")
+        inf = getattr(instance, "informe", None)
         instance.delete()
+        informes.tras_borrar_parte(inf)
 
     @action(detail=False)
     def catalogo(self, request):
@@ -311,7 +314,9 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not instance.puede_borrar(self.request.user):
             raise PermissionDenied("La borran quien la hizo y quien coordina; un informe aprobado no se borra.")
+        inf = getattr(instance, "informe", None)
         instance.delete()
+        informes.tras_borrar_parte(inf)
 
     @action(detail=False)
     def catalogo(self, request):
@@ -361,13 +366,19 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """Tardes y, desde el 10/11/2026, Alto rendimiento (decisión 12). Los de
-        Alto rendimiento los ven dirección (que los valida), quien envía y su
-        evaluador."""
+        Alto rendimiento los ven dirección, quien envía, su evaluador y el head
+        coach de su color (que los valida, 12/11/2026). Los de tardes, quien
+        está en tardes (`ve_tardes`)."""
         u = self.request.user
         qs = Informe.objects.select_related("jugador", "jugador__escuela", "tenis", "fisica",
                                             "validado_por", "devuelto_por", "enviado_por")
         if not (es_direccion(u) or envia_informes(u)):
-            qs = qs.filter(Q(jugador__escuela__solo_informes=True) | Q(tenis__evaluador=u))
+            q = Q(tenis__evaluador=u)
+            if ve_tardes(u):
+                q |= Q(jugador__escuela__solo_informes=True)
+            if es_coach(u):
+                q |= Q(jugador__in=jugadores_que_evalua(u, base=Jugador.objects.all()))
+            qs = qs.filter(q).distinct()
         p = self.request.query_params
         if p.get("estado"):
             qs = qs.filter(estado=p["estado"])
@@ -378,7 +389,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
     def _validador(self, inf):
         if not informes.puede_validar(self.request.user, inf):
             if inf.circuito == "alto_rendimiento":
-                raise PermissionDenied("Los informes de Alto rendimiento los valida dirección.")
+                raise PermissionDenied("Los informes de Alto rendimiento los validan dirección y el head coach de su color.")
             raise PermissionDenied("Validan quienes tienen la función «Valida informes» (Club → Personas y funciones).")
         return inf
 
@@ -394,7 +405,9 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         fotos = set(FotoJugador.objects.values_list("jugador_id", flat=True))
         asignados = {a.jugador_id: a.evaluador for a in AsignacionInforme.objects.select_related("evaluador__entrenador")}
         out = []
-        for j in jugadores_evaluables_fisico():
+        # El head coach solo entra aquí a validar los de Alto rendimiento de su color.
+        ve_ct = ve_tardes(request.user)
+        for j in (jugadores_evaluables_fisico() if ve_ct else []):
             inf = abiertos.get(j.id)
             c = informes.ciclo(j, hoy)
             ult = informes.ultimo_validado(j)
@@ -411,7 +424,8 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
                 },
                 "ultimo": None if ult is None else {"id": ult.id, "fecha": str(timezone.localtime(ult.validado_en).date())},
             })
-        return Response({"jugadores": out, "puede_validar": valida_informes(request.user),
+        return Response({"jugadores": out, "ve_tardes": ve_ct,
+                         "puede_validar": valida_informes(request.user) or valida_alto_rendimiento(request.user),
                          "evalua_tenis": evalua_tenis_solo_informes(request.user),
                          "evalua_fisico": evalua_fisico(request.user),
                          "puede_asignar": coordina_informes(request.user), "yo": request.user.id,

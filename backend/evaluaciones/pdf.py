@@ -97,12 +97,32 @@ def _foto(jugador):
     return ""
 
 
+# Los textos que hablan de la escala del tenis (la física sigue del 1 al 5).
+_TEXTOS_ESCALA = ("sobre", "nota_media", "escala_corta", "escala")
+
+
+def _con_escala(t, escala):
+    if escala == 5:
+        return t
+    cambia = lambda v: (v.replace("del 1 al 5", f"del 1 al {escala}").replace("from 1 to 5", f"from 1 to {escala}")
+                        .replace("sobre 5", f"sobre {escala}").replace("out of 5", f"out of {escala}"))
+    return {k: cambia(v) if k in _TEXTOS_ESCALA else v for k, v in t.items()}
+
+
+def _destacado(frases):
+    """La primera frase del entrenador para un recuadro de la portada; si es
+    larga, con letra más pequeña para que quepa."""
+    texto = next((f.strip() for f in frases or [] if f and f.strip()), "") or "—"
+    return {"texto": texto, "tam": "" if len(texto) <= 24 else "larga" if len(texto) <= 44 else "muy-larga"}
+
+
 def datos(ev, idioma=None):
     """Todo lo que pinta la plantilla, ya calculado y formateado, en `idioma`
     (por defecto, el de la evaluación). Los textos del entrenador se traducen
     si hace falta (`traduccion.tenis`)."""
     idioma = idioma or ev.idioma
-    t = TEXTOS[idioma]
+    escala = ev.escala or 5
+    t = _con_escala(TEXTOS[idioma], escala)
     en = idioma == "EN"
     tr = traduccion.tenis(ev, idioma)
     bloques = []
@@ -117,13 +137,13 @@ def datos(ev, idioma=None):
             "media_num": media,
             "media": _num(media, idioma),
             # Como texto: Django pintaría los decimales con coma y el SVG/CSS no lo entiende.
-            "ancho": f"{(media or 0) / 5 * 100:.1f}",
-            "arco": f"{(media or 0) / 5 * PERIMETRO:.2f}",
+            "ancho": f"{(media or 0) / escala * 100:.1f}",
+            "arco": f"{(media or 0) / escala * PERIMETRO:.2f}",
             "comentario": tr["comentarios"].get(b["clave"], ""),
             "criterios": [{
                 "etiqueta": en_ if en else es,
                 "nota": n or "—",
-                "segmentos": [bool(n) and i < n for i in range(5)],
+                "segmentos": [bool(n) and i < n for i in range(escala)],
             } for (_, es, en_), n in zip(b["criterios"], notas)],
         })
     todas = [n for n in ev.puntuaciones.values() if n]
@@ -133,6 +153,9 @@ def datos(ev, idioma=None):
     pie = re.sub(r"[<>]", "", pie).replace("\\", "\\\\").replace('"', '\\"')
     return {
         "t": t,
+        "escala": escala,
+        # La leyenda de la página 2: algo más de la mitad encendida.
+        "leyenda": [i < round(escala * 0.6) for i in range(escala)],
         "pie": pie,
         "jugador": ev.jugador.nombre,
         "entrenador": ev.nombre_evaluador,
@@ -141,8 +164,11 @@ def datos(ev, idioma=None):
         "bloques": bloques,
         "pares": [bloques[i:i + 2] for i in range(0, len(bloques), 2)],
         "filas_anillos": [bloques[:4], bloques[4:]],
-        "mejor": ordenados[0],
-        "peor": ordenados[-1],
+        # «Punto fuerte» y «A trabajar» de la portada: lo primero que escribió
+        # el entrenador, no el bloque con más o menos nota (Sergio, 12/11/2026:
+        # eso lo ponen los entrenadores, no la app).
+        "punto_fuerte": _destacado(tr["fortalezas"]),
+        "a_trabajar": _destacado(tr["mejoras"]),
         "ordenados": ordenados,
         "iniciales": _iniciales(ev.jugador.nombre),
         "foto": _foto(ev.jugador),
@@ -241,11 +267,18 @@ def datos_informe(inf, idioma="ES"):
         d["t"] = {**d["t"], "academia": d["t"]["academia_tardes"]}
     previo = anterior(inf)
     if previo and previo.tenis:
+        # Si el anterior se puntuó con otra escala (del 1 al 5), se lleva a la de ahora.
+        factor = (inf.tenis.escala or 5) / (previo.tenis.escala or 5)
+
+        def antes(claves):
+            m = _media(previo.tenis.puntuaciones, claves)
+            return None if m is None else m * factor
+
         for b, cat in zip(d["bloques"], catalogo.BLOQUES):
             claves = [c[0] for c in cat["criterios"]]
-            b["evol"] = _evol(b["media_num"], _media(previo.tenis.puntuaciones, claves), idioma)
+            b["evol"] = _evol(b["media_num"], antes(claves), idioma)
         actual = _media(inf.tenis.puntuaciones, catalogo.CRITERIOS)
-        d["evol_media"] = _evol(actual, _media(previo.tenis.puntuaciones, catalogo.CRITERIOS), idioma)
+        d["evol_media"] = _evol(actual, antes(catalogo.CRITERIOS), idioma)
     d["fisico"] = datos_fisico(inf, idioma) if inf.fisica else None
     d["foto"] = _foto_subida(inf.jugador) or d["foto"]
     if inf.validado_en:

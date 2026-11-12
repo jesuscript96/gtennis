@@ -176,6 +176,20 @@ function Informes() {
   if (error) return <p className="err">{error}</p>;
   if (!panel) return <p className="msg">Cargando…</p>;
 
+  // El head coach (12/11/2026) solo entra a validar los de Alto rendimiento de su color.
+  if (!panel.ve_tardes) {
+    return (
+      <div>
+        <div className="page-head"><h1>Informes</h1></div>
+        <p className="help">
+          Los informes de <b>Alto rendimiento</b> de tu color que esperan validación. Ábrelos, revisa el
+          PDF y apruébalos o devuélvelos al entrenador con una nota. Dirección también puede validarlos.
+        </p>
+        <PorValidar informes={pendientes} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-head"><h1>Informes</h1></div>
@@ -185,7 +199,7 @@ function Informes() {
         hace su parte de tenis. Cuando las dos partes están terminadas, se avisa a quien coordina y pasa
         a validar: quien tiene la función «Valida informes» lo aprueba (y lo envía a la familia) o lo
         devuelve con una nota. Los de <b>Alto rendimiento</b> (solo tenis, los hace el entrenador de su
-        grupo) los valida <b>dirección</b>, también aquí en «Por validar». El siguiente toca a los 90 días
+        grupo) los validan <b>dirección</b> y el <b>head coach</b> de su color, también aquí en «Por validar». El siguiente toca a los 90 días
         de validarlo.
       </p>
       {panel.puede_validar && (

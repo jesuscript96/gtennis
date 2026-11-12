@@ -68,8 +68,8 @@ function Tenis({ pestanas }) {
         comentario, escrito o dictado con el micrófono del teclado. Al final escribes sus fortalezas y
         lo que tiene que mejorar, y Claude lo deja bien redactado sin cambiarle el sentido.
         En <b>Alto rendimiento</b> evalúas a los jugadores de tu grupo (el head coach, a los de su
-        color); al terminar, el informe pasa a <b>dirección</b> para validarlo y, si te lo devuelve, te
-        llega un aviso con lo que hay que corregir.
+        color) del 1 al 10; al terminar, el informe pasa a validar (lo validan el <b>head coach</b> de su
+        color y <b>dirección</b>) y, si te lo devuelven, te llega un aviso con lo que hay que corregir.
       </p>
 
       <div className="card eval-nueva">

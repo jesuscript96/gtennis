@@ -21,7 +21,7 @@ export default function InformeDeLaEvaluacion({ informe, parte }) {
     <div className={`informe-de-eval${devuelta ? " devuelta" : ""}`}>
       <span>
         {informe.circuito === "alto_rendimiento"
-          ? <>Es su <b>informe</b> de Alto rendimiento: al terminarla pasa a <b>dirección</b> para validarla.{" "}</>
+          ? <>Es su <b>informe</b> de Alto rendimiento: al terminarla pasa a validar (el <b>head coach</b> de su color o <b>dirección</b>).{" "}</>
           : <>Forma parte del <b>informe conjunto</b> (tenis + preparación física):{" "}</>}
         <span className={`pill ${PILL[informe.estado]}`}>
           {informe.estado === "EN_CURSO" && informe.circuito === "alto_rendimiento" ? "A medias" : TEXTO[informe.estado]}

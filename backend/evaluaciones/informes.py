@@ -18,7 +18,7 @@ from django.utils import timezone
 
 from academy.models import Aviso
 from academy.permissions import (
-    COORDINA_TARDES, usuarios_avisar_validar, usuarios_direccion, valida_alto_rendimiento, valida_informes,
+    COORDINA_TARDES, es_coach, es_direccion, usuarios_avisar_validar, usuarios_direccion, valida_informes,
 )
 
 from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, MiembroTardes
@@ -129,17 +129,37 @@ def pdf_de(inf, idioma="ES"):
 
 
 def puede_validar(user, inf):
-    """Quién aprueba, devuelve o reabre este informe: los de Alto rendimiento,
-    solo dirección (12/11/2026); los de tardes, quien tiene «Valida informes»."""
+    """Quién aprueba, devuelve o reabre este informe. Alto rendimiento
+    (12/11/2026): dirección y el head coach de su color. Tardes: quien tiene
+    «Valida informes»."""
     if inf.circuito == "alto_rendimiento":
-        return valida_alto_rendimiento(user)
+        if es_direccion(user):
+            return True
+        if not es_coach(user):
+            return False
+        from academy.models import Jugador
+        from academy.scope import jugadores_que_evalua
+
+        return jugadores_que_evalua(user, base=Jugador.objects.all()).filter(pk=inf.jugador_id).exists()
     return valida_informes(user)
+
+
+def head_coaches_de(jugador):
+    """Los head coaches del color del jugador: los de los bloques donde está
+    quien le gestiona."""
+    from academy.models import Coach
+
+    gestores = [jugador.entrenador_responsable_id, *jugador.cogestores.values_list("pk", flat=True)]
+    coaches = (Coach.objects.filter(activo=True, entrenadores__in=[g for g in gestores if g],
+                                    user__isnull=False, user__is_active=True)
+               .select_related("user").distinct())
+    return [c.user for c in coaches]
 
 
 def usuarios_validan(inf):
     """A quién se avisa de que este informe está listo para validar."""
     if inf.circuito == "alto_rendimiento":
-        return usuarios_direccion()
+        return usuarios_direccion() + head_coaches_de(inf.jugador)
     return usuarios_avisar_validar()
 
 
@@ -165,6 +185,21 @@ def guardar_en_drive(inf):
     except drive.DriveNoDisponible as e:
         return f"{e} El informe está en la app; se reintenta al validar."
     return aviso
+
+
+def tras_borrar_parte(inf):
+    """Después de borrar una evaluación: si su informe se ha quedado sin
+    ninguna parte, se borra también, y su PDF va a la papelera de Drive
+    (12/11/2026: se borran los de prueba para empezar del 1 al 10)."""
+    from . import drive
+
+    if inf is None:
+        return
+    inf = Informe.objects.filter(pk=inf.pk).first()
+    if inf is None or inf.tenis_id or inf.fisica_id:
+        return
+    drive.a_la_papelera(inf.drive_file_id)
+    inf.delete()
 
 
 def parte_terminada(ev):
