@@ -141,6 +141,40 @@ resumen = {r["migracion"] + " " + r["accion"] + " " + r["modelo"]: r["n"] for r 
 print(json.dumps({"problemas": problemas, "disponible_suelto": sueltos, "archivo": resumen}, ensure_ascii=False, indent=1))
 '''
 
+# Lo que el motor ve de cada jugador y entrenador, franja a franja y día a día,
+# con el código que corra (el mismo texto vale para la versión vieja y la nueva).
+DECISIONES = r"""
+import json, os
+from datetime import timedelta
+from academy.models import Entrenador, Jugador, Turno, VacacionesEntrenador, HorarioEntrenador
+from scheduling.models import Semana, DisponibilidadEntrenador, ESTADOS_EXCLUYENTES
+from engine.service import _overrides, override_efectivo, motivo_no_disponible, hay_entrenamiento
+out = {}
+turnos = list(Turno.objects.filter(activo=True))
+jugadores = list(Jugador.objects.filter(activo=True).values_list("id", flat=True))
+coaches = list(Entrenador.objects.filter(activo=True))
+for semana in Semana.objects.order_by("fecha_inicio"):
+    for dia in range(6):
+        fecha = semana.fecha_inicio + timedelta(days=dia)
+        ovr = _overrides(semana, dia)
+        for j in jugadores:
+            for t in turnos:
+                d = override_efectivo(ovr, j, t, fecha)
+                estado = getattr(d, "estado", None) or "DISPONIBLE"
+                out[f"J|{fecha}|{j}|{t.codigo}"] = [estado not in ESTADOS_EXCLUYENTES, estado]
+        vac = {}
+        for v in VacacionesEntrenador.objects.filter(fecha_inicio__lte=fecha, fecha_fin__gte=fecha):
+            vac.setdefault(v.entrenador_id, []).append(v)
+        jornada = {(h.entrenador_id, h.dia): (h.manana, h.tarde) for h in HorarioEntrenador.objects.filter(dia=dia)}
+        partes = {d.entrenador_id: d for d in DisponibilidadEntrenador.objects.filter(semana=semana, dia=dia)}
+        for c in coaches:
+            for t in turnos:
+                if hay_entrenamiento(dia, t.bloque):
+                    out[f"E|{fecha}|{c.id}|{t.codigo}"] = motivo_no_disponible(c, dia, t, fecha, vac, jornada, partes) is None
+json.dump(out, open(os.environ["SALIDA"], "w"))
+print(len(out))
+"""
+
 VIEJO_ESCRIBE = r"""
 from datetime import date, timedelta
 from academy.models import Entrenador, Jugador, VacacionesEntrenador
@@ -165,6 +199,7 @@ def main():
     ap.add_argument("--trabajo", default=str(Path(os.environ.get("TMPDIR", "/tmp")) / "ensayo_orden"))
     ap.add_argument("--puerto", type=int, default=55432)
     ap.add_argument("--mantener", action="store_true", help="no parar PostgreSQL al acabar")
+    ap.add_argument("--desde", help="comparar el motor desde esta fecha (AAAA-MM-DD; por defecto, hoy)")
     o = ap.parse_args()
     t = Path(o.trabajo)
     t.mkdir(parents=True, exist_ok=True)
@@ -194,11 +229,26 @@ def main():
         manage(prod_backend, url, "loaddata", str(Path(o.copia).resolve()))
         antes = volcar(prod_backend, url, t / "A_antes.json")
         log(f"1. Producción reconstruida: {len(antes)} filas.")
+        e = entorno(url); e["SALIDA"] = str(t / "motor_viejo.json")
+        run([PY, "manage.py", "shell", "-c", DECISIONES], cwd=prod_backend, env=e)
 
         # Migrar con el código nuevo.
         r = manage(BACKEND, url, "migrate", "--noinput")
         aplicadas = [l.strip() for l in r.stdout.splitlines() if l.strip().startswith("Applying")]
         log("2. Migraciones nuevas:\n   " + "\n   ".join(aplicadas))
+        e = entorno(url); e["SALIDA"] = str(t / "motor_nuevo.json")
+        run([PY, "manage.py", "shell", "-c", DECISIONES], cwd=BACKEND, env=e)
+        from datetime import date
+        hoy = (o.desde or date.today().isoformat())
+        mv, mn = json.load(open(t / "motor_viejo.json")), json.load(open(t / "motor_nuevo.json"))
+        claves = [k for k in set(mv) | set(mn) if k.split("|")[1] >= hoy]
+        puede = lambda v: v[0] if isinstance(v, list) else v  # jugador: [entrena, motivo]
+        dif_motor = sorted(k for k in claves if puede(mv.get(k)) != puede(mn.get(k)))
+        dif_motivo = sorted(k for k in claves if k not in dif_motor and mv.get(k) != mn.get(k))
+        log(f"   Motor, desde {hoy}: {len(claves)} decisiones (jugador o entrenador × franja × día)."
+            f" Cambia si entrena o no: {len(dif_motor)}", [(k, mv.get(k), mn.get(k)) for k in dif_motor[:10]])
+        log(f"   Mismo resultado pero otro motivo a la vista (dos faltas el mismo día): {len(dif_motivo)}",
+            [(k, mv.get(k), mn.get(k)) for k in dif_motivo[:5]])
         r = manage(BACKEND, url, "shell", "-c", COMPROBAR)
         comp = json.loads(r.stdout)
         log("3. Comprobación tras migrar:", json.dumps(comp, ensure_ascii=False, indent=1))
@@ -251,7 +301,7 @@ def main():
             dif3 = comparar(antes_repaso, tras)
             log(f"   Deshacer el repaso: {len(dif3)} diferencias con antes del repaso.", dif3[:5])
             repaso_ok = repaso_ok and not dif3
-        ok = not comp["problemas"] and not sin_archivo and not dif and viejo_ok and repaso_ok
+        ok = not comp["problemas"] and not sin_archivo and not dif and viejo_ok and repaso_ok and not dif_motor
         log("RESULTADO:", "BIEN: nada se pierde y se deshace exacto." if ok else "HAY PROBLEMAS (ver arriba).")
     finally:
         (t / "informe.txt").write_text("\n".join(informe))
