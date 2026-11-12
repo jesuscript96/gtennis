@@ -231,7 +231,7 @@ export default function TardesPage() {
         y de baja; los informes se reparten, se hacen y se validan en <Link href="/informes">Informes</Link>.
       </p>
       <div className="tabs-inv" role="tablist">
-        {[["jugadores", "Jugadores"], ["equipo", "Entrenadores"]].map(([k, t]) => (
+        {[["jugadores", "Jugadores"], ["equipo", "Equipo"]].map(([k, t]) => (
           <button key={k} type="button" role="tab" aria-selected={vista === k}
             className={`chip${vista === k ? " on" : ""}`} onClick={() => setVista(k)}>{t}</button>
         ))}

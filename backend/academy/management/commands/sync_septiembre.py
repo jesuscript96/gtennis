@@ -319,8 +319,9 @@ class Command(BaseCommand):
                    if e.pk not in vivos_e and not e.gestiona_todos_jugadores]
         if not seco:
             Jugador.objects.filter(pk__in=[j.pk for j in bajas_j]).update(activo=False)
-            Entrenador.objects.filter(pk__in=[e.pk for e in bajas_e]).update(
-                activo=False, disponible_semana=False)
+            # Solo de baja: el interruptor «Disponible esta semana» ya no se usa
+            # (11/11/2026) y, si se le reactivara, le dejaría fuera sin verse.
+            Entrenador.objects.filter(pk__in=[e.pk for e in bajas_e]).update(activo=False)
 
         # -- 2. Presencia por día -----------------------------------------
         lunes = (date.fromisoformat(opts["lunes"]) if opts["lunes"]

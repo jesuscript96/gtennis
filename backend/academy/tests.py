@@ -241,8 +241,14 @@ class OrganigramaFueraDeServicioTests(TestCase):
 
         self.assertFalse(Jugador.objects.filter(entrenador_responsable=jorge).exists())
         self.assertTrue(Jugador.objects.filter(entrenador_responsable=mario).exists())
+        # Fuera de servicio va a su calendario, un año desde hoy; el
+        # interruptor de la ficha ya no se usa (10/11/2026).
         jorge.refresh_from_db()
-        self.assertFalse(jorge.disponible_semana)
+        self.assertTrue(jorge.disponible_semana)
+        from academy.calendario import MOTIVO_CARGA
+        self.assertTrue(VacacionesEntrenador.objects.filter(
+            entrenador=jorge, motivo=MOTIVO_CARGA, fecha_inicio=date.today(),
+            fecha_fin=date.today() + timedelta(days=365)).exists())
         # Sigue en su bloque, pero no entrena a nadie: no tiene porcentajes.
         self.assertFalse(ResponsableJugador.objects.filter(entrenador=jorge).exists())
 
@@ -347,15 +353,19 @@ class PorcentajesDelJugadorApiTests(TestCase):
             {"entrenador": self.dani.id, "prioridad": 2, "porcentaje": dani},
         ]}
 
-    def test_guarda_los_porcentajes_y_el_responsable(self):
+    def test_guarda_los_porcentajes_sin_tocar_el_responsable(self):
+        # 10/11/2026 (decisión 4): quién gestiona se cambia en Grupos; aquí
+        # solo se guardan los porcentajes aunque llegue otro `responsable`.
+        Jugador.objects.filter(pk=self.jugador.pk).update(entrenador_responsable=self.dani)
         r = self.api.post(self.url, self._cuerpo(90, 10), format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(
             [(f["nombre"], f["porcentaje"]) for f in r.json()["entrenadores"]],
             [("Víctor", 90), ("Dani", 10)],
         )
+        self.assertEqual(r.json()["responsable"], self.dani.id)
         self.jugador.refresh_from_db()
-        self.assertEqual(self.jugador.entrenador_responsable, self.victor)
+        self.assertEqual(self.jugador.entrenador_responsable, self.dani)
 
     def test_no_guarda_un_secundario_por_debajo_del_minimo(self):
         r = self.api.post(self.url, self._cuerpo(95, 5), format="json")
@@ -865,8 +875,8 @@ class TardeConT2YEntrenadorDeTardeTests(TestCase):
 
 class ResponsableGestionTests(TestCase):
     """El responsable de un alumno («Gestión») lo ve —y lo tiene el primero de
-    su lista—, y quien lo tiene a su cargo (`jugadores_gestionados`) también,
-    aunque ya no sea su responsable."""
+    su lista—. Desde el 10/11/2026 la lista antigua de acceso
+    (`jugadores_gestionados`) ya no da visibilidad."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -880,7 +890,7 @@ class ResponsableGestionTests(TestCase):
         self.api = APIClient()
         self.api.force_authenticate(usuario)
 
-    def test_ve_a_los_suyos_y_a_los_que_tiene_a_cargo(self):
+    def test_ve_a_los_suyos_y_no_los_de_la_lista_antigua(self):
         from academy.scope import jugadores_visibles
 
         suyo = Jugador.objects.create(nombre="Suyo", entrenador_responsable=self.victor)
@@ -888,7 +898,8 @@ class ResponsableGestionTests(TestCase):
         self.victor.jugadores_gestionados.add(a_cargo)
         Jugador.objects.create(nombre="Ajeno", entrenador_responsable=self.otro)
         ids = set(jugadores_visibles(self.victor.user).values_list("id", flat=True))
-        self.assertEqual(ids, {suyo.id, a_cargo.id})
+        self.assertEqual(ids, {suyo.id})
+        self.assertFalse(self.victor.puede_gestionar(a_cargo))
 
     def test_el_entrenador_ve_quien_lo_gestiona_pero_no_lo_cambia(self):
         j = Jugador.objects.create(nombre="Carlos", entrenador_responsable=self.victor)
@@ -1121,9 +1132,11 @@ class GruposGestionNombresTests(SimpleTestCase):
 
 
 class FichaDeportivaCoachTests(TestCase):
-    """El head coach completa lo deportivo de las altas nuevas (06/10/2026)."""
+    """El head coach completa lo deportivo de las altas nuevas (06/10/2026).
+    Desde el 10/11/2026 la división es de dirección (decisión 5) y quién
+    gestiona se pone en Grupos, nunca desde la ficha (decisión 4)."""
 
-    def test_ve_el_alta_sin_gestion_y_le_pone_division_y_entrenador(self):
+    def test_ve_el_alta_sin_gestion_y_la_coloca_en_grupos_no_en_la_ficha(self):
         from rest_framework.test import APIClient
 
         from academy.models import Coach
@@ -1131,7 +1144,7 @@ class FichaDeportivaCoachTests(TestCase):
 
         u = User.objects.create_user(username="sergio", password="x", role=User.Role.COACH)
         blas = Entrenador.objects.create(nombre="Blas")
-        Coach.objects.create(nombre="Sergio", user=u).entrenadores.add(blas)
+        Coach.objects.create(nombre="Sergio", color="amarillo", user=u).entrenadores.add(blas)
         ajeno = Entrenador.objects.create(nombre="Otro")
         Jugador.objects.create(nombre="De otro", entrenador_responsable=ajeno)
         nuevo = Jugador.objects.create(nombre="Nuevo")
@@ -1145,15 +1158,22 @@ class FichaDeportivaCoachTests(TestCase):
         nombres = {f["nombre"] for f in filas}
         self.assertIn("Nuevo", nombres)
         self.assertNotIn("De otro", nombres)
-        r = api.patch(f"/api/jugadores/{nuevo.id}/", {
-            "division": div.id, "entrenador_responsable": blas.id,
-            "cogestores": [ajeno.id], "vecindad": "SOLO",
-        }, format="json")
+        url = f"/api/jugadores/{nuevo.id}/"
+        # Desde la ficha, ni gestión ni división.
+        for cuerpo in ({"entrenador_responsable": blas.id}, {"cogestores": [ajeno.id]},
+                       {"division": div.id}):
+            self.assertEqual(api.patch(url, cuerpo, format="json").status_code, 403, cuerpo)
+        # Lo deportivo que sí es suyo, sí.
+        r = api.patch(url, {"vecindad": "SOLO"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        # Y le pone grupo desde Grupos.
+        r = api.post("/api/grupos/mover/", {"jugador": nuevo.id, "entrenador": blas.id},
+                     format="json")
         self.assertEqual(r.status_code, 200, r.content)
         nuevo.refresh_from_db()
         self.assertEqual((nuevo.division_id, nuevo.entrenador_responsable_id, nuevo.vecindad),
-                         (div.id, blas.id, "SOLO"))
-        self.assertEqual(list(nuevo.cogestores.all()), [ajeno])
+                         (None, blas.id, "SOLO"))
+        self.assertEqual(list(nuevo.cogestores.all()), [])
 
 
 class GruposParaTodosTests(TestCase):
@@ -1214,8 +1234,12 @@ class GruposParaTodosTests(TestCase):
 
 class InvitadoComoJugadorTests(TestCase):
     """14/10/2026: el invitado es una persona con su ficha deportiva y todo lo
-    que mira el motor; los días que viene son visitas, y dirección aprueba la
-    ficha y cada visita. Volver a invitarle solo añade días."""
+    que mira el motor; los días que viene son visitas. Volver a invitarle solo
+    añade días.
+
+    Desde el 10/11/2026 (decisión 8) solo dirección —y quien tenga la función
+    «Aprueba invitados»— mete invitados, y quedan aprobados al momento: un
+    entrenador ya no los propone."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -1240,7 +1264,7 @@ class InvitadoComoJugadorTests(TestCase):
         self.ent2.force_authenticate(u_otro)
         self.dir.force_authenticate(u_dir)
 
-    def _proponer(self, **extra):
+    def _datos(self, **extra):
         datos = {
             "nombre": "Llorca", "division": self.d3.id, "edad": 15, "sexo": "CHICO",
             "fechas": {"2026-10-19": {"manana": "M1", "tarde": ""},
@@ -1249,33 +1273,41 @@ class InvitadoComoJugadorTests(TestCase):
             "jugar_con": self.amigo.id, "pareja_estricta": False,
             "no_coincidir_con": [self.enemigo.id],
             "entrena_con": self.ivan.id, "no_entrena_con": [self.otro.id],
+            "entrenador_solicitante": self.ivan.id,
         }
         datos.update(extra)
-        return self.ent.post("/api/invitados/", datos, format="json")
+        return datos
 
-    def test_sin_dias_no_se_puede_proponer(self):
-        self.assertEqual(self._proponer(fechas={}).status_code, 400)
+    def _meter(self, cliente=None, **extra):
+        return (cliente or self.dir).post("/api/invitados/", self._datos(**extra), format="json")
 
-    def test_al_aprobar_sale_un_jugador_con_todo(self):
+    def test_sin_dias_no_se_puede_meter(self):
+        self.assertEqual(self._meter(fechas={}).status_code, 400)
+
+    def test_un_entrenador_no_mete_invitados(self):
+        r = self._meter(self.ent)
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertFalse(Invitado.objects.exists())
+
+    def test_al_meterlo_direccion_sale_un_jugador_con_todo(self):
         from academy.models import (
             Contrato, PreferenciaPareja, PreferenciaSuperficie, Rencilla,
             VetoEntrenador, VisitaInvitado,
         )
 
-        r = self._proponer()
+        r = self._meter()
         self.assertEqual(r.status_code, 201, r.content)
-        inv = r.json()
-        self.assertEqual(len(inv["visitas"]), 2)
-        r = self.dir.post(f"/api/invitados/{inv['id']}/aprobar/")
-        self.assertEqual(r.status_code, 200, r.content)
-        j = Jugador.objects.get(pk=r.json()["jugador_creado"])
+        inv = Invitado.objects.get(pk=r.json()["id"])
+        self.assertEqual((inv.estado, inv.entrenador_solicitante), ("APROBADO", self.ivan))
+        self.assertEqual(inv.visitas.count(), 2)
+        j = inv.jugador_creado
         self.assertEqual((j.division, j.edad, j.sexo, j.vecindad, j.entrenador_responsable),
                          (self.d3, 15, "CHICO", "ARRIBA", self.ivan))
         self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-10-21"))
         self.assertFalse(HorarioJugador.objects.filter(jugador=j).filter(
             Q(entrena_manana=True) | Q(entrena_tarde=True)).exists())
         # El miércoles por la tarde está cerrado y se descarta.
-        v = VisitaInvitado.objects.get(invitado_id=inv["id"], fecha=date(2026, 10, 21))
+        v = VisitaInvitado.objects.get(invitado=inv, fecha=date(2026, 10, 21))
         self.assertEqual((v.manana, v.tarde, v.estado), ("", None, "APROBADA"))
         self.assertTrue(PreferenciaSuperficie.objects.filter(jugador=j, superficie="TIERRA").exists())
         self.assertEqual(PreferenciaPareja.objects.get(jugador=j).tipo, "SOFT")
@@ -1284,60 +1316,62 @@ class InvitadoComoJugadorTests(TestCase):
         self.assertEqual(Contrato.objects.get(jugador=j).entrenador, self.ivan)
         self.assertEqual(VetoEntrenador.objects.get(jugador=j).entrenador, self.otro)
 
-    def test_volver_a_invitar_solo_anade_dias_y_hay_que_aprobarlos(self):
+    def test_volver_a_invitar_solo_anade_dias(self):
         from academy.models import VisitaInvitado
 
-        inv = self._proponer().json()
-        self.dir.post(f"/api/invitados/{inv['id']}/aprobar/")
-        # Otro entrenador le invita en noviembre: la ficha no se toca.
-        r = self.ent2.post(f"/api/invitados/{inv['id']}/dias/",
-                           {"fechas": {"2026-11-16": {"manana": "M2"}}}, format="json")
+        inv = self._meter().json()
+        # Le vuelven a invitar en noviembre: la ficha no se toca.
+        r = self.dir.post(f"/api/invitados/{inv['id']}/dias/",
+                          {"fechas": {"2026-11-16": {"manana": "M2"}}}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         v = VisitaInvitado.objects.get(invitado_id=inv["id"], fecha=date(2026, 11, 16))
-        self.assertEqual((v.estado, v.solicitante), ("PENDIENTE", self.blas))
+        self.assertEqual(v.estado, "APROBADA")
         self.assertEqual(Invitado.objects.filter(nombre="Llorca").count(), 1)
         j = Jugador.objects.get(pk=Invitado.objects.get(pk=inv["id"]).jugador_creado_id)
-        self.assertEqual(str(j.fecha_baja), "2026-10-21")
-        self.dir.post(f"/api/visitas-invitado/{v.id}/aprobar/")
-        j.refresh_from_db()
         self.assertEqual((str(j.fecha_alta), str(j.fecha_baja)), ("2026-10-19", "2026-11-16"))
+        self.assertEqual(j.division, self.d3)
         self.assertEqual(Jugador.objects.filter(nombre__startswith="Llorca").count(), 1)
 
     def test_el_calendario_lista_las_visitas_del_mes(self):
-        self._proponer()
+        self._meter()
         r = self.ent2.get("/api/visitas-invitado/?desde=2026-10-01&hasta=2026-10-31")
         filas = r.json().get("results", r.json())
         self.assertEqual([(f["fecha"], f["invitado_nombre"], f["estado"]) for f in filas],
-                         [("2026-10-19", "Llorca", "PENDIENTE"),
-                          ("2026-10-21", "Llorca", "PENDIENTE")])
+                         [("2026-10-19", "Llorca", "APROBADA"),
+                          ("2026-10-21", "Llorca", "APROBADA")])
 
     def test_la_ficha_aprobada_solo_la_cambia_direccion_y_pasa_al_jugador(self):
-        inv = self._proponer().json()
-        self.assertEqual(self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 16},
-                                        format="json").status_code, 200)
-        self.dir.post(f"/api/invitados/{inv['id']}/aprobar/")
+        inv = self._meter().json()
         self.assertEqual(self.ent.patch(f"/api/invitados/{inv['id']}/", {"edad": 17},
                                         format="json").status_code, 403)
         self.assertEqual(self.dir.patch(f"/api/invitados/{inv['id']}/", {"edad": 17},
                                         format="json").status_code, 200)
         self.assertEqual(Jugador.objects.get(nombre__startswith="Llorca").edad, 17)
 
-    def test_dani_e_ivan_lo_meten_ya_aprobado(self):
-        """21/10/2026: si lo pone dirección, Dani o Iván (aunque sean coaches),
-        el invitado y sus días quedan aprobados al momento."""
+    def test_quien_aprueba_invitados_lo_mete_ya_aprobado(self):
+        """21/10/2026: si lo pone dirección o quien aprueba invitados (Dani,
+        aunque sea coach), el invitado y sus días quedan aprobados al momento.
+        Desde el 10/11/2026 es la función «Aprueba invitados», no su nombre."""
         from rest_framework.test import APIClient
 
         from academy.models import Aviso, VisitaInvitado
-        from users.models import User
+        from users.models import Funcion, User
 
         u_dani = User.objects.create_user(
             username="daniel.gimeno", password="x", role=User.Role.COACH)
         dani = Entrenador.objects.create(nombre="Dani", user=u_dani)
         c = APIClient()
         c.force_authenticate(u_dani)
-        self.assertIs(c.get("/api/auth/me/").json()["aprueba_invitados"], True)
         datos = {"nombre": "Chicote", "division": self.d3.id,
                  "fechas": {"2026-10-22": {"manana": "M1"}}}
+        # Sin la función, su nombre no le da nada.
+        self.assertIs(c.get("/api/auth/me/").json()["aprueba_invitados"], False)
+        self.assertEqual(c.post("/api/invitados/", datos, format="json").status_code, 403)
+
+        Funcion.objects.create(usuario=u_dani, codigo="APRUEBA_INVITADOS")
+        # Las funciones se cachean por petición: en la siguiente, usuario fresco.
+        c.force_authenticate(User.objects.get(pk=u_dani.pk))
+        self.assertIs(c.get("/api/auth/me/").json()["aprueba_invitados"], True)
         r = c.post("/api/invitados/", datos, format="json")
         self.assertEqual(r.status_code, 201, r.content)
         inv = Invitado.objects.get(pk=r.json()["id"])
@@ -1350,13 +1384,15 @@ class InvitadoComoJugadorTests(TestCase):
                {"fechas": {"2026-10-26": {"manana": "M2"}}}, format="json")
         self.assertEqual(VisitaInvitado.objects.get(invitado=inv, fecha=date(2026, 10, 26)).estado,
                          "APROBADA")
-        # Y aprueba lo que proponen los demás.
-        otro = self._proponer().json()
-        self.assertEqual(c.post(f"/api/invitados/{otro['id']}/aprobar/").status_code, 200)
-        # Un entrenador cualquiera sigue necesitando aprobación.
-        self.assertEqual(Invitado.objects.get(pk=otro["id"]).estado, "APROBADO")
-        r = self.ent2.post("/api/invitados/", {**datos, "nombre": "Otro"}, format="json")
-        self.assertEqual(Invitado.objects.get(pk=r.json()["id"]).estado, "PENDIENTE")
+        # Y aprueba lo que haya pendiente (fichas de antes del 10/11/2026).
+        pendiente = Invitado.objects.create(nombre="Viejo", entrenador_solicitante=self.blas,
+                                            division=self.d3)
+        VisitaInvitado.objects.create(invitado=pendiente, fecha=date(2026, 10, 23), manana="M1",
+                                      solicitante=self.blas)
+        self.assertEqual(c.post(f"/api/invitados/{pendiente.id}/aprobar/").status_code, 200)
+        self.assertEqual(Invitado.objects.get(pk=pendiente.id).estado, "APROBADO")
+        # Un entrenador cualquiera no aprueba.
+        self.assertEqual(self.ent2.post(f"/api/invitados/{pendiente.id}/aprobar/").status_code, 403)
 
 
 class InvitadosFueraDelListadoTests(TestCase):

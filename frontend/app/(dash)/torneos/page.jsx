@@ -198,7 +198,9 @@ export default function TorneosPage() {
         const fila = { t, lunes, n: i + 1, total: ss.length };
         g.items.push(fila);
         // Primero los torneos a los que va alguien; el resto, plegado debajo.
-        (t.jugadores.length ? g.con : g.sin).push(fila);
+        // Los dados de alta a mano salen siempre a la vista (10/11/2026): si
+        // no, quien lo acaba de crear cree que no se ha guardado.
+        (t.jugadores.length || t.creado_por ? g.con : g.sin).push(fila);
       });
     }
     return [...porLunes.values()].sort((a, b) => (a.lunes < b.lunes ? -1 : 1));

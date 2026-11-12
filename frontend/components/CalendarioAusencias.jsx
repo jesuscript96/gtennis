@@ -33,11 +33,14 @@ const fmtCorta = (s) => {
   const d = deIso(s);
   return `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
 };
+// Si acaba otro año, con el año: «del 10 nov al 10 nov 2027».
 const tramoTxt = (desde, hasta) => (desde !== hasta
-  ? `del ${fmtCorta(desde)} al ${fmtCorta(hasta)}` : `el ${fmtCorta(desde)}`);
+  ? `del ${fmtCorta(desde)} al ${fmtCorta(hasta)}${hasta.slice(0, 4) !== desde.slice(0, 4) ? ` ${hasta.slice(0, 4)}` : ""}`
+  : `el ${fmtCorta(desde)}`);
 const cuando = (a) => (a.fecha_fin !== a.fecha_inicio
   ? tramoTxt(a.fecha_inicio, a.fecha_fin)
-  : `del ${fmtCorta(a.fecha_inicio)}`);
+  : `del ${fmtCorta(a.fecha_inicio)}${a.hora_desde || a.hora_hasta
+    ? ` (${(a.hora_desde || "").slice(0, 5) || "…"}–${(a.hora_hasta || "").slice(0, 5) || "…"})` : ""}`);
 
 // Lo que se declara, en el idioma de quien lo declara. Para el alumno, por
 // dentro son el estado y el subtipo de la matriz de estados.
@@ -69,13 +72,14 @@ const AMBITOS = [
   { value: "TARDE", label: "Solo la tarde", corto: "tarde" },
   { value: "M1", label: "Solo M1 · 8:30", corto: "M1" },
   { value: "M2", label: "Solo M2 · 10:30", corto: "M2" },
+  { value: "JP", label: "Solo JP · 12:30", corto: "JP" },
   { value: "T1", label: "Solo T1 · 14:15", corto: "T1" },
   { value: "T2", label: "Solo T2 · 15:30", corto: "T2" },
 ];
 // Qué franjas tapa cada opción: marcar «Toda la mañana» deja sin sentido M1 y
 // M2 sueltas, y al revés.
 const CUBRE = {
-  DIA: ["MANANA", "TARDE", "M1", "M2", "T1", "T2"],
+  DIA: ["MANANA", "TARDE", "M1", "M2", "JP", "T1", "T2"],
   MANANA: ["M1", "M2"], TARDE: ["T1", "T2"],
   M1: ["MANANA"], M2: ["MANANA"], T1: ["TARDE"], T2: ["TARDE"],
 };
@@ -119,7 +123,7 @@ function fuenteDeJugador(jugador) {
       return [...faltas, ...conFechas]
         .sort((a, b) => (a.fecha_inicio < b.fecha_inicio ? 1 : -1));
     },
-    crear: ({ desde, hasta, ambito, motivo, nota }) => (motivo.superficie
+    crear: ({ desde, hasta, ambito, motivo, nota, horaDesde, horaHasta }) => (motivo.superficie
       ? addPreferenciaSuperficie({
         jugador: jugador.id, superficie: motivo.superficie,
         fecha_desde: desde, fecha_hasta: hasta, estricta: true,
@@ -127,6 +131,7 @@ function fuenteDeJugador(jugador) {
       : addAusenciaFechas({
         jugador: jugador.id, fecha_inicio: desde, fecha_fin: hasta, ambito,
         estado: motivo.estado, subtipo: motivo.subtipo, nota,
+        ...(horaDesde || horaHasta ? { hora_desde: horaDesde || null, hora_hasta: horaHasta || null } : {}),
       })),
     borrar: (a) => (a.esSuperficie
       ? delPreferenciaSuperficie(a.prefId) : delAusenciaFechas(a.id)),
@@ -186,6 +191,9 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
   const selRef = useRef(new Set());
   const [sel, setSel] = useState(() => new Set());
   const [ambitos, setAmbitos] = useState(["DIA"]);
+  // Un solo día y «Todo el día»: puede ser solo unas horas («llega a las
+  // 10:30»), como en la antigua «Bajas por fechas» (11/11/2026).
+  const [horas, setHoras] = useState({ desde: "", hasta: "" });
   const [motivo, setMotivo] = useState(motivosFalta[0].value);
   const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -262,10 +270,18 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
       // Una falta por tramo y por franja marcada: el motor las lee de una en
       // una. La superficie va siempre al día entero.
       const franjas = m.superficie ? ["DIA"] : ambitos;
+      const conHoras = !m.superficie && dias.length === 1 && franjas.length === 1 && franjas[0] === "DIA"
+        && (horas.desde || horas.hasta);
+      if (conHoras && horas.desde && horas.hasta && horas.desde >= horas.hasta) {
+        throw new Error("La hora de vuelta tiene que ser después de la de salida.");
+      }
       let tardia = false;
       for (const [desde, hasta] of tramos(dias)) {
         for (const ambito of franjas) {
-          const r = await origenRef.current.crear({ desde, hasta, ambito, motivo: m, nota });
+          const r = await origenRef.current.crear({
+            desde, hasta, ambito, motivo: m, nota,
+            horaDesde: conHoras ? horas.desde : "", horaHasta: conHoras ? horas.hasta : "",
+          });
           if (r?.tardia) tardia = true;
         }
       }
@@ -278,6 +294,7 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
       marcar(new Set());
       setNota("");
       setAmbitos(["DIA"]);
+      setHoras({ desde: "", hasta: "" });
       await cargar();
       onCambio?.();
     } catch (e) { setError(e.message); }
@@ -365,6 +382,9 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
           <span className="cuando">
             {fmtCorta(a.fecha_inicio)}
             {a.fecha_fin !== a.fecha_inicio && ` → ${fmtCorta(a.fecha_fin)}`}
+            {a.fecha_fin.slice(0, 4) !== a.fecha_inicio.slice(0, 4) && ` ${a.fecha_fin.slice(0, 4)}`}
+            {(a.hora_desde || a.hora_hasta)
+              && ` · ${(a.hora_desde || "").slice(0, 5) || "…"}–${(a.hora_hasta || "").slice(0, 5) || "…"}`}
           </span>
           <span className="que">{queEs(a)}</span>
           {a.tardia && <span className="tag-tardia">tras el corte</span>}
@@ -522,6 +542,16 @@ export default function CalendarioAusencias({ jugador, fuente, motivos, onCambio
                   {a.label}
                 </button>
               ))}
+            </div>
+          )}
+          {!esSuperficie && sel.size === 1 && ambitos.length === 1 && ambitos[0] === "DIA" && (
+            <div className="fila-form cal-horas">
+              <label>Solo unas horas: desde (opcional)
+                <input type="time" value={horas.desde} onChange={(e) => setHoras({ ...horas, desde: e.target.value })} />
+              </label>
+              <label>hasta (opcional)
+                <input type="time" value={horas.hasta} onChange={(e) => setHoras({ ...horas, hasta: e.target.value })} />
+              </label>
             </div>
           )}
           {esSuperficie && (

@@ -88,7 +88,7 @@ export default function EvaluacionFisicaPage() {
           <div className="eval-acciones">
             {ev.puede_editar && <button type="button" className="btn" onClick={() => setEditando(true)}>
               {ev.estado === "BORRADOR" ? "Seguir" : "Editar"}</button>}
-            {ev.puede_editar && !confirmar && (
+            {ev.puede_borrar && !confirmar && (
               <button type="button" className="btn danger" onClick={() => setConfirmar(true)}>Borrar</button>
             )}
             {confirmar && (

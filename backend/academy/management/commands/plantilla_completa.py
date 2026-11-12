@@ -88,23 +88,38 @@ class Command(BaseCommand):
                     estrictas=estrictas, principal=principal, secundarios=secundarios)
 
     def _semana_vivida(self, lunes):
-        from scheduling.models import Asignacion, Disponibilidad, Semana
+        from scheduling.models import Asignacion, AusenciaJugador, Disponibilidad, Semana
 
         s = Semana.objects.filter(fecha_inicio=lunes).first()
-        if s is None:
-            return {}
         datos = {}
-        for a in Asignacion.objects.filter(semana=s).select_related("turno"):
-            bloque = "manana" if a.turno.bloque == "MANANA" else "tarde"
-            datos.setdefault(a.jugador_id, {}).setdefault(a.dia, {})[bloque] = a.turno.codigo
-        for d in Disponibilidad.objects.filter(semana=s, estado="AUSENCIA_JUGADOR"):
-            dia = datos.setdefault(d.jugador_id, {}).setdefault(d.dia, {})
-            if d.ambito in ("DIA", "MANANA"):
+        if s is not None:
+            for a in Asignacion.objects.filter(semana=s).select_related("turno"):
+                bloque = "manana" if a.turno.bloque == "MANANA" else "tarde"
+                datos.setdefault(a.jugador_id, {}).setdefault(a.dia, {})[bloque] = a.turno.codigo
+        # Las faltas viven en las faltas por fechas desde el 10/11/2026. Las
+        # que lleven horas («llega a las 10:30») no quitan la mañana entera.
+        faltas = []
+        sabado = lunes + timedelta(days=5)
+        for a in AusenciaJugador.objects.filter(
+                estado="AUSENCIA_JUGADOR", fecha_inicio__lte=sabado, fecha_fin__gte=lunes,
+                hora_desde__isnull=True, hora_hasta__isnull=True):
+            for i in range(6):
+                if a.cubre(lunes + timedelta(days=i)):
+                    faltas.append((a.jugador_id, i, a.ambito, a.subtipo,
+                                   a.get_subtipo_display()))
+        # Restos del parte semanal anteriores a la migración, si queda alguno.
+        if s is not None:
+            for d in Disponibilidad.objects.filter(semana=s, estado="AUSENCIA_JUGADOR"):
+                faltas.append((d.jugador_id, d.dia, d.ambito, d.subtipo,
+                               d.get_subtipo_display()))
+        for jugador_id, i, ambito, subtipo, motivo in faltas:
+            dia = datos.setdefault(jugador_id, {}).setdefault(i, {})
+            if ambito in ("DIA", "MANANA"):
                 dia.setdefault("manana", "no")
-            if d.ambito in ("DIA", "TARDE"):
+            if ambito in ("DIA", "TARDE"):
                 dia.setdefault("tarde", "no")
-            if d.subtipo:
-                dia["motivo"] = d.get_subtipo_display()
+            if subtipo:
+                dia["motivo"] = motivo
         return datos
 
     def handle(self, *args, **opts):
@@ -276,12 +291,24 @@ class Command(BaseCommand):
         for i, dia in enumerate(DIAS):
             fecha = lunes + timedelta(days=i)
             semana_e += [(f"{dia} {fecha:%d/%m}", 14), ("torneo/ausencia", 15)]
+        # «Disponible»: no, solo si está marcado como no disponible sin fecha
+        # de vuelta (lo que antes era el interruptor de la ficha: la carga de
+        # Excel o la migración). Unas vacaciones no cuentan: si la plantilla
+        # vuelve sin tocar, recargarla le dejaría un año fuera (11/11/2026).
+        from academy.calendario import MOTIVO_CARGA
+        from academy.models import VacacionesEntrenador
+
+        fuera_hoy = set(VacacionesEntrenador.objects.filter(
+            entrenador__in=d["entrenadores"], fecha_inicio__lte=hoy, fecha_fin__gte=hoy,
+            ambito="DIA", hora_desde__isnull=True, hora_hasta__isnull=True,
+            motivo__in=[MOTIVO_CARGA, "No disponible (estaba marcado en su ficha)"],
+        ).values_list("entrenador_id", flat=True))
         filas_e = []
         for e in d["entrenadores"]:
             f = [e.nombre, e.division_desde or "", e.division_hasta or "",
                  e.turno_manana.codigo if e.turno_manana_id else "",
                  e.turno_tarde.codigo if e.turno_tarde_id else "",
-                 "sí" if e.reserva else "no", "sí" if e.disponible_semana else "no"]
+                 "sí" if e.reserva else "no", "no" if e.id in fuera_hoy else "sí"]
             for i in range(5):
                 jor = d["jornadas"].get((e.id, i))
                 if jor is None:

@@ -39,6 +39,8 @@ export default function FeedbackPage() {
   const api = useMemo(() => resource("feedback"), []);
   const user = getUser();
   const esAdmin = !!user?.is_superadmin;
+  // Los head coaches también apuntan peticiones; cambiarlas, dirección (10/11/2026).
+  const puedeApuntar = esAdmin || !!user?.is_coach;
 
   const [tabKey, setTabKey] = useState("NUEVO");
   const [items, setItems] = useState(null);
@@ -132,7 +134,7 @@ export default function FeedbackPage() {
       <div className="feedback-toolbar">
         <input className="search" placeholder="Buscar…"
           value={search} onChange={(e) => setSearch(e.target.value)} />
-        {esAdmin && (
+        {puedeApuntar && (
           <button className="btn" onClick={abrirNuevo}>+ Nuevo en "{tab.label}"</button>
         )}
       </div>

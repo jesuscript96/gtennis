@@ -100,9 +100,16 @@ function rows(data) {
   return data && data.results ? data.results : data || [];
 }
 
+// Las listas venían cortadas a las 100 primeras filas (paginación del
+// servidor). Se piden enteras: ninguna lista del club pasa de unos miles.
+function entera(path) {
+  if (/[?&]limit=/.test(path)) return path;
+  return path + (path.includes("?") ? "&" : "?") + "limit=5000";
+}
+
 export function resource(name) {
   return {
-    list: async (q = "") => rows(await req(`/${name}/${q}`)),
+    list: async (q = "") => rows(await req(entera(`/${name}/${q}`))),
     get: (id) => req(`/${name}/${id}/`),
     create: (body) => req(`/${name}/`, { method: "POST", body: JSON.stringify(body) }),
     update: (id, body) =>
@@ -165,6 +172,12 @@ export const deshacerSemana = (id) =>
   req(`/semanas/${id}/deshacer/`, { method: "POST", body: "{}" });
 export const getCambios = (id) => req(`/semanas/${id}/cambios/`);
 
+// Club → Personas y funciones (solo dirección).
+export const getPersonal = () => req("/auth/personal/");
+export const guardarFuncion = (id, codigo, activa) =>
+  req(`/auth/personal/${id}/`, { method: "POST", body: JSON.stringify({ codigo, activa }) });
+export const guardarPerfil = (id, role) =>
+  req(`/auth/personal/${id}/`, { method: "PATCH", body: JSON.stringify({ role }) });
 export const cambiarPassword = (actual, nueva) =>
   req("/auth/password/", { method: "POST", body: JSON.stringify({ actual, nueva }) })
     .then((r) => {
@@ -194,12 +207,12 @@ export const removeAsignacion = (id) =>
   req(`/asignaciones/${id}/`, { method: "DELETE" });
 
 // --- Avisos in-app (perfil) ---
-export const getAvisos = async () => rows(await req("/avisos/"));
+export const getAvisos = async () => rows(await req(entera("/avisos/")));
 export const marcarAvisoLeido = (id) =>
   req(`/avisos/${id}/leer/`, { method: "POST", body: "{}" });
 
 // --- Invitados (aprobación del Director Deportivo) ---
-export const getInvitados = async () => rows(await req("/invitados/"));
+export const getInvitados = async () => rows(await req(entera("/invitados/")));
 export const crearInvitado = (body) =>
   req("/invitados/", { method: "POST", body: JSON.stringify(body) });
 export const aprobarInvitado = (id) =>
@@ -274,6 +287,9 @@ export const grupoAnadir = (jugador, entrenador) =>
   req("/grupos/anadir/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
 export const grupoQuitar = (jugador, entrenador) =>
   req("/grupos/quitar/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
+// Compartir = este entrenador también gestiona al alumno (sale en su columna).
+export const grupoCompartir = (jugador, entrenador) =>
+  req("/grupos/compartir/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
 // Mover = este entrenador pasa a responder por el alumno.
 export const grupoMover = (jugador, entrenador) =>
   req("/grupos/mover/", { method: "POST", body: JSON.stringify({ jugador, entrenador }) });
@@ -289,7 +305,16 @@ export const grupoOrdenar = (coach, orden) =>
 
 // --- Ausencias de jugador por rango de fechas ------------------------------
 export const getAusenciasFechas = async (jugador) =>
-  rows(await req(`/ausencias-fechas/${jugador ? `?jugador=${jugador}` : ""}`));
+  rows(await req(entera(`/ausencias-fechas/${jugador ? `?jugador=${jugador}` : ""}`)));
+// Faltas de todos los jugadores que se ven, que pisan un periodo (lista de Faltas).
+// Reglas del jugador (rencillas, contratos, vetos, pareja, franja, superficie).
+export const getReglasJugador = (id) => req(`/jugadores/${id}/reglas/`);
+export const guardarReglaJugador = (id, body, method = "POST") =>
+  req(`/jugadores/${id}/reglas/`, { method, body: JSON.stringify(body) });
+export const getFaltas = async (desde, hasta) =>
+  rows(await req(entera(`/ausencias-fechas/?desde=${desde}&hasta=${hasta}`)));
+export const getVienenAdemas = async (semanaId) =>
+  rows(await req(entera(`/disponibilidades/?semana=${semanaId}`))).filter((d) => d.estado === "EXTRA");
 export const addAusenciaFechas = (body) =>
   req("/ausencias-fechas/", { method: "POST", body: JSON.stringify(body) });
 export const delAusenciaFechas = (id) =>
@@ -302,7 +327,7 @@ export const quitarDiasAusencia = (id, desde, hasta) =>
 
 // --- Superficie por fechas («del 5 al 9, resina») ----------------------------
 export const getPreferenciasSuperficie = async (jugador) =>
-  rows(await req(`/preferencias-superficie/${jugador ? `?jugador=${jugador}` : ""}`));
+  rows(await req(entera(`/preferencias-superficie/${jugador ? `?jugador=${jugador}` : ""}`)));
 export const addPreferenciaSuperficie = (body) =>
   req("/preferencias-superficie/", { method: "POST", body: JSON.stringify(body) });
 export const delPreferenciaSuperficie = (id) =>
@@ -317,7 +342,7 @@ export const getTorneos = async (params = {}) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v) p.set(k, v);
   const s = p.toString();
-  return rows(await req(`/torneos/${s ? `?${s}` : ""}`));
+  return rows(await req(entera(`/torneos/${s ? `?${s}` : ""}`)));
 };
 export const getTorneo = (id) => req(`/torneos/${id}/`);
 export const crearTorneo = (body) => req("/torneos/", { method: "POST", body: JSON.stringify(body) });
@@ -354,7 +379,7 @@ export const deshacerTorneos = () =>
 export const getCatalogoEvaluacion = () => req("/evaluaciones/catalogo/");
 export const getEvaluaciones = async (params = {}) => {
   const s = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
-  return rows(await req(`/evaluaciones/${s ? `?${s}` : ""}`));
+  return rows(await req(entera(`/evaluaciones/${s ? `?${s}` : ""}`)));
 };
 export const getEvaluacion = (id) => req(`/evaluaciones/${id}/`);
 // Jugadores que puede evaluar de tenis quien pregunta (incluye Competición de tardes si le toca).
@@ -407,11 +432,13 @@ export const asignarInforme = (jugadores, evaluador) =>
   req("/informes/asignar/", { method: "POST", body: JSON.stringify({ jugadores, evaluador }) });
 export const getInformes = async (params = {}) => {
   const s = new URLSearchParams(params).toString();
-  return rows(await req(`/informes/${s ? `?${s}` : ""}`));
+  return rows(await req(entera(`/informes/${s ? `?${s}` : ""}`)));
 };
 export const getInforme = (id) => req(`/informes/${id}/`);
-export const aprobarInforme = (id, destinatarios) =>
-  req(`/informes/${id}/aprobar/`, { method: "POST", body: JSON.stringify({ destinatarios }) });
+export const aprobarInforme = (id, destinatarios, enviar = false) =>
+  req(`/informes/${id}/aprobar/`, { method: "POST", body: JSON.stringify({ destinatarios, enviar }) });
+export const enviarInforme = (id) => req(`/informes/${id}/enviar/`, { method: "POST", body: "{}" });
+export const reabrirInforme = (id) => req(`/informes/${id}/reabrir/`, { method: "POST", body: "{}" });
 export const devolverInforme = (id, partes, nota) =>
   req(`/informes/${id}/devolver/`, { method: "POST", body: JSON.stringify({ partes, nota }) });
 export const guardarInformeEnDrive = (id) => req(`/informes/${id}/guardar-drive/`, { method: "POST", body: "{}" });
@@ -445,7 +472,7 @@ export async function subirFotoJugador(jugadorId, file) {
 // --- Evaluaciones físicas (preparador físico y gestión deportiva) ----------
 export const getCatalogoFisico = () => req("/evaluaciones-fisicas/catalogo/");
 export const getJugadoresFisico = () => req("/evaluaciones-fisicas/jugadores/");
-export const getEvaluacionesFisicas = async () => rows(await req("/evaluaciones-fisicas/"));
+export const getEvaluacionesFisicas = async () => rows(await req(entera("/evaluaciones-fisicas/")));
 export const getEvaluacionFisica = (id) => req(`/evaluaciones-fisicas/${id}/`);
 export const crearEvaluacionFisica = (body) =>
   req("/evaluaciones-fisicas/", { method: "POST", body: JSON.stringify(body) });

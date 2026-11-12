@@ -2,11 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  getLatestSemana, getTabla, getPanel, swapAsignacion,
+  getTabla, getPanel, swapAsignacion,
   manualAssign, setCoach, removeAsignacion,
-} from "../../../lib/api";
-import Avatar from "../../../components/Avatar";
-import { turnoHoras, SUPERFICIE_SHORT, SUPERFICIE_COLOR } from "../../../lib/format";
+} from "../lib/api";
+import Avatar from "./Avatar";
+import { turnoHoras, SUPERFICIE_SHORT, SUPERFICIE_COLOR } from "../lib/format";
+
+// Vista de semana del Cuadrante (10/11/2026; antes, la pantalla «Semana»): un
+// día por columna. Deshacer, rehacer y publicar están en la barra del
+// Cuadrante, igual que en la vista de día; para mover con todas las opciones
+// (pista vacía, chincheta, con el dedo) se abre el día.
 
 function setDrag(e, payload) {
   e.dataTransfer.setData("application/json", JSON.stringify(payload));
@@ -69,9 +74,8 @@ function benchPlayers(panel) {
   return out;
 }
 
-export default function SemanaPage() {
+export default function CuadranteSemana({ semanaId, editable, onAbrirDia, onCambio }) {
   const [data, setData] = useState(null);
-  const [semanaId, setSemanaId] = useState(null);
   const [panel, setPanel] = useState(null);
   const [benchDay, setBenchDay] = useState(0);
   const [error, setError] = useState(null);
@@ -90,16 +94,10 @@ export default function SemanaPage() {
   }
 
   useEffect(() => {
-    (async () => {
-      try {
-        const s = await getLatestSemana();
-        if (!s) return setError("No hay semanas. Crea y genera una en Semanas.");
-        setSemanaId(s.id);
-        await reload(s.id, 0);
-      } catch (e) { setError(String(e.message || e)); }
-    })();
+    setData(null);
+    reload(semanaId, benchDay).catch((e) => setError(String(e.message || e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [semanaId]);
 
   useEffect(() => {
     if (semanaId) getPanel(semanaId, benchDay).then(setPanel).catch(() => {});
@@ -107,8 +105,9 @@ export default function SemanaPage() {
   }, [benchDay]);
 
   async function op(fn) {
+    if (!editable) return;
     setError(null);
-    try { await fn(); await reload(); }
+    try { await fn(); await reload(); onCambio?.(); }
     catch (e) {
       let msg = String(e.message || e);
       try { msg = JSON.parse(msg).error || msg; } catch {}
@@ -170,16 +169,11 @@ export default function SemanaPage() {
 
   return (
     <div>
-      <div className="page-head">
-        <h1>Semana · {data.semana.fecha_inicio}</h1>
-        <span className={`badge ${data.semana.estado === "PUBLICADO" ? "pub" : ""}`}>
-          {data.semana.estado === "PUBLICADO" ? "Publicado" : "Borrador"}
-        </span>
-      </div>
-
       <div className="help">
         Cada columna es un <b>día</b>, dentro van los <b>turnos</b> y cada tarjeta es una <b>pista</b>.
-        Arrastra desde el <b>banquillo</b> (abajo) a una pista para colocar, de una pista al banquillo para quitar, o entre pistas para intercambiar.
+        {editable
+          ? " Arrastra desde el banquillo a una pista para colocar, de una pista al banquillo para quitar, o entre pistas para intercambiar. Para mover a una pista vacía o fijar a alguien, abre el día."
+          : " Toca un día para verlo entero."}
       </div>
 
       <div className="week-filters">
@@ -214,7 +208,8 @@ export default function SemanaPage() {
               return (
                 <div className="week-col" key={d.idx}>
                   <div className="week-col-head">
-                    <span className="wk-day">{d.nombre}</span>
+                    <button type="button" className="wk-day link" title="Abrir este día"
+                      onClick={() => onAbrirDia?.(d.idx)}>{d.nombre}</button>
                     <span className="wk-count">{count}</span>
                   </div>
                   {list.length === 0 ? <div className="wk-empty">—</div> : (
@@ -224,7 +219,7 @@ export default function SemanaPage() {
                           <span className="wk-turno-horas">{turnoHoras(t, data.semana.fecha_inicio)}</span>
                         </div>
                         {byTurno[t.codigo].sort((a, b) => (sedeOrden[a.sede] ?? 99) - (sedeOrden[b.sede] ?? 99) || a.pista_numero - b.pista_numero).map((s) => (
-                          <Session key={s.key} s={s} dropSession={dropSession} dropPlayer={dropPlayer} dropCoach={dropCoach} />
+                          <Session key={s.key} s={s} dropSession={dropSession} dropPlayer={dropPlayer} dropCoach={dropCoach} editable={editable} />
                         ))}
                       </div>
                     ))
@@ -235,7 +230,7 @@ export default function SemanaPage() {
           </div>
         </div>
 
-        <aside className="bench-side" onDragOver={overOn} onDragLeave={overOff} onDrop={dropBench}>
+        {editable && <aside className="bench-side" onDragOver={overOn} onDragLeave={overOff} onDrop={dropBench}>
           <div className="bench-title">Banquillo · sin pista <span className="bench-count">{bench.length}</span></div>
           <div className="bench-side-hint">Elige el día y arrastra a una pista · suelta aquí para quitar</div>
           <div className="bench-days">
@@ -273,13 +268,13 @@ export default function SemanaPage() {
               </>
             )}
           </div>
-        </aside>
+        </aside>}
       </div>
     </div>
   );
 }
 
-function Session({ s, dropSession, dropPlayer, dropCoach }) {
+function Session({ s, dropSession, dropPlayer, dropCoach, editable }) {
   const color = ESTADO_COLOR[s.players[0]?.estado] || "var(--border-strong)";
   return (
     <div className="wk-session" style={{ borderLeft: `3px solid ${color}` }}
@@ -296,7 +291,7 @@ function Session({ s, dropSession, dropPlayer, dropCoach }) {
         {s.players.map((p) => (
           <div className={`wk-av dnd${p.forzada ? " forzada" : ""}`} key={p.id}
             title={p.forzada ? `${p.nombre} · ${p.motivo_forzado}` : `${p.nombre} · arrastra`}
-            draggable onDragStart={(e) => setDrag(e, { k: "cj", asignacion: p.asignacion })}
+            draggable={editable} onDragStart={(e) => setDrag(e, { k: "cj", asignacion: p.asignacion })}
             onDragOver={overOn} onDragLeave={overOff} onDrop={dropPlayer(p.asignacion, s)}>
             <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
             <span className="nm">{p.forzada && "⚠ "}{first(p.nombre)}</span>
@@ -304,7 +299,7 @@ function Session({ s, dropSession, dropPlayer, dropCoach }) {
         ))}
         {s.coach && (
           <div className="wk-av coach dnd" key={`c-${s.coach.id}`} title={`Coach: ${s.coach.nombre} · arrastra`}
-            draggable onDragStart={(e) => setDrag(e, { k: "cc", asignacion: s.coach.asignacion })}
+            draggable={editable} onDragStart={(e) => setDrag(e, { k: "cc", asignacion: s.coach.asignacion })}
             onDragOver={overOn} onDragLeave={overOff} onDrop={dropCoach(s.coach.asignacion, s)}>
             <Avatar nombre={s.coach.nombre} fotoUrl={s.coach.foto} kind="coach" />
             <span className="nm">{first(s.coach.nombre)}</span>

@@ -360,37 +360,23 @@ table.grid th { text-align: left; color: var(--muted); font-weight: 500; font-si
 .bench-days { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
 .bench-days .bench-day { margin-left: 0; }
 
-/* ---- Barra superior (tuerca arriba-derecha) ---- */
-.topbar { display: flex; justify-content: flex-end; align-items: center; margin: -8px 0 14px; min-height: 28px; }
+/* ---- Pestañas de cada entrada del menú (orden 10/11/2026) ---- */
+.section-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap; margin: -8px 0 20px;
+  border-bottom: 1px solid var(--border); padding-bottom: 0;
+}
+.section-tabs a {
+  padding: 8px 12px; font-size: 14px; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 6px 6px 0 0;
+}
+.section-tabs a:hover { color: var(--text); background: #f3f1ec; }
+.section-tabs a.on { color: var(--text); font-weight: 500; border-bottom-color: var(--accent); }
+@media (max-width: 760px) {
+  .section-tabs { flex-wrap: nowrap; overflow-x: auto; margin-top: 0; }
+  .section-tabs a { white-space: nowrap; }
+}
 
-/* ---- Menú de administración (tuerca) ---- */
-.settings-menu { position: relative; display: inline-flex; }
-.gear {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: 9px; cursor: pointer;
-  background: var(--surface); color: var(--muted); border: 1px solid var(--border-strong);
-}
-.gear:hover { background: #f3f1ec; color: var(--text); }
-.gear.active { color: var(--accent); border-color: var(--accent); }
-.settings-pop {
-  position: absolute; z-index: 60; min-width: 210px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 12px; padding: 6px; box-shadow: 0 12px 40px rgba(31,30,29,0.16);
-  display: flex; flex-direction: column; gap: 1px;
-}
-.settings-pop.down { top: calc(100% + 8px); }
-.settings-pop.up { bottom: calc(100% + 8px); }
-.settings-pop.right { right: 0; }
-.settings-pop.left { left: 0; }
-.settings-pop-title {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
-  color: var(--muted); padding: 6px 10px 4px;
-}
-.settings-pop a { padding: 8px 10px; border-radius: 8px; color: var(--text); font-size: 14px; }
-.settings-pop a:hover { background: #efece5; }
-.settings-pop a.active { background: #eae6dd; font-weight: 500; }
-
-/* ---- Pie del sidebar con tuerca ---- */
+/* ---- Pie del sidebar ---- */
 .sidebar .user-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .sidebar .user-id { min-width: 0; }
 
@@ -987,7 +973,8 @@ ul.miembros.sueltos {
   font-size: .82rem; color: var(--text); cursor: inherit; min-width: 0;
 }
 .nombre-alumno:disabled { cursor: default; }
-.nombre-alumno .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nombre-alumno .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.nombre-alumno .resp { flex: none; font-size: .68rem; color: var(--muted); white-space: nowrap; }
 .div-badge {
   flex: none; font-size: .64rem; font-weight: 700; color: var(--muted);
   background: var(--surface-2); border: 1px solid var(--border);
@@ -1787,3 +1774,28 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .pill.cat { background: #eef3fb; color: #3d5a8a; border: 1px solid #d6e1f2; font-size: 11px; }
 .cat-jug { font-size: 12px; }
 .apuntar-pie { padding: 0 18px 12px; margin: 0; background: var(--surface-2); }
+
+/* ---- Orden de la aplicación (10/11/2026) ---- */
+button.link {
+  background: none; border: 0; padding: 0; font: inherit; color: var(--accent);
+  cursor: pointer; text-align: left;
+}
+button.link:hover { text-decoration: underline; }
+.semana-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.semana-nav select { max-width: 220px; }
+.faltas-buscar { margin-bottom: 16px; }
+.faltas-buscar .search { width: 100%; max-width: 480px; }
+.faltas-sugeridos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.faltas-calendario { padding: 16px; margin-bottom: 20px; }
+.faltas-calendario-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.faltas-calendario-head h2 { margin: 0; font-size: 18px; }
+.ficha-lectura { display: grid; gap: 6px; margin: 8px 0 12px; }
+.ficha-lectura div { display: flex; gap: 8px; flex-wrap: wrap; }
+.ficha-lectura dt { color: var(--muted); min-width: 110px; }
+.ficha-lectura dd { margin: 0; }
+.lista-reglas { list-style: none; padding: 0; margin: 8px 0 12px; display: grid; gap: 6px; }
+.lista-reglas li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.traer-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
+.cuadrante-head { align-items: flex-start; }
+table.data.funciones th { white-space: normal; min-width: 90px; }
+table.data.funciones select { min-width: 150px; }

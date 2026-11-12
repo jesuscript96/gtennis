@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  aprobarInforme, descargarPdfInforme, devolverInforme, getFotoJugador, getInforme, getUser,
-  guardarInformeEnDrive, subirFotoJugador,
+  aprobarInforme, descargarPdfInforme, devolverInforme, enviarInforme, getFotoJugador, getInforme, getUser,
+  guardarInformeEnDrive, reabrirInforme, subirFotoJugador,
 } from "../../../../lib/api";
 import { ESTADO_INFORME, abrirParte, textoParte } from "../../../../lib/informes";
 import { fmtLarga } from "../../../../lib/torneos";
@@ -47,9 +47,10 @@ function Foto({ inf }) {
 function Partes({ inf, user }) {
   const router = useRouter();
   const [error, setError] = useState("");
+  // Alto rendimiento: solo tenis (10/11/2026, decisión 12).
   const filas = [
     ["tenis", "Tenis", inf.tenis, user?.evalua_tenis_informes],
-    ["fisico", "Preparación física", inf.fisica, user?.evalua_fisico],
+    ...(inf.circuito === "alto_rendimiento" ? [] : [["fisico", "Preparación física", inf.fisica, user?.evalua_fisico]]),
   ];
   return (
     <div className="inf-partes">
@@ -103,8 +104,8 @@ function Validar({ inf, onCambio }) {
     <section className="card inf-validar">
       <h2>Validación</h2>
       <p className="eval-nota">
-        Revisa el PDF. Si hay que cambiar algo pequeño, puedes corregirlo tú en la evaluación; si no,
-        devuélvelo a quien la hizo con una nota.
+        Revisa el PDF. Si hay que cambiar algo pequeño, puedes corregirlo tú: abre la evaluación
+        {inf.circuito === "alto_rendimiento" ? "" : " (las dos partes)"}. Si no, devuélvelo a quien la hizo con una nota.
       </p>
       {!modo && (
         <div className="eval-acciones">
@@ -129,15 +130,23 @@ function Validar({ inf, onCambio }) {
             Añadir destinatario
           </button>
           <p className="eval-nota">
-            El envío por correo todavía no está activo: los destinatarios se guardan para cuando lo esté.
-            Al aprobar, el PDF pasa a la carpeta de validados en Drive, en el idioma de la familia.
+            {inf.correo_activo
+              ? "Con «Aprobar y enviar» le llega a la familia por correo, con el PDF en su idioma."
+              : "El correo aún no está configurado en el servidor: al aprobar no se envía; se podrá enviar después."}
+            {" "}Al aprobar, el PDF pasa a la carpeta de validados en Drive.
           </p>
           <div className="eval-pie">
             <button type="button" className="btn ghost" onClick={() => setModo(null)}>Cancelar</button>
-            <button type="button" className="btn" disabled={enviando}
+            <button type="button" className={inf.puede_enviar && inf.correo_activo ? "btn ghost" : "btn"} disabled={enviando}
               onClick={() => hacer(() => aprobarInforme(inf.id, dest.filter((d) => d.email.trim())))}>
-              {enviando ? "Aprobando…" : "Aprobar informe"}
+              {enviando ? "Aprobando…" : "Aprobar"}
             </button>
+            {inf.puede_enviar && inf.correo_activo && (
+              <button type="button" className="btn" disabled={enviando || !dest.some((d) => d.email.trim())}
+                onClick={() => hacer(() => aprobarInforme(inf.id, dest.filter((d) => d.email.trim()), true))}>
+                {enviando ? "Enviando…" : "Aprobar y enviar"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -163,6 +172,44 @@ function Validar({ inf, onCambio }) {
       )}
       {error && <p className="err">{error}</p>}
     </section>
+  );
+}
+
+/** Validado: si ya se envió a la familia, a quién y cuándo; si no, enviarlo.
+ * Para corregirlo, primero se reabre (10/11/2026). */
+function Enviado({ inf, onCambio }) {
+  const [ocupado, setOcupado] = useState(false);
+  const [error, setError] = useState("");
+  async function hacer(fn) {
+    setOcupado(true); setError("");
+    try { onCambio(await fn()); } catch (e) { setError(e.message); }
+    setOcupado(false);
+  }
+  const para = inf.destinatarios.map((d) => d.email).join(", ");
+  return (
+    <>
+      <p className="eval-nota">
+        Validado por <b>{inf.validado_por_nombre}</b> el {fecha(inf.validado_en)}.
+        {inf.enviado_en
+          ? <> Enviado a la familia ({para}) el {fecha(inf.enviado_en)} por {inf.enviado_por_nombre}.</>
+          : para ? <> Aún no se ha enviado a {para}.</> : <> Falta el correo de la familia.</>}
+      </p>
+      {inf.envio_error && !inf.enviado_en && <p className="err">Último intento de envío: {inf.envio_error}</p>}
+      <div className="eval-acciones">
+        {inf.puede_enviar && inf.correo_activo && para && (
+          <button type="button" className="btn" disabled={ocupado} onClick={() => hacer(() => enviarInforme(inf.id))}>
+            {inf.enviado_en ? "Volver a enviar" : "Enviar a la familia"}
+          </button>
+        )}
+        {inf.puede_validar && (
+          <button type="button" className="btn ghost" disabled={ocupado}
+            onClick={() => window.confirm("¿Reabrir el informe para corregirlo? Después de corregir, vuelve a validar.") && hacer(() => reabrirInforme(inf.id))}>
+            Reabrir para corregir
+          </button>
+        )}
+      </div>
+      {error && <p className="err">{error}</p>}
+    </>
   );
 }
 
@@ -210,7 +257,9 @@ export default function InformePage() {
             {inf.idioma === "EN" && <span className="eval-nota"> · a la familia se le envía en inglés</span>}
           </p>
           {inf.estado === "EN_CURSO" && (
-            <p className="eval-nota">Cuando tenis y preparación física estén terminadas, pasa a validar.</p>
+            <p className="eval-nota">{inf.circuito === "alto_rendimiento"
+              ? "Cuando la evaluación de tenis esté terminada, pasa a validar."
+              : "Cuando tenis y preparación física estén terminadas, pasa a validar."}</p>
           )}
           {inf.estado === "DEVUELTO" && (
             <p className="informe-nota">
@@ -218,10 +267,7 @@ export default function InformePage() {
             </p>
           )}
           {inf.estado === "VALIDADO" && (
-            <p className="eval-nota">
-              Validado por <b>{inf.validado_por_nombre}</b> el {fecha(inf.validado_en)}.
-              {inf.destinatarios.length > 0 && <> Se enviará a {inf.destinatarios.map((d) => d.email).join(", ")}.</>}
-            </p>
+            <Enviado inf={inf} onCambio={(nuevo, a) => { setInf(nuevo); setAviso(a || ""); }} />
           )}
           <div className="eval-acciones">
             {inf.tenis && (

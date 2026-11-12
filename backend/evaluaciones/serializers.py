@@ -14,7 +14,7 @@ class _ConInforme:
         if inf is None:
             return None
         return {"id": inf.id, "estado": inf.estado, "estado_display": inf.get_estado_display(),
-                "devuelto_partes": inf.devuelto_partes,
+                "circuito": inf.circuito, "devuelto_partes": inf.devuelto_partes,
                 "nota_devolucion": inf.nota_devolucion if inf.estado == Informe.Estado.DEVUELTO else ""}
 
 
@@ -22,6 +22,7 @@ class EvaluacionSerializer(_ConInforme, serializers.ModelSerializer):
     jugador_nombre = serializers.CharField(source="jugador.nombre", read_only=True)
     puntuados = serializers.SerializerMethodField()
     puede_editar = serializers.SerializerMethodField()
+    puede_borrar = serializers.SerializerMethodField()
     informe = serializers.SerializerMethodField()
     idioma_familia = serializers.SerializerMethodField()
 
@@ -30,7 +31,7 @@ class EvaluacionSerializer(_ConInforme, serializers.ModelSerializer):
         fields = ["id", "jugador", "jugador_nombre", "evaluador", "nombre_evaluador", "fecha", "idioma",
                   "estado", "puntuaciones", "comentarios", "fortalezas", "mejoras", "fortalezas_original",
                   "mejoras_original", "idioma_familia", "puntuados",
-                  "puede_editar", "drive_url", "informe", "creada", "actualizada", "terminada_en"]
+                  "puede_editar", "puede_borrar", "drive_url", "informe", "creada", "actualizada", "terminada_en"]
         read_only_fields = ["evaluador", "nombre_evaluador", "estado", "drive_url", "creada",
                             "actualizada", "terminada_en"]
 
@@ -46,6 +47,10 @@ class EvaluacionSerializer(_ConInforme, serializers.ModelSerializer):
     def get_puede_editar(self, ev):
         req = self.context.get("request")
         return bool(req and ev.puede_editar(req.user))
+
+    def get_puede_borrar(self, ev):
+        req = self.context.get("request")
+        return bool(req and ev.puede_borrar(req.user))
 
     def validate_jugador(self, jugador):
         if self.instance and self.instance.jugador_id != jugador.id:
@@ -96,12 +101,13 @@ class EvaluacionFisicaSerializer(_ConInforme, serializers.ModelSerializer):
     jugador_nombre = serializers.CharField(source="jugador.nombre", read_only=True)
     puntuados = serializers.SerializerMethodField()
     puede_editar = serializers.SerializerMethodField()
+    puede_borrar = serializers.SerializerMethodField()
     informe = serializers.SerializerMethodField()
 
     class Meta:
         model = EvaluacionFisica
         fields = ["id", "jugador", "jugador_nombre", "evaluador", "nombre_evaluador", "fecha", "estado",
-                  "puntuaciones", "textos", "puntuados", "puede_editar", "informe", "creada", "actualizada", "terminada_en"]
+                  "puntuaciones", "textos", "puntuados", "puede_editar", "puede_borrar", "informe", "creada", "actualizada", "terminada_en"]
         read_only_fields = ["evaluador", "nombre_evaluador", "estado", "creada", "actualizada", "terminada_en"]
 
     def get_puntuados(self, ev):
@@ -110,6 +116,10 @@ class EvaluacionFisicaSerializer(_ConInforme, serializers.ModelSerializer):
     def get_puede_editar(self, ev):
         req = self.context.get("request")
         return bool(req and ev.puede_editar(req.user))
+
+    def get_puede_borrar(self, ev):
+        req = self.context.get("request")
+        return bool(req and ev.puede_borrar(req.user))
 
     def validate_jugador(self, jugador):
         if self.instance and self.instance.jugador_id != jugador.id:
@@ -163,13 +173,31 @@ class InformeSerializer(serializers.ModelSerializer):
     edad = serializers.IntegerField(source="jugador.edad", read_only=True)
     tiene_foto = serializers.SerializerMethodField()
     puede_validar = serializers.SerializerMethodField()
+    puede_enviar = serializers.SerializerMethodField()
+    enviado_por_nombre = serializers.SerializerMethodField()
+    circuito = serializers.CharField(read_only=True)
+    correo_activo = serializers.SerializerMethodField()
 
     class Meta:
         model = Informe
         fields = ["id", "jugador", "jugador_nombre", "edad", "estado", "estado_display", "version", "completo",
-                  "tenis", "fisica", "idioma", "devuelto_partes", "nota_devolucion", "devuelto_por_nombre",
+                  "circuito", "tenis", "fisica", "idioma", "devuelto_partes", "nota_devolucion", "devuelto_por_nombre",
                   "devuelto_en", "validado_por_nombre", "validado_en", "destinatarios", "email_familia",
-                  "destinatarios_propuestos", "drive_url", "drive_carpeta", "tiene_foto", "puede_validar", "creado", "actualizado"]
+                  "destinatarios_propuestos", "drive_url", "drive_carpeta", "tiene_foto", "puede_validar",
+                  "puede_enviar", "enviado_en", "enviado_por_nombre", "envio_error", "correo_activo",
+                  "creado", "actualizado"]
+
+    def get_puede_enviar(self, inf):
+        from academy.permissions import envia_informes
+        req = self.context.get("request")
+        return bool(req and envia_informes(req.user))
+
+    def get_enviado_por_nombre(self, inf):
+        return self._nombre(inf.enviado_por)
+
+    def get_correo_activo(self, inf):
+        from . import informes
+        return informes.correo_configurado()
 
     def get_tenis(self, inf):
         return _parte(inf.tenis, catalogo.CRITERIOS)

@@ -117,11 +117,20 @@ class EntrenadoresPorFranjaTests(AbrirPistaVaciaTests):
         self.assertIn("Blas", self._panel())
 
     def test_el_declarado_no_disponible_sale_con_su_motivo(self):
+        # 10/11/2026: lo que un entrenador no puede está en su calendario
+        # (VacacionesEntrenador); el parte semanal antiguo ya no cuenta.
+        from academy.models import VacacionesEntrenador
+
         DisponibilidadEntrenador.objects.create(
-            semana=self.semana, entrenador=self.otro_coach, dia=0, estado="AUSENTE")
-        nacho = self._panel()["Nacho"]
+            semana=self.semana, entrenador=self.coach, dia=0, estado="AUSENTE")
+        VacacionesEntrenador.objects.create(
+            entrenador=self.otro_coach, fecha_inicio=LUNES, fecha_fin=LUNES, motivo="Torneo")
+        panel = self._panel()
+        nacho = panel["Nacho"]
         self.assertFalse(nacho["franjas"][str(self.m1.id)]["libre"])
-        self.assertIn("no disponible", nacho["franjas"][str(self.m1.id)]["motivo"])
+        self.assertEqual(nacho["franjas"][str(self.m1.id)]["motivo"], "no está: torneo")
+        # Blas solo tiene el parte antiguo: sigue libre donde no tiene pista.
+        self.assertTrue(panel["Blas"]["franjas"][str(self.t1.id)]["libre"])
 
     def test_se_puede_forzar_al_que_ya_esta_en_otra_pista(self):
         Asignacion.objects.create(semana=self.semana, dia=0, turno=self.m1,
@@ -317,8 +326,12 @@ class MoverPistaSinDuplicarEntrenadorTests(TestCase):
 
 
 class CoachDeclaraPorSuEquipoTests(TestCase):
-    """El coach recoge el parte de los entrenadores que tiene a su cargo y lo
-    mete por ellos; fuera de su equipo, no."""
+    """El coach apunta en el calendario de los entrenadores que tiene a su
+    cargo cuándo no están; fuera de su equipo, no.
+
+    Desde el 10/11/2026 es el calendario del entrenador (`/api/vacaciones/`,
+    `VacacionesEntrenador`): el parte semanal `DisponibilidadEntrenador` es
+    solo de lectura."""
 
     def setUp(self):
         from academy.models import Coach
@@ -334,44 +347,69 @@ class CoachDeclaraPorSuEquipoTests(TestCase):
         self.api.force_authenticate(self.user)
 
     def _crear(self, entrenador):
-        return self.api.post("/api/disponibilidades-entrenador/", {
-            "semana": self.semana.id, "entrenador": entrenador.id,
-            "dia": 0, "estado": "AUSENTE"}, format="json")
+        return self.api.post("/api/vacaciones/", {
+            "entrenador": entrenador.id, "fecha_inicio": "2026-09-14",
+            "fecha_fin": "2026-09-14", "motivo": "Torneo"}, format="json")
 
     def test_declara_por_un_entrenador_de_su_equipo(self):
+        from academy.models import VacacionesEntrenador
+
         r = self._crear(self.blas)
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertEqual(
-            DisponibilidadEntrenador.objects.get().entrenador_id, self.blas.id)
+        fila = VacacionesEntrenador.objects.get(pk=r.data["id"])
+        self.assertEqual((fila.entrenador_id, fila.creada_por_id), (self.blas.id, self.user.id))
 
     def test_no_declara_por_uno_de_fuera(self):
+        from academy.models import VacacionesEntrenador
+
         r = self._crear(self.ajeno)
         self.assertEqual(r.status_code, 403, r.data)
-        self.assertEqual(DisponibilidadEntrenador.objects.count(), 0)
+        self.assertFalse(VacacionesEntrenador.objects.filter(entrenador=self.ajeno).exists())
 
     def test_no_edita_la_de_uno_de_fuera(self):
-        fila = DisponibilidadEntrenador.objects.create(
-            semana=self.semana, entrenador=self.ajeno, dia=0, estado="AUSENTE")
-        r = self.api.patch(f"/api/disponibilidades-entrenador/{fila.id}/",
-                           {"estado": "DISPONIBLE"}, format="json")
+        from academy.models import VacacionesEntrenador
+
+        fila = VacacionesEntrenador.objects.create(
+            entrenador=self.ajeno, fecha_inicio=LUNES, fecha_fin=LUNES, motivo="Torneo")
+        r = self.api.patch(f"/api/vacaciones/{fila.id}/", {"motivo": "Nada"}, format="json")
         self.assertIn(r.status_code, (403, 404), r.data)
         fila.refresh_from_db()
-        self.assertEqual(fila.estado, "AUSENTE")
+        self.assertEqual(fila.motivo, "Torneo")
+
+    def test_el_parte_semanal_antiguo_es_de_solo_lectura(self):
+        r = self.api.post("/api/disponibilidades-entrenador/", {
+            "semana": self.semana.id, "entrenador": self.blas.id,
+            "dia": 0, "estado": "AUSENTE"}, format="json")
+        self.assertEqual(r.status_code, 405)
+        self.assertEqual(DisponibilidadEntrenador.objects.count(), 0)
+        self.assertEqual(self.api.get("/api/disponibilidades-entrenador/").status_code, 200)
 
     def test_el_entrenador_suelto_sigue_solo_con_lo_suyo(self):
+        from academy.models import VacacionesEntrenador
+
         otro = User.objects.create_user(
             username="blas", password="x", role=User.Role.ENTRENADOR)
         self.blas.user = otro
         self.blas.save(update_fields=["user"])
         api = APIClient()
         api.force_authenticate(otro)
-        r = api.post("/api/disponibilidades-entrenador/", {
-            "semana": self.semana.id, "entrenador": self.ajeno.id,
-            "dia": 1, "estado": "AUSENTE"}, format="json")
-        self.assertEqual(r.status_code, 201, r.data)
-        # Se ignora el entrenador que manda y se guarda el suyo.
-        self.assertEqual(
-            DisponibilidadEntrenador.objects.get(dia=1).entrenador_id, self.blas.id)
+        # Por el calendario del club, nada: eso es de dirección y head coaches.
+        r = api.post("/api/vacaciones/", {
+            "entrenador": self.ajeno.id, "fecha_inicio": "2026-09-15",
+            "fecha_fin": "2026-09-15"}, format="json")
+        self.assertEqual(r.status_code, 403, r.data)
+        # En su agenda apunta lo suyo, y no puede apuntar por otro.
+        r = api.post("/api/mi-agenda/ausencias/", {
+            "entrenador": self.ajeno.id, "fecha_inicio": "2026-09-15",
+            "fecha_fin": "2026-09-15"}, format="json")
+        self.assertEqual(r.status_code, 403, r.data)
+        r = api.post("/api/mi-agenda/ausencias/", {
+            "fecha_inicio": "2026-09-15", "fecha_fin": "2026-09-15", "motivo": "Médico"},
+            format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertFalse(VacacionesEntrenador.objects.filter(entrenador=self.ajeno).exists())
+        fila = VacacionesEntrenador.objects.get(entrenador=self.blas)
+        self.assertEqual((fila.motivo, fila.creada_por_id), ("Médico", otro.id))
 
 
 class RehacerConCambiosAManoTests(DeshacerTests):

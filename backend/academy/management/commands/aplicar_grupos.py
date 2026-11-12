@@ -23,6 +23,7 @@ from collections import defaultdict
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from academy.calendario import marcar_no_disponible, volver_disponible
 from academy.models import (
     Coach, Contrato, Division, Entrenador, Jugador, ResponsableJugador,
 )
@@ -255,8 +256,15 @@ class Command(BaseCommand):
                     eidx[clave(nom)] = ent
                 if not seco:
                     ent.activo = True
-                    ent.disponible_semana = not fuera_de_servicio(nom)
+                    # Fuera de servicio = «No disponible» en su calendario un
+                    # año desde hoy, donde se ve y se puede quitar. El
+                    # interruptor de la ficha ya no se usa: queda a sí.
+                    ent.disponible_semana = True
                     ent.save(update_fields=["activo", "disponible_semana"])
+                    if fuera_de_servicio(nom):
+                        marcar_no_disponible(ent)
+                    else:
+                        volver_disponible(ent)
                 ents[nom] = ent
 
             if head is not None:
@@ -369,7 +377,8 @@ class Command(BaseCommand):
             w(f"  {head or '—':16s} {' / '.join(arriba):40s} {n:>2} alumnos  {principal}"
               + (f"  + {secundarios}" if secundarios else ""))
         for nom, motivo in NO_DISPONIBLES.items():
-            w(f"  ⚠ {nom}: {motivo}. Sigue en su bloque, pero ni gestiona ni entrena a nadie.")
+            w(f"  ⚠ {nom}: {motivo}. Sigue en su bloque, pero ni gestiona ni entrena a nadie;"
+              " en su calendario, «No disponible» un año desde hoy.")
         w(self.style.MIGRATE_HEADING(f"\nRESPONSABLES QUE CAMBIAN ({len(cambios_resp)})"))
         for nom, antes, despues in sorted(cambios_resp):
             w(f"  {nom:32s} {antes} → {despues}")

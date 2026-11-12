@@ -87,6 +87,8 @@ def deshacer(cambio):
             continue
         actual = Torneo.objects.filter(pk=tid).values(*CAMPOS_NUEVOS).first() or {}
         campos = {**actual, **{k: v for k, v in e.items() if k in CAMPOS and k != "created_at"}}
+        if campos.get("estado") == "PROPUESTO":  # estado quitado el 10/11/2026
+            campos["estado"] = "VALIDADO"
         creado = parse_datetime(e["created_at"]) if e.get("created_at") else timezone.now()
         # Con el pk puesto, save() actualiza si existe y crea si no; la fecha de
         # alta hay que darla, o el UPDATE la dejaría vacía.

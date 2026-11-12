@@ -10,6 +10,11 @@ Dos fuentes, cada una con su papel:
   esa semana, tanto de jugadores como de entrenadores.
 
 La ficha manda sobre el patrón; el cuadrante real manda sobre los días.
+
+Desde el 10/11/2026 hay un solo registro de faltas: las del jugador van a sus
+faltas por fechas (`AusenciaJugador`) y las del entrenador a su calendario
+(`VacacionesEntrenador`). El parte semanal solo guarda «viene además» y el
+interruptor «Disponible esta semana» ya no se escribe (queda siempre a sí).
 """
 from __future__ import annotations
 
@@ -20,15 +25,16 @@ from datetime import date, datetime, time, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 
+from academy.calendario import marcar_no_disponible, solo_disponible, volver_disponible
 from academy.models import (
     Contrato, Division, Entrenador, Escuela, HorarioJugador, Jugador,
     PreferenciaEntrenadorFranja, PreferenciaSuperficie, ResponsableJugador,
-    Turno, VetoEntrenador,
+    Turno, VacacionesEntrenador, VetoEntrenador,
 )
 from scheduling.models import (
-    Ambito, AusenciaJugador, Disponibilidad, DisponibilidadEntrenador, Estado,
-    Semana, SubtipoAusencia,
+    Ambito, AusenciaJugador, Disponibilidad, Estado, Semana, SubtipoAusencia,
 )
 
 # --- Hoja JUGADORES ---------------------------------------------------------
@@ -67,6 +73,16 @@ BANDA_TORNEO = (334, 348)
 
 # El único día que el cuadrante real puede AÑADIR al horario habitual.
 SABADO = 5
+
+# Cómo firma la semana real lo que escribe, para poder rehacerla sin tocar lo
+# apuntado en la app. «Torneo del fin de semana» a secas es la nota de las
+# cargas anteriores al 10/11/2026, que la migración 0034 pasó tal cual.
+NOTA_AUSENTE = "Cuadrante real de la semana"
+NOTA_TORNEO = "Cuadrante real: torneo del fin de semana"
+NOTAS_SEMANA = (NOTA_AUSENTE, NOTA_TORNEO, "Torneo del fin de semana")
+NOTA_SABADO = "Cuadrante real del sábado"
+MOTIVO_NO_APARECE = "No aparece en el cuadrante real"
+MOTIVO_FRANJAS = "Franjas del cuadrante real"
 
 # Cómo firma cada entrenador en el cuadrante.
 ALIAS_COACH = {
@@ -418,6 +434,7 @@ class Command(BaseCommand):
     # --------------------------------------------------------- entrenadores
     def entrenadores(self, ws):
         n = 0
+        no_disponibles, vuelven = [], 0
         for r in range(7, ws.max_row + 1):
             nombre = limpio(ws.cell(row=r, column=COL_E["nombre"]).value)
             if not nombre or nombre.startswith("("):
@@ -431,10 +448,22 @@ class Command(BaseCommand):
             c.turno_manana = self.turnos.get(g("franja_m").upper())
             c.turno_tarde = self.turnos.get(g("franja_t").upper())
             c.reserva = clave(g("banquillo")) in ("si", "sí")
-            c.disponible_semana = clave(g("disponible")) not in ("no",)
+            # «Disponible: no» va a su calendario, un año desde hoy, donde se
+            # ve y se puede quitar; el interruptor de la ficha queda a sí.
+            c.disponible_semana = True
             c.save()
+            if clave(g("disponible")) == "no":
+                marcar_no_disponible(c)
+                no_disponibles.append(c.nombre)
+            else:
+                vuelven += volver_disponible(c)
             n += 1
         self.stdout.write(f"entrenadores actualizados: {n}")
+        if no_disponibles:
+            self.stdout.write(
+                "no disponibles (en su calendario, un año): " + ", ".join(no_disponibles))
+        if vuelven:
+            self.stdout.write(f"«no disponible» de cargas anteriores quitados: {vuelven}")
 
     # ------------------------------------------------------- la semana real
     def semana_real(self, ws, lunes):
@@ -479,21 +508,33 @@ class Command(BaseCommand):
                 j.save(update_fields=["activo", "fecha_baja"])
                 self.stdout.write(
                     f"{j.nombre}: «no está» pero vino — activo hasta {j.fecha_baja}")
-        # Ausencias largas de pruebas anteriores que pisan esta semana: si no,
-        # se suman a lo que dice el cuadrante y sacan a gente que sí vino.
-        viejas = AusenciaJugador.objects.filter(
+        # Rehacer la semana: fuera solo lo que escribió la carga anterior de
+        # esta misma semana. Lo apuntado en la app no se toca (quien lo apunta
+        # queda en `creada_por`; la carga no lo rellena).
+        AusenciaJugador.objects.filter(
+            fecha_inicio__gte=lunes, fecha_fin__lte=domingo, nota__in=NOTAS_SEMANA,
+            creada_por__isnull=True, declarada_por__isnull=True,
+        ).delete()
+        Disponibilidad.objects.filter(
+            semana=semana, estado=Estado.EXTRA, nota=NOTA_SABADO).delete()
+        VacacionesEntrenador.objects.filter(
+            fecha_inicio__gte=lunes, fecha_fin__lte=domingo,
+        ).filter(Q(motivo=MOTIVO_NO_APARECE) | Q(motivo__startswith=MOTIVO_FRANJAS)).delete()
+        # Las faltas que ya había para esta semana se suman a lo que dice el
+        # cuadrante y pueden sacar a gente que sí vino. Antes se borraban; desde
+        # que todas las faltas viven ahí serían las de verdad: solo se avisa.
+        otras = AusenciaJugador.objects.filter(
             fecha_inicio__lte=domingo, fecha_fin__gte=lunes,
         ).exclude(nota__startswith="Excel")
-        if viejas:
-            self.stdout.write(f"ausencias antiguas borradas: {viejas.count()}")
-            viejas.delete()
+        if otras:
+            self.stdout.write(self.style.WARNING(
+                f"faltas ya apuntadas que pisan esta semana (se dejan): {otras.count()}"))
 
-        Disponibilidad.objects.filter(semana=semana).delete()
-        DisponibilidadEntrenador.objects.filter(semana=semana).delete()
         horario = {(h.jugador_id, h.dia): h for h in HorarioJugador.objects.all()}
         n_aus = n_extra = 0
         for j in Jugador.objects.filter(activo=True):
             for dia in range(6):
+                fecha = lunes + timedelta(days=dia)
                 h = horario.get((j.id, dia))
                 franjas = {f for d, f in vistos_j[j.id] if d == dia}
                 for bloque, propias, toca in (
@@ -502,16 +543,15 @@ class Command(BaseCommand):
                 ):
                     vino = bool(franjas & propias)
                     if toca and not vino:
-                        Disponibilidad.objects.create(
-                            semana=semana, jugador=j, dia=dia, ambito=bloque,
+                        AusenciaJugador.objects.create(
+                            jugador=j, fecha_inicio=fecha, fecha_fin=fecha,
+                            ambito=bloque,
                             # El torneo es el fin de semana: entre semana el
                             # que no aparece en el cuadrante, sencillamente no
                             # está. EN_TORNEO solo baja la prioridad y le
                             # dejaría colarse a llenar huecos.
-                            estado=Estado.AUSENCIA_JUGADOR,
-                            nota=("Torneo del fin de semana"
-                                  if j.id in torneo
-                                  else "Cuadrante real de la semana"),
+                            estado=Estado.AUSENCIA_JUGADOR, subtipo="",
+                            nota=NOTA_TORNEO if j.id in torneo else NOTA_AUSENTE,
                         )
                         n_aus += 1
                     elif vino and not toca and dia == SABADO:
@@ -519,44 +559,41 @@ class Command(BaseCommand):
                         # apareciera un día suelto no le añade ese día. El
                         # sábado es la excepción, porque en la plantilla casi
                         # nadie lo tiene declarado y sin esto saldría vacío.
-                        Disponibilidad.objects.create(
+                        # Si ya hay algo apuntado en la app para ese hueco,
+                        # manda lo apuntado.
+                        _, nueva = Disponibilidad.objects.get_or_create(
                             semana=semana, jugador=j, dia=dia, ambito=bloque,
-                            estado=Estado.EXTRA,
-                            nota="Cuadrante real del sábado",
+                            defaults={"estado": Estado.EXTRA, "nota": NOTA_SABADO},
                         )
-                        n_extra += 1
+                        n_extra += nueva
 
-        # Entrenadores: el día que no aparecen, no están; y si solo dan clase
-        # por la mañana, la ventana horaria lo dice.
+        # Entrenadores, a su calendario: el día que no aparecen, no están; y si
+        # solo dan clase por la mañana, no están el resto del día.
         horas = {"M1": (time(8, 30), time(10, 0)), "M2": (time(10, 0), time(12, 30)),
                  "T1": (time(14, 15), time(15, 30)), "T2": (time(15, 30), time(17, 30))}
         n_c = 0
         for c in Entrenador.objects.filter(activo=True):
             for dia in range(6):
+                fecha = lunes + timedelta(days=dia)
                 franjas = {f for d, f in vistos_c[c.id] if d == dia}
-                if not franjas:
-                    # Al de banquillo no se le marca ausente por no salir en el
-                    # cuadrante: está en el club justo para eso, para no estar
-                    # en ninguna pista hasta que hace falta.
-                    if c.reserva:
-                        continue
-                    DisponibilidadEntrenador.objects.create(
-                        semana=semana, entrenador=c, dia=dia,
-                        estado=DisponibilidadEntrenador.EstadoCoach.AUSENTE,
-                        nota="No aparece en el cuadrante real")
-                    n_c += 1
-                    continue
+                # Al de banquillo no se le marca ausente por no salir en el
+                # cuadrante: está en el club justo para eso, para no estar en
+                # ninguna pista hasta que hace falta.
                 if c.reserva:
+                    continue
+                if not franjas:
+                    VacacionesEntrenador.objects.create(
+                        entrenador=c, fecha_inicio=fecha, fecha_fin=fecha,
+                        ambito=VacacionesEntrenador.Ambito.DIA,
+                        motivo=MOTIVO_NO_APARECE)
+                    n_c += 1
                     continue
                 ini = min(horas[f][0] for f in franjas)
                 fin = max(horas[f][1] for f in franjas)
                 if (ini, fin) != (time(8, 30), time(17, 30)):
-                    DisponibilidadEntrenador.objects.create(
-                        semana=semana, entrenador=c, dia=dia,
-                        estado=DisponibilidadEntrenador.EstadoCoach.DISPONIBLE,
-                        hora_desde=ini, hora_hasta=fin,
-                        nota="Franjas del cuadrante real")
-                    n_c += 1
+                    n_c += len(solo_disponible(
+                        c, fecha, ini, fin,
+                        f"{MOTIVO_FRANJAS} ({ini:%H:%M}–{fin:%H:%M})"))
         self.stdout.write(
-            f"semana {lunes}: {n_aus} ausencias, {n_extra} «viene además», "
-            f"{n_c} partes de entrenador, {len(torneo)} en el torneo")
+            f"semana {lunes}: {n_aus} faltas, {n_extra} «viene además», "
+            f"{n_c} ausencias de entrenador en su calendario, {len(torneo)} en el torneo")

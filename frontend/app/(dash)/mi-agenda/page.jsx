@@ -108,7 +108,7 @@ export default function MiAgenda() {
 
   return (
     <div className="page">
-      <h1>{eligeOtros ? "Agenda de entrenadores" : "Mi agenda"}{nombre ? ` · ${nombre}` : ""}</h1>
+      <h1>{eligeOtros ? "Agenda" : "Mi día"}{nombre ? ` · ${nombre}` : ""}</h1>
 
       {eligeOtros && (
         <div className="selector-entrenador">
@@ -172,7 +172,7 @@ export default function MiAgenda() {
         <section className="card hoy">
           <h2>Hoy · {hoy.dia} {new Date(hoy.fecha).getDate()} de {MESES[new Date(hoy.fecha).getMonth()]}</h2>
           {hoy.ausente ? (
-            <p className="hoy-fuera">Estás de baja{hoy.motivo ? `: ${hoy.motivo}` : ""}</p>
+            <p className="hoy-fuera">{eligeOtros && nombre ? `${nombre} no está` : "No estás"}{hoy.motivo ? `: ${hoy.motivo}` : ""}</p>
           ) : (
             <div className="hoy-bloques">
               <span className={hoy.manana ? "bloque on" : "bloque off"}>
@@ -240,9 +240,11 @@ export default function MiAgenda() {
           fuente={{
             clave: `entrenador-${quien || "yo"}`,
             cargar: () => getMisAusencias(quien),
-            crear: ({ desde, hasta, ambito, motivo, nota }) => addMiAusencia({
+            crear: ({ desde, hasta, ambito, motivo, nota, horaDesde, horaHasta }) => addMiAusencia({
               fecha_inicio: desde, fecha_fin: hasta, ambito,
               motivo: [motivo.label, nota].filter(Boolean).join(" · "),
+              // Solo unas horas de un día (antes, en «Disp. entrenadores»).
+              ...(horaDesde || horaHasta ? { hora_desde: horaDesde || null, hora_hasta: horaHasta || null } : {}),
             }, quien),
             borrar: (a) => delMiAusencia(a.id, quien),
             describir: (a) => a.motivo,

@@ -49,6 +49,15 @@ def destinatarios_direccion():
         Q(role=User.Role.SUPERADMIN) | Q(is_superuser=True)))
 
 
+def destinatarios_generacion():
+    """El aviso de las 19:00 (cuadrante listo): dirección y, desde el
+    10/11/2026, también los head coaches, que también rehacen."""
+    usuarios = {u.id: u for u in destinatarios_direccion()}
+    for coach in Coach.objects.filter(activo=True, user__is_active=True).select_related("user"):
+        usuarios[coach.user.id] = coach.user
+    return list(usuarios.values())
+
+
 def destinatarios(jugador, entrenadores=(), excepto=None):
     """Dirección, los coaches que ven al jugador y los entrenadores dados."""
     from academy.scope import puede_ver_jugador

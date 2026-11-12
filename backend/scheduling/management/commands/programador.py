@@ -28,7 +28,8 @@ DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "doming
 def generar_dia(fecha):
     """Rehace `fecha` una sola vez. Devuelve la fila, o None si ya se hizo."""
     from engine.service import generate
-    from scheduling.avisos_corte import destinatarios_direccion
+    from scheduling.avisos_corte import destinatarios_generacion
+    from scheduling.historial import que_dias, registrar
 
     try:
         with transaction.atomic():
@@ -44,7 +45,11 @@ def generar_dia(fecha):
         # semana, ya creada y publicada, parecía hecha con el resto vacío.
         # Luego cada tarde se rehace el día siguiente, como siempre.
         entera = not Asignacion.objects.filter(semana=semana).exists()
-        informe = generate(semana, dias=list(range(dia, 6)) if entera else [dia])
+        dias = list(range(dia, 6)) if entera else [dia]
+        # Copia antes de generar: se puede deshacer, y un Deshacer posterior ya
+        # no se la lleva por delante sin avisar (10/11/2026).
+        registrar(semana.id, f"Generación de las 19:00 ({que_dias(dias)})")
+        informe = generate(semana, dias=dias)
         fuera = sum(len(u["jugadores"]) for u in informe.get("unassigned", []))
         fila.ok = True
         fila.detalle = f"{fuera} sin pista" + (" (semana entera)" if entera else "")
@@ -75,7 +80,7 @@ def generar_dia(fecha):
                    "a mano desde la semana.")
     fila.terminada_at = timezone.now()
     fila.save()
-    for u in destinatarios_direccion():
+    for u in destinatarios_generacion():
         Aviso.objects.create(usuario=u, tipo=Aviso.Tipo.GENERACION,
                              titulo=titulo, mensaje=mensaje)
     return fila

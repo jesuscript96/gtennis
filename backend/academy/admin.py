@@ -54,9 +54,12 @@ class EntrenadorAdmin(admin.ModelAdmin):
         "nombre", "activo", "disponible_semana", "gestiona_todos_jugadores",
         "disponibilidad_notas",
     )
-    list_editable = ("activo", "disponible_semana", "gestiona_todos_jugadores")
+    # «Disponible esta semana» es de solo lectura: que no está se apunta en
+    # su calendario (Vacaciones de entrenadores), no con el interruptor.
+    list_editable = ("activo", "gestiona_todos_jugadores")
+    readonly_fields = ("disponible_semana",)
     search_fields = ("nombre",)
-    filter_horizontal = ("jugadores_gestionados", "divisiones_habilitadas")
+    filter_horizontal = ("divisiones_habilitadas",)
 
 
 class HorarioJugadorInline(admin.TabularInline):

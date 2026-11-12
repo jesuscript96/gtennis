@@ -47,7 +47,7 @@ export const CATEGORIAS = [
 export const nombreCategoria = (c) => CATEGORIAS.find((x) => x.codigo === c)?.nombre || c;
 export const CERTEZA_LABEL = { CONFIRMADO: "Confirmado", PENDIENTE: "Pendiente", DEDUCIDO: "Deducido" };
 export const CERTEZA_CLASS = { CONFIRMADO: "ok", PENDIENTE: "pend", DEDUCIDO: "ded" };
-export const ESTADO_CLASS = { VALIDADO: "ok", PROPUESTO: "pend", CANCELADO: "no" };
+export const ESTADO_CLASS = { VALIDADO: "ok", CANCELADO: "no" };
 export function sumaDias(iso, n) {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + n);

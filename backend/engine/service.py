@@ -118,24 +118,26 @@ def _sponsor_map(tipo="DURO") -> dict[int, set[int]]:
 
 
 def _overrides(semana: Semana, dia: int) -> dict[tuple[int, str], object]:
-    """(jugador_id, ambito) -> la ausencia que aplica ese día.
+    """(jugador_id, ambito) -> la falta que aplica ese día.
 
-    Se juntan dos fuentes que el motor trata igual: el parte de la semana
-    (`Disponibilidad`, una fila por día) y las ausencias declaradas por rango
-    de fechas (`AusenciaJugador`, una sola fila para toda una lesión). Las de
-    rango se expanden aquí, así que quien declaró "del 2 de noviembre al 15 de
-    diciembre" no tiene que repetirlo cada semana.
+    Desde el 10/11/2026 hay un solo registro de faltas (`AusenciaJugador`, por
+    fechas, con autor). En el parte semanal (`Disponibilidad`) solo queda
+    «viene además» (EXTRA), que manda sobre una falta del mismo ámbito.
 
-    Si ambas hablan del mismo jugador y ámbito, manda el parte de la semana:
-    es más reciente y más específico.
+    Si varias faltas hablan del mismo jugador y ámbito, manda la más concreta:
+    la de menos días (un día suelto pisa a una lesión larga) y, a igualdad, la
+    última apuntada. Es lo que hacía antes el parte de la semana frente a las
+    ausencias por fechas.
     """
     from scheduling.models import AusenciaJugador
 
     fecha = semana.fecha_inicio + timedelta(days=dia)
     out = {}
-    for a in AusenciaJugador.objects.filter(
-        fecha_inicio__lte=fecha, fecha_fin__gte=fecha
-    ):
+    filas = sorted(
+        AusenciaJugador.objects.filter(fecha_inicio__lte=fecha, fecha_fin__gte=fecha),
+        key=lambda a: (-(a.fecha_fin - a.fecha_inicio).days, a.created_at, a.id),
+    )
+    for a in filas:
         out[(a.jugador_id, a.ambito)] = a
     for d in Disponibilidad.objects.filter(semana=semana, dia=dia):
         out[(d.jugador_id, d.ambito)] = d
@@ -295,8 +297,11 @@ def motivo_no_disponible(c, dia, turno, fecha, vacaciones, jornada, partes):
     """
     if not c.disponible_semana:
         return "no disponible esta semana"
-    if any(v.afecta_turno(turno) for v in vacaciones.get(c.id, ())):
-        return "de vacaciones"
+    for v in vacaciones.get(c.id, ()):
+        if v.afecta_turno(turno, fecha):
+            # El motivo que se apuntó en su calendario (vacaciones, torneo…).
+            motivo = (v.motivo or "").split(" · ")[0].strip().lower()
+            return f"no está: {motivo}" if motivo else "no está"
     # Jornada estable: quien no trabaja ese bloque ese día no entra. Sin fila
     # se entiende jornada completa.
     jor = jornada.get((c.id, dia))
@@ -2043,10 +2048,9 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
             fecha_inicio__lte=fecha, fecha_fin__gte=fecha
         ):
             vac_de[v.entrenador_id].append(v)
-        coach_ovr = {
-            d.entrenador_id: d
-            for d in DisponibilidadEntrenador.objects.filter(semana=semana, dia=dia)
-        }
+        # «Disp. entrenadores» ya no existe (10/11/2026): todo lo que un
+        # entrenador no puede está en su calendario (`vac_de`).
+        coach_ovr = {}
 
         def elegibles_para(turno, presentes=frozenset(), todos=False):
             """Entrenadores que pueden dar clase en este turno y no están ya en

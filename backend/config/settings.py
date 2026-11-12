@@ -167,3 +167,20 @@ DRIVE_CT_USUARIO = os.environ.get("DRIVE_CT_USUARIO", "")
 DRIVE_CT_RUTA = os.environ.get(
     "DRIVE_CT_RUTA",
     "GTENNIS 2.0 - OPERACIONES › Gestion deportiva › Competicion tardes › 26/27 › Seguimiento y evaluaciones")
+
+# --- Correo a las familias (10/11/2026, decisión 13) -------------------------
+# Con EMAIL_HOST se envía por SMTP (p. ej. la cuenta gestion@ del club). Sin él,
+# en desarrollo se escribe en la consola del servidor y en producción el envío
+# dice que no está configurado.
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "gestion@gtennis.com")
+if EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+elif DEBUG:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"

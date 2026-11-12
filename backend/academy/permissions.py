@@ -1,46 +1,200 @@
-"""Permisos por rol (arquitectura de usuarios).
+"""Permisos: perfiles y funciones (orden de la aplicación, 10/11/2026).
 
-Jerarquía: Dirección deportiva (SUPERADMIN) → Coach → Entrenador.
+Cuatro perfiles más Administración (`users.User.Role`):
 
-  * ReadOnlyOrDireccion   → cualquiera autenticado lee; solo dirección escribe.
-                            Config de club (sedes, pistas, divisiones, motor…).
-  * DireccionOrCoachWrite → cualquiera autenticado lee; dirección y coaches
-                            escriben. El alcance fino (equipo del coach) lo
-                            aplica el get_queryset de cada viewset.
+  * Dirección        → todo.
+  * Head coach       → su grupo (su color): jugadores, entrenadores, faltas,
+                       torneos y evaluaciones de su grupo.
+  * Entrenador       → sus jugadores y su día.
+  * Preparador físico→ la parte física de los informes.
+  * Administración   → altas y datos de jugadores y envío de informes.
+
+Lo demás son funciones que dirección marca a cada persona desde Club
+(`users.Funcion`), en lugar de nombres escritos en el código:
+Toca el cuadrante, Aprueba invitados, Coordina Competición de tardes, Valida
+informes y Envía informes. Evaluar tenis o física de tardes es el equipo de
+tardes (`evaluaciones.MiembroTardes`). Dirección las tiene todas.
+
+Una sola regla por permiso, se entre por donde se entre: las vistas preguntan
+aquí y el usuario lleva estas mismas respuestas a la interfaz (/auth/me/), que
+esconde lo que no puede usar.
 
 El alcance por filas (qué jugadores/entrenadores ve cada uno) vive en
-`academy.scope`; aquí solo se decide quién puede escribir por método.
+`academy.scope`.
 """
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
+TOCA_CUADRANTE = "TOCA_CUADRANTE"
+APRUEBA_INVITADOS = "APRUEBA_INVITADOS"
+COORDINA_TARDES = "COORDINA_TARDES"
+VALIDA_INFORMES = "VALIDA_INFORMES"
+ENVIA_INFORMES = "ENVIA_INFORMES"
+
+
+def _autenticado(user):
+    return bool(user and user.is_authenticated)
+
 
 def es_direccion(user):
-    return bool(user and user.is_authenticated and user.is_superadmin)
+    return bool(_autenticado(user) and user.is_superadmin)
 
 
-# Además de dirección, estos usuarios meten invitados ya aprobados y aprueban
-# los de los demás (petición del 21/10/2026: Dani e Iván cuentan como dirección
-# para los invitados aunque su rol sea de coach).
-APRUEBAN_INVITADOS = {"daniel.gimeno", "ivan.gallego"}
-
-
-def aprueba_invitados(user):
-    return es_direccion(user) or bool(
-        user and user.is_authenticated and user.username in APRUEBAN_INVITADOS)
+def es_administracion(user):
+    return bool(_autenticado(user) and getattr(user, "is_administracion", False))
 
 
 def es_coach(user):
-    coach = getattr(user, "coach", None) if (user and user.is_authenticated) else None
-    return bool(coach is not None and coach.activo)
+    """Head coach activo (con su bloque de entrenadores)."""
+    coach = getattr(user, "coach", None) if _autenticado(user) else None
+    return bool(coach is not None and coach.activo and not user.is_superadmin)
+
+
+def es_preparador(user):
+    return bool(_autenticado(user) and getattr(user, "is_preparador", False))
+
+
+def tiene_funcion(user, codigo):
+    """Dirección las tiene todas; el resto, las que tenga marcadas en Club."""
+    if not _autenticado(user):
+        return False
+    if es_direccion(user):
+        return True
+    return codigo in user.codigos_funcion()
+
+
+def toca_cuadrante(user):
+    """Mueve el cuadrante a mano, lo rehace, lo deshace y lo publica (decisión 1)."""
+    return tiene_funcion(user, TOCA_CUADRANTE)
+
+
+def aprueba_invitados(user):
+    """Mete invitados ya aprobados y aprueba sus días. Solo dirección propone
+    invitados (decisión 8); quien tiene la función cuenta como dirección para
+    los invitados."""
+    return tiene_funcion(user, APRUEBA_INVITADOS)
+
+
+def mueve_divisiones(user):
+    """División y ranking: solo dirección (decisión 5)."""
+    return es_direccion(user)
+
+
+# Compatibilidad: «gestión deportiva» era dirección más Dani Gimeno. Desde el
+# 10/11/2026 lo que hacía Dani por estar en esa lista son funciones suyas.
+gestion_deportiva = es_direccion
+
+
+def ve_reglas_jugador(user):
+    """Rencillas y contratos: dirección y head coaches; el entrenador, nada
+    (decisión 7)."""
+    return es_direccion(user) or es_coach(user)
+
+
+def ve_todos_los_jugadores(user):
+    """Dirección y Administración ven a todos los jugadores."""
+    return es_direccion(user) or es_administracion(user)
+
+
+def _en_tardes(user, funcion):
+    if not _autenticado(user):
+        return False
+    from evaluaciones.models import MiembroTardes
+
+    return MiembroTardes.objects.filter(usuario=user, funcion=funcion).exists()
+
+
+def coordina_informes(user):
+    """Lleva Competición de tardes: reparte jugadores, da altas y bajas de
+    jugadores y del equipo de informes, y recibe el aviso de validar."""
+    return tiene_funcion(user, COORDINA_TARDES)
+
+
+def es_coordinador_tardes(user):
+    """Tiene marcada la función (sin contar a dirección)."""
+    return bool(_autenticado(user) and COORDINA_TARDES in user.codigos_funcion())
+
+
+def valida_informes(user):
+    """Aprueba, corrige o devuelve los informes. Abre y corrige las dos partes
+    (decisión 11)."""
+    return tiene_funcion(user, VALIDA_INFORMES)
+
+
+def envia_informes(user):
+    """Envía a las familias los informes aprobados: dirección, Administración
+    y quien tenga la función."""
+    return es_administracion(user) or tiene_funcion(user, ENVIA_INFORMES)
+
+
+def evalua_tenis_solo_informes(user):
+    """Hace la evaluación de tenis de los alumnos de escuelas «solo informes»."""
+    return coordina_informes(user) or _en_tardes(user, "TENIS") or valida_informes(user)
+
+
+def evalua_fisico(user):
+    """Ve y hace evaluaciones físicas: el preparador físico, quien esté de
+    físico en el equipo de tardes y quien valida (abre las dos partes)."""
+    return es_preparador(user) or _en_tardes(user, "FISICO") or valida_informes(user)
+
+
+def ve_informes(user):
+    """Entra en los informes: quien evalúa tenis o físico, quien valida y
+    quien los envía."""
+    return (evalua_tenis_solo_informes(user) or evalua_fisico(user)
+            or valida_informes(user) or envia_informes(user))
+
+
+def _usuarios_con(codigo, con_direccion=True):
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    q = Q(funciones__codigo=codigo)
+    if con_direccion:
+        q |= Q(role="SUPERADMIN") | Q(is_superuser=True)
+    return list(get_user_model().objects.filter(is_active=True).filter(q).distinct())
+
+
+def usuarios_valida_informes():
+    """Usuarios activos que validan, para avisarles."""
+    return _usuarios_con(VALIDA_INFORMES)
+
+
+def usuarios_avisar_validar():
+    """A quién se avisa de que hay un informe listo para validar: a quien
+    coordina Competición de tardes (decisión 11). Si nadie tiene la función,
+    a todos los que validan."""
+    return _usuarios_con(COORDINA_TARDES, con_direccion=False) or usuarios_valida_informes()
+
+
+def resumen(user):
+    """Lo que la interfaz necesita saber para enseñar solo lo que funciona."""
+    return {
+        "perfil": user.perfil,
+        "funciones": sorted(user.codigos_funcion()) if not es_direccion(user) else [
+            TOCA_CUADRANTE, APRUEBA_INVITADOS, COORDINA_TARDES, VALIDA_INFORMES, ENVIA_INFORMES],
+        "toca_cuadrante": toca_cuadrante(user),
+        "aprueba_invitados": aprueba_invitados(user),
+        "mueve_divisiones": mueve_divisiones(user),
+        "ve_reglas_jugador": ve_reglas_jugador(user),
+        "ve_todos_los_jugadores": ve_todos_los_jugadores(user),
+        "coordina_informes": coordina_informes(user),
+        "valida_informes": valida_informes(user),
+        "envia_informes": envia_informes(user),
+        "evalua_fisico": evalua_fisico(user),
+        "evalua_tenis_informes": evalua_tenis_solo_informes(user),
+        "ve_informes": ve_informes(user),
+        # Compatibilidad con pantallas que aún lo leen.
+        "gestion_deportiva": es_direccion(user),
+    }
 
 
 class ReadOnlyOrDireccion(BasePermission):
     """Lectura para cualquier autenticado; escritura solo para dirección."""
 
-    message = "Solo la dirección deportiva puede modificar este recurso."
+    message = "Solo dirección puede cambiar esto."
 
     def has_permission(self, request, view):
-        if not (request.user and request.user.is_authenticated):
+        if not _autenticado(request.user):
             return False
         if request.method in SAFE_METHODS:
             return True
@@ -48,114 +202,37 @@ class ReadOnlyOrDireccion(BasePermission):
 
 
 class DireccionOrCoachWrite(BasePermission):
-    """Lectura para cualquier autenticado; escritura para dirección y coaches."""
+    """Lectura para cualquier autenticado; escritura para dirección y head
+    coaches. El alcance fino lo aplica el get_queryset de cada vista."""
 
-    message = "Necesitas ser dirección o coach para modificar este recurso."
+    message = "Solo dirección o un head coach pueden cambiar esto."
 
     def has_permission(self, request, view):
-        if not (request.user and request.user.is_authenticated):
+        if not _autenticado(request.user):
             return False
         if request.method in SAFE_METHODS:
             return True
         return es_direccion(request.user) or es_coach(request.user)
 
 
-# Gestión deportiva (21/10/2026): dirección y, además, Dani Gimeno aunque su
-# rol sea de coach. Mueven alumnos de una división a otra desde Divisiones y
-# ven y hacen la parte física de los informes.
-GESTION_DEPORTIVA = {"daniel.gimeno"}
+class ReglasJugador(BasePermission):
+    """Rencillas y contratos: ni leer ni escribir para quien no es dirección
+    ni head coach (decisión 7)."""
+
+    message = "Las rencillas y los contratos solo los ven dirección y los head coaches."
+
+    def has_permission(self, request, view):
+        return ve_reglas_jugador(request.user)
 
 
-def gestion_deportiva(user):
-    return es_direccion(user) or bool(
-        user and user.is_authenticated and user.username in GESTION_DEPORTIVA)
+class TocaCuadrante(BasePermission):
+    """Lectura para cualquier autenticado; cambios para quien toca el cuadrante."""
 
+    message = "No tienes la función «Toca el cuadrante»."
 
-mueve_divisiones = gestion_deportiva
-
-
-def es_preparador(user):
-    return bool(user and user.is_authenticated and getattr(user, "is_preparador", False))
-
-
-def evalua_fisico(user):
-    """Ve y hace evaluaciones físicas: el preparador físico, gestión deportiva y
-    quien esté de físico en el equipo de tardes."""
-    return es_preparador(user) or gestion_deportiva(user) or _en_tardes(user, "FISICO")
-
-
-# Competición de tardes. Alberto Sanz coordina (29/10/2026) y desde el
-# 02/11/2026 también valida sus informes, reparte los jugadores y da de alta y
-# de baja a jugadores y entrenadores de tardes. Quién evalúa cada parte ya no
-# es una lista fija: lo lleva él en la app (`evaluaciones.MiembroTardes`).
-COORDINAN_COMPETICION_TARDES = {"alberto.sanz"}
-
-
-def _de(user, nombres):
-    return bool(user and user.is_authenticated and user.username in nombres)
-
-
-def _en_tardes(user, funcion):
-    if not (user and user.is_authenticated):
-        return False
-    from evaluaciones.models import MiembroTardes
-
-    return MiembroTardes.objects.filter(usuario=user, funcion=funcion).exists()
-
-
-def es_coordinador_tardes(user):
-    return _de(user, COORDINAN_COMPETICION_TARDES)
-
-
-def coordina_informes(user):
-    """Lleva Competición de tardes: reparte jugadores, da altas y bajas de
-    jugadores y del equipo de informes."""
-    return gestion_deportiva(user) or es_coordinador_tardes(user)
-
-
-def evalua_tenis_solo_informes(user):
-    """Hace la evaluación de tenis de los alumnos de escuelas «solo informes»."""
-    return (gestion_deportiva(user) or es_coordinador_tardes(user)
-            or _en_tardes(user, "TENIS"))
-
-
-# Además de gestión deportiva, valida Iván Gallego (coach, como Dani: «validan
-# Sergio, Iván, Dani Gimeno o admin», 27/10/2026), y el coordinador de tardes.
-VALIDAN_INFORMES = {"ivan.gallego"}
-# Administración envía los informes a las familias, pero no los valida (29/10/2026).
-NO_VALIDAN_INFORMES = {"administracion"}
-
-
-def valida_informes(user):
-    """Valida (aprueba, corrige o devuelve) los informes: el coordinador de
-    tardes y gestión deportiva (Sergio, Iván, Dani Gimeno, admin y el resto de
-    dirección, menos administración)."""
-    if _de(user, NO_VALIDAN_INFORMES):
-        return False
-    return gestion_deportiva(user) or _de(user, VALIDAN_INFORMES) or es_coordinador_tardes(user)
-
-
-def ve_informes(user):
-    """Ve los informes de Competición de tardes: quien evalúa tenis o físico
-    de esos alumnos y quien valida."""
-    return evalua_tenis_solo_informes(user) or evalua_fisico(user) or valida_informes(user)
-
-
-def usuarios_valida_informes():
-    """Usuarios activos que validan, para avisarles."""
-    from django.contrib.auth import get_user_model
-
-    from django.db.models import Q
-    User = get_user_model()
-    return [u for u in User.objects.filter(is_active=True).filter(
-        Q(role="SUPERADMIN") | Q(is_superuser=True) | Q(username__in=GESTION_DEPORTIVA | VALIDAN_INFORMES | COORDINAN_COMPETICION_TARDES))
-        .exclude(username__in=NO_VALIDAN_INFORMES)]
-
-
-def usuarios_avisar_validar():
-    """A quién se avisa de que hay un informe listo para validar: el
-    coordinador de tardes (02/11/2026). Sin él activo, a todos los que validan."""
-    from django.contrib.auth import get_user_model
-
-    coord = list(get_user_model().objects.filter(is_active=True, username__in=COORDINAN_COMPETICION_TARDES))
-    return coord or usuarios_valida_informes()
+    def has_permission(self, request, view):
+        if not _autenticado(request.user):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return toca_cuadrante(request.user)

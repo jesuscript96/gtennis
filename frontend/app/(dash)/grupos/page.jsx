@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getGrupos, getGruposDivisiones, grupoMover, grupoMoverEntrenador, grupoOrdenar,
+  getGrupos, grupoCompartir, grupoMover, grupoMoverEntrenador, grupoOrdenar,
   grupoQuitar, resource,
 } from "../../../lib/api";
+import DivisionesRanking from "../../../components/DivisionesRanking";
 
 /**
  * El organigrama de la academia, como está en el Excel de dirección: cada
@@ -36,17 +37,21 @@ import {
  * columnas de un bloque se ordenan de izquierda a derecha arrastrándolas por la
  * cabecera: dirección en todos los bloques, el head coach en el suyo.
  *
- * 21/10/2026: segunda pestaña, «Por división»: solo los alumnos, cada uno en la
- * columna de su división. Es para mirar; la división se cambia en la ficha.
+ * 21/10/2026: segunda pestaña, «Por división». Desde el 10/11/2026 es la
+ * antigua pantalla Divisiones: ranking y cambio de división, solo dirección.
+ *
+ * 10/11/2026: mover a un alumno solo cambia quién le gestiona; sus porcentajes
+ * se cambian en su ficha (si el nuevo no le entrena, se avisa).
  */
 const VISTAS = [["entrenador", "Por entrenador"], ["division", "Por división"]];
 
 export default function Page() {
   const [vista, setVista] = useState("entrenador");
-  // Se recuerda la última pestaña en este navegador (si se puede).
+  // La pestaña viene en el enlace (?vista=division) o se recuerda la última.
   useEffect(() => {
     try {
-      const v = localStorage.getItem("gt_grupos_vista");
+      const pedida = new URLSearchParams(window.location.search).get("vista");
+      const v = pedida || localStorage.getItem("gt_grupos_vista");
       if (VISTAS.some(([k]) => k === v)) setVista(v);
     } catch {}
   }, []);
@@ -65,85 +70,8 @@ export default function Page() {
     </div>
   );
   return vista === "division"
-    ? <PorDivision pestanas={pestanas} />
+    ? <DivisionesRanking pestanas={pestanas} />
     : <PorEntrenador pestanas={pestanas} />;
-}
-
-/** Los alumnos por división: una columna por división, sin entrenadores. */
-function PorDivision({ pestanas }) {
-  const [datos, setDatos] = useState(null);
-  const [error, setError] = useState("");
-  const [busca, setBusca] = useState("");
-
-  useEffect(() => {
-    getGruposDivisiones().then(setDatos).catch((e) => setError(e.message));
-  }, []);
-
-  const coincide = (j) =>
-    !busca.trim() || j.nombre.toLowerCase().includes(busca.trim().toLowerCase());
-  const total = datos ? datos.divisiones.reduce((n, d) => n + d.jugadores.length, 0) : 0;
-
-  return (
-    <div className="page grupos">
-      <div className="page-head"><h1>Grupos</h1></div>
-      {pestanas}
-      {!datos ? (
-        error ? <p className="err">{error}</p> : <p className="msg">Cargando…</p>
-      ) : (
-        <>
-          <div className="toolbar">
-            <input className="search" placeholder="Buscar alumno…" value={busca}
-              onChange={(e) => setBusca(e.target.value)} />
-          </div>
-          <section className="bloque">
-            <header className="bloque-head">
-              <h2>Alumnos por división</h2>
-              <span className="cuenta">
-                {datos.divisiones.filter((d) => d.nivel != null).length} divisiones
-                {" · "}{total} alumno{total === 1 ? "" : "s"}
-              </span>
-              <span className="nota-grupo">
-                Debajo de cada alumno, el entrenador que responde por él. La división
-                se cambia en su ficha.
-              </span>
-            </header>
-            <div className="columnas por-division">
-              {datos.divisiones.map((d) => {
-                const suyos = d.jugadores.filter(coincide);
-                return (
-                  <article key={d.id ?? "sin"} className="columna">
-                    <header className="col-head" style={{ cursor: "default" }}>
-                      <div>
-                        <h3>{d.nivel != null ? `D${d.nivel}` : "Sin división"}
-                          {d.nivel != null && d.nombre ? ` · ${d.nombre}` : ""}</h3>
-                        <p className="sub">{d.jugadores.length} alumno
-                          {d.jugadores.length === 1 ? "" : "s"}</p>
-                      </div>
-                    </header>
-                    {suyos.length === 0 ? (
-                      <p className="msg">{busca && d.jugadores.length ? "Ninguno con ese nombre." : "Sin alumnos."}</p>
-                    ) : (
-                      <ul className="miembros">
-                        {suyos.map((j) => (
-                          <li key={j.id} className="alumno-div">
-                            <span className="txt">{j.nombre}</span>
-                            <span className="resp">
-                              {[j.responsable || "Sin grupo", j.edad ? `${j.edad} año${j.edad === 1 ? "" : "s"}` : null]
-                                .filter(Boolean).join(" · ")}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        </>
-      )}
-    </div>
-  );
 }
 
 function PorEntrenador({ pestanas }) {
@@ -197,8 +125,8 @@ function PorEntrenador({ pestanas }) {
   const accion = useCallback(async (fn, mensaje) => {
     setOcupado(true); setError(""); setAviso("");
     try {
-      await fn();
-      setAviso(mensaje);
+      const extra = await fn();
+      setAviso(typeof extra === "string" ? `${mensaje} ${extra}` : mensaje);
       await cargar();
     } catch (e) {
       setError(e.message);
@@ -219,8 +147,17 @@ function PorEntrenador({ pestanas }) {
         );
       }
       if (zona.entrenador === q.desde) return;
+      if (zona.compartir) {
+        return accion(
+          () => grupoCompartir(q.id, zona.entrenador),
+          `${zona.nombre} comparte la gestión de ${q.nombre}.`
+        );
+      }
+      // Mover solo cambia quién le gestiona; los porcentajes, en su ficha.
       return accion(
-        () => grupoMover(q.id, zona.entrenador),
+        async () => ((await grupoMover(q.id, zona.entrenador))?.revisar_porcentajes
+          ? "Sigue entrenando con los mismos porcentajes: cámbialos en su ficha si hace falta."
+          : null),
         `${q.nombre} pasa al grupo de ${zona.nombre}.`
       );
     }
@@ -468,10 +405,19 @@ function PorEntrenador({ pestanas }) {
         </header>
 
         {moviendoJugador && conBotones && editable && (
-          <button className="btn sm traer" disabled={ocupado}
-            onClick={() => soltarEn({ entrenador: e.id, nombre: e.nombre }, cogido)}>
-            Traer aquí
-          </button>
+          <div className="traer-acciones">
+            <button className="btn sm traer" disabled={ocupado}
+              onClick={() => soltarEn({ entrenador: e.id, nombre: e.nombre }, cogido)}>
+              Traer aquí
+            </button>
+            {cogido?.desde && cogido.desde !== e.id && (
+              <button className="btn ghost sm traer" disabled={ocupado}
+                title="Lo gestionan los dos: sale en las dos columnas"
+                onClick={() => soltarEn({ entrenador: e.id, nombre: e.nombre, compartir: true }, cogido)}>
+                Compartir gestión
+              </button>
+            )}
+          </div>
         )}
 
         {propios.length === 0 ? (
@@ -499,9 +445,9 @@ function PorEntrenador({ pestanas }) {
           {columnasEditables && <>, o una <b>columna entera</b> (por su cabecera) a otro bloque</>}.
           {ordenables.size > 0 && <> Las columnas se ordenan de izquierda a derecha
           arrastrándolas por la cabecera.</>}{" "}
-          El alumno pasa a ese grupo: responsable y principal el de la columna,
-          y un 10% al resto del bloque (se retoca en Jugadores → Entrenadores).
-          En el móvil, toca a quien mueves y luego <b>Traer aquí</b>.
+          El alumno pasa a ese grupo: le gestiona el de la columna. Con quién entrena
+          y en qué porcentaje no cambia: se retoca en su ficha. Con <b>Compartir gestión</b>
+          lo llevan los dos. En el móvil, toca a quien mueves y luego <b>Traer aquí</b>.
         </p>
       )}
       <p className="help">

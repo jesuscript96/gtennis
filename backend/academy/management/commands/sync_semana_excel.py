@@ -12,8 +12,13 @@ Este comando lee ese bloque y deja la BD alineada con él:
 
   * crea las fichas de jugador que faltan y reactiva las que estaban de baja,
   * corrige la escuela de cada jugador según la columna en la que aparece,
-  * marca `disponible_semana` de los entrenadores que no salen esa semana,
+  * apunta en el calendario de los entrenadores que no salen esa semana «No
+    sale esta semana», de lunes a sábado, y se lo quita a los que sí salen
+    (solo lo que apuntó esta carga: lo apuntado a mano no se toca),
   * crea / reactiva / renombra los entrenadores de la semana.
+
+La semana se deduce de la cabecera («AGOSTO 24 AL 30» → lunes 24 de agosto del
+año en curso, o del de `--anio`); `--lunes AAAA-MM-DD` la fija a mano.
 
 A diferencia de `import_alumnos`, la fuente aquí es la rejilla escrita a mano,
 no el export del software de gestión: los jugadores creados NO tienen
@@ -33,10 +38,14 @@ import os
 import re
 import unicodedata
 from collections import Counter, defaultdict
+from datetime import date, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from academy.calendario import (
+    MOTIVO_SEMANA, marcado_por_carga, marcar_no_disponible, volver_disponible,
+)
 from academy.models import Division, Entrenador, Escuela, Jugador
 
 FILA_CABECERA = 14
@@ -119,6 +128,26 @@ def clave_semana(valor):
     return " ".join(re.sub(r"[^A-Za-z0-9]", " ", s).upper().split())
 
 
+MESES = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6,
+    "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "SETIEMBRE": 9, "OCTUBRE": 10,
+    "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
+
+
+def lunes_de(cabecera, anio):
+    """El lunes de la semana de la cabecera («AGOSTO 24 AL 30»), o None si no
+    empieza por un mes y un día."""
+    m = re.match(r"([A-Z]+) (\d{1,2})\b", clave_semana(cabecera))
+    if not m or m.group(1) not in MESES:
+        return None
+    try:
+        dia = date(anio, MESES[m.group(1)], int(m.group(2)))
+    except ValueError:
+        return None
+    return dia - timedelta(days=dia.weekday())
+
+
 def clave_coach(nombre):
     """Clave de entrenador. A diferencia de `clave`, CONSERVA las iniciales
     sueltas: "JORGE I" (Ibáñez) y "JORGE" (García) son personas distintas."""
@@ -153,6 +182,13 @@ class Command(BaseCommand):
         parser.add_argument(
             "--inferir-divisiones", action="store_true",
             help="Propone división provisional deduciéndola del cuadrante.",
+        )
+        parser.add_argument(
+            "--anio", type=int,
+            help="Año de la semana de la cabecera (por defecto, el actual).",
+        )
+        parser.add_argument(
+            "--lunes", help="Lunes de la semana (AAAA-MM-DD), si la cabecera no basta.",
         )
         parser.add_argument("--dry-run", action="store_true")
 
@@ -267,7 +303,23 @@ class Command(BaseCommand):
         with transaction.atomic():
             self._run(**opts)
 
+    def _semana(self, opts):
+        """(lunes, sábado) de la semana que se sincroniza."""
+        if opts.get("lunes"):
+            try:
+                lunes = date.fromisoformat(opts["lunes"])
+            except ValueError as exc:
+                raise CommandError(f"--lunes no es una fecha AAAA-MM-DD: {opts['lunes']!r}") from exc
+            lunes -= timedelta(days=lunes.weekday())
+        else:
+            lunes = lunes_de(opts["semana"], opts.get("anio") or date.today().year)
+            if lunes is None:
+                raise CommandError(
+                    f"No sé qué semana es {opts['semana']!r}: pasa --lunes AAAA-MM-DD.")
+        return lunes, lunes + timedelta(days=5)
+
     def _run(self, **opts):
+        lunes, sabado = self._semana(opts)
         ws = self._abrir(opts["file"], opts["hoja"])
         ar, jp, coaches_excel = self._roster(ws, opts["semana"])
         seco = opts["dry_run"]
@@ -383,12 +435,22 @@ class Command(BaseCommand):
                 renombrados.append((principal.nombre, destino))
                 principal.nombre = destino
             activo = destino in quiere or principal.gestiona_todos_jugadores
-            if principal.activo != activo or principal.disponible_semana != activo:
+            # Disponible esa semana = sin el «No sale esta semana» de una
+            # carga anterior. El interruptor de la ficha ya no cuenta.
+            disponible_antes = not marcado_por_carga(
+                principal, lunes, sabado, motivo=MOTIVO_SEMANA)
+            if principal.activo != activo or disponible_antes != activo:
                 (apagados if not activo else reactivados_c).append(destino)
             principal.activo = activo or principal.activo
-            principal.disponible_semana = activo
+            principal.disponible_semana = True
             if not seco:
                 principal.save()
+                # Quien no sale, a su calendario solo esa semana, de lunes a
+                # sábado; quien sale, sin lo que le apuntó una carga anterior.
+                if activo:
+                    volver_disponible(principal, lunes, sabado, motivo=MOTIVO_SEMANA)
+                else:
+                    marcar_no_disponible(principal, lunes, sabado, motivo=MOTIVO_SEMANA)
             for d in duplicados:
                 fusionados.append((d.nombre, destino))
                 if not seco:
@@ -409,8 +471,8 @@ class Command(BaseCommand):
         # -- informe ---------------------------------------------------------
         w = self.stdout.write
         w(self.style.MIGRATE_HEADING(
-            f"\nRoster {opts['semana']} — {len(ar)} alto rendimiento, "
-            f"{len(jp)} junior, {len(quiere)} entrenadores"
+            f"\nRoster {opts['semana']} ({lunes:%d/%m/%Y}–{sabado:%d/%m/%Y}) — "
+            f"{len(ar)} alto rendimiento, {len(jp)} junior, {len(quiere)} entrenadores"
         ))
         w(f"\nJugadores creados ({len(creados)}):")
         for n, e in creados:
@@ -435,7 +497,8 @@ class Command(BaseCommand):
             w(f"  − {antes} (duplicado de {ahora})")
         w(f"\nEntrenadores dados de alta ({len(altas_c)}): {', '.join(altas_c) or '—'}")
         w(f"\nEntrenadores sin trabajo esta semana ({len(apagados)}): "
-          f"{', '.join(sorted(set(apagados))) or '—'}")
+          f"{', '.join(sorted(set(apagados))) or '—'}"
+          f"\n  → «{MOTIVO_SEMANA}» en su calendario del {lunes:%d/%m} al {sabado:%d/%m}.")
         if creados:
             w(self.style.WARNING(
                 f"\n⚠ {len(creados)} jugadores creados sin codigo_cliente. "

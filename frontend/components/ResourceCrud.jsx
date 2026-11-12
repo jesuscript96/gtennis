@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { resource } from "../lib/api";
 import { canWrite } from "../lib/perms";
+import { getUser } from "../lib/api";
 
 function emptyValue(fl) {
   if (fl.type === "bool") return false;
@@ -18,9 +19,12 @@ function defaults(fields) {
 
 // Campos que aplican en este momento: `soloCrear` desaparece al editar y
 // `soloEditar` no sale al crear.
+// `ve(usuario)`: el campo solo sale a quien puede cambiarlo (10/11/2026: lo
+// que se ve, funciona).
 function camposDe(fields, editando) {
+  const u = getUser();
   return fields.filter((fl) =>
-    editando ? !fl.soloCrear : !fl.soloEditar);
+    (editando ? !fl.soloCrear : !fl.soloEditar) && (!fl.ve || fl.ve(u)));
 }
 
 function toBody(fields, form) {
@@ -41,6 +45,8 @@ function toBody(fields, form) {
 export default function ResourceCrud({ config }) {
   const api = useMemo(() => resource(config.endpoint), [config.endpoint]);
   const writable = useMemo(() => canWrite(config.endpoint), [config.endpoint]);
+  // Quien puede dar de alta sin poder cambiar ni borrar (p. ej. una incidencia).
+  const creable = useMemo(() => (config.crear ? config.crear(getUser()) : writable), [config, writable]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -141,7 +147,7 @@ export default function ResourceCrud({ config }) {
     <div>
       <div className="page-head">
         <h1>{config.title}</h1>
-        {writable
+        {creable
           ? <button className="btn" onClick={openNew}>+ Nuevo</button>
           : <span className="pill no" title="Tu rol solo puede consultar este recurso">Solo lectura</span>}
       </div>
@@ -219,7 +225,7 @@ export default function ResourceCrud({ config }) {
                   ))}
                   <td>
                     <div className="row-actions">
-                      {(config.rowActions || []).map((ra) => (
+                      {(config.rowActions || []).filter((ra) => !ra.ve || ra.ve(getUser())).map((ra) => (
                         <button key={ra.label} className="btn ghost sm" onClick={() => ra.onClick(row, load)}>{ra.label}</button>
                       ))}
                       {writable && <button className="btn ghost sm" onClick={() => openEdit(row)}>Editar</button>}

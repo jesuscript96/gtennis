@@ -111,9 +111,16 @@ class FaltaTrasElCorteTests(TestCase):
         self.assertTrue(fila["falta"]["tardia"])
 
     def test_rehacer_un_dia_cerrado_pide_confirmacion(self):
+        from users.models import Funcion
+
         api = APIClient()
-        api.force_authenticate(self.u_dani)  # un coach también puede
+        api.force_authenticate(self.u_dani)
         url = f"/api/semanas/{self.semana.id}/generar/"
+        # 10/11/2026 (decisión 1): un head coach rehace solo si tiene la
+        # función «Toca el cuadrante».
+        self.assertEqual(api.post(url, {"solo_dia": 1}, format="json").status_code, 403)
+        Funcion.objects.create(usuario=self.u_dani, codigo="TOCA_CUADRANTE")
+        api.force_authenticate(User.objects.get(pk=self.u_dani.pk))
         with reloj(a_las(LUNES, 20)):
             r = api.post(url, {"solo_dia": 1}, format="json")
             self.assertEqual(r.status_code, 409)

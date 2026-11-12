@@ -1,82 +1,64 @@
 "use client";
 
 import { getUser } from "./api";
+import { dondeEsta, esAdministracion, esPreparador, esEntrenador, perfil } from "./menu";
 
-// Rango de rol: dirección (3) > coach (2) > entrenador (1).
+// Perfiles (10/11/2026): dirección, head coach, entrenador, preparador físico y
+// administración. Lo fino (tocar el cuadrante, aprobar invitados, validar…)
+// son funciones que dirección asigna desde Club; el servidor las manda ya
+// resueltas en /auth/me/ y aquí solo se leen.
+
+// Rango para lo que aún compara niveles: dirección (3) > head coach (2) > resto (1).
 export function roleRank(user) {
-  if (user?.is_superadmin) return 3;
-  if (user?.is_coach) return 2;
-  return 1; // entrenador o cualquier autenticado
+  const p = perfil(user);
+  if (p === "direccion") return 3;
+  if (p === "head_coach") return 2;
+  return 1;
 }
 
 export function navRole(user = getUser()) {
-  if (user?.is_preparador) return "preparador";
-  return user?.is_superadmin ? "direccion" : user?.is_coach ? "coach" : "entrenador";
+  return perfil(user);
 }
 
-// El preparador físico (21/10/2026) solo entra en Evaluaciones, Informes, sus avisos y su cuenta.
-const RUTAS_PREPARADOR = ["/evaluaciones", "/informes", "/avisos", "/mi-cuenta"];
+/** ¿Tiene el usuario este permiso? (toca_cuadrante, aprueba_invitados, valida_informes…) */
+export function puede(flag, user = getUser()) {
+  return Boolean(user?.[flag]);
+}
 
 /** A dónde va cada uno al entrar o si pide una ruta que no le toca. */
 export function inicio(user = getUser()) {
-  if (user?.is_preparador) return "/evaluaciones";
-  return roleRank(user) === 1 ? "/mi-agenda" : "/";
+  if (esPreparador(user)) return "/evaluaciones";
+  if (esAdministracion(user)) return "/jugadores";
+  if (esEntrenador(user)) return "/mi-agenda";
+  return "/";
 }
 
-const NEED = { direccion: 3, coach: 2, entrenador: 1 };
-
-// Quién puede ESCRIBIR cada recurso (por endpoint de la API). Refleja la
-// matriz de permisos del backend. Lo que no aparece: cualquiera autenticado
-// (el backend aplica el alcance por filas).
+// Quién puede ESCRIBIR cada recurso genérico (ResourceCrud). Refleja el servidor.
 const WRITE = {
   sedes: "direccion", pistas: "direccion", turnos: "direccion",
   divisiones: "direccion", escuelas: "direccion", coaches: "direccion",
-  entrenadores: "coach", responsables: "coach", vacaciones: "coach",
-  contratos: "coach", rencillas: "coach", torneos: "coach",
+  entrenadores: "head_coach", responsables: "direccion", vacaciones: "head_coach",
+  contratos: "head_coach", rencillas: "head_coach", torneos: "head_coach",
+  "disponibilidades-entrenador": "direccion",
+  // Crear sí (config.crear); cambiar y borrar, dirección.
+  mantenimiento: "direccion", feedback: "direccion",
 };
+const NEED = { direccion: 3, head_coach: 2 };
 
 export function canWrite(endpoint, user = getUser()) {
-  const need = NEED[WRITE[endpoint] || "entrenador"];
+  if (endpoint === "jugadores") return roleRank(user) >= 3 || esAdministracion(user);
+  const need = NEED[WRITE[endpoint]] || 1;
   return roleRank(user) >= need;
 }
 
-// Rol mínimo para VER una ruta del panel (las que no aparecen: todos).
-const PATH_MIN = {
-  // Rutas del panel general que el entrenador no necesita ver.
-  "/": "coach", "/cuadrante": "coach", "/semana": "coach", "/semanas": "coach",
-  // El entrenador declara su propia disponibilidad de la semana: el backend ya
-  // le deja ver y editar solo sus filas, así que esconderle la página solo le
-  // impedía hacer lo único que se le pide.
-  "/vacaciones": "coach",
-  "/preferencias-superficie": "coach", "/invitados": "coach",
-  "/mantenimiento": "coach", "/feedback": "coach",
-  "/sedes": "direccion", "/pistas": "direccion",
-  // Divisiones: la ven todos (21/10/2026), pero solo dirección la cambia (WRITE).
-  "/escuelas": "direccion", "/turnos": "direccion", "/coaches": "direccion",
-  "/mis-jugadores": "direccion",
-  "/configuracion": "direccion",
-  "/entrenadores": "coach",
-  // El horario habitual del alumno lo cambian head coach y dirección (30/10/2026).
-  "/jugador-turnos": "coach",
-  // El calendario de torneos lo ve todo el mundo; dar de alta, solo los head
-  // coaches y dirección (las subrutas heredan de la más larga que encaje).
-  "/torneos/nuevo": "coach",
-};
+// Rutas de detalle que cuelgan de una pestaña (las cubre `dondeEsta`):
+// /torneos/123, /evaluaciones/45, /informes/9…
+export function canVisit(path, user = getUser()) {
+  return Boolean(dondeEsta(path, user));
+}
 
 // En torneos, además de head coaches y dirección, el entrenador apunta a sus
 // jugadores a torneos que ya existen; queda pendiente de confirmar (03/11/2026).
 export function apuntaATorneos(user = getUser()) {
   return roleRank(user) >= 2 || Boolean(user?.entrenador_id);
-}
-
-export function canVisit(path, user = getUser()) {
-  if (user?.is_preparador) {
-    return RUTAS_PREPARADOR.some((r) => path === r || path.startsWith(r + "/"));
-  }
-  // La ruta exacta o la más larga de la que cuelga (/torneos/123 → /torneos).
-  const clave = Object.keys(PATH_MIN)
-    .filter((k) => path === k || (k !== "/" && path.startsWith(k + "/")))
-    .sort((a, b) => b.length - a.length)[0];
-  const need = NEED[PATH_MIN[clave] || "entrenador"];
-  return roleRank(user) >= need;
 }

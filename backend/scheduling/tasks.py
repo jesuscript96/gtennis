@@ -23,7 +23,10 @@ def generate_next_week_draft():
     from .models import Semana
     from engine.service import generate
 
+    from .historial import registrar
+
     semana, _ = Semana.objects.get_or_create(fecha_inicio=_next_monday())
+    registrar(semana.id, "Borrador automático de la semana")
     return generate(semana)
 
 

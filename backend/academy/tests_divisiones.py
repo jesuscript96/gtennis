@@ -1,4 +1,7 @@
-"""Mover alumnos de división desde la vista de Divisiones (21/10/2026)."""
+"""Mover alumnos de división desde la vista de Divisiones (21/10/2026).
+
+Desde el 10/11/2026 (decisión 5) división y ranking son solo de dirección:
+Dani Gimeno ya no mueve ni ordena."""
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -28,18 +31,18 @@ class MoverDivisionTests(TestCase):
         return self.api(user).post("/api/divisiones/mover/", {"jugador": self.ana.id, "division": division},
                                    format="json")
 
-    def test_direccion_y_dani_mueven(self):
+    def test_solo_direccion_mueve(self):
         r = self.mover(self.direccion, self.d2.id)
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual((r.data["division"], r.data["anterior"]), (2, 1))
         self.ana.refresh_from_db()
         self.assertEqual(self.ana.division, self.d2)
-        self.assertEqual(self.mover(self.dani, self.d1.id).status_code, 200)
+        self.assertEqual(self.mover(self.dani, self.d1.id).status_code, 403)
         self.ana.refresh_from_db()
-        self.assertEqual(self.ana.division, self.d1)
+        self.assertEqual(self.ana.division, self.d2)
 
     def test_nadie_mas_mueve(self):
-        for u in (self.otro_coach, self.entrenador):
+        for u in (self.dani, self.otro_coach, self.entrenador):
             self.assertEqual(self.mover(u, self.d2.id).status_code, 403, u.username)
         self.ana.refresh_from_db()
         self.assertEqual(self.ana.division, self.d1)
@@ -55,7 +58,7 @@ class MoverDivisionTests(TestCase):
         self.assertEqual(r.status_code, 404)
 
     def test_permisos(self):
-        self.assertTrue(self.api(self.dani).get("/api/divisiones/permisos/").data["puede_mover"])
+        self.assertFalse(self.api(self.dani).get("/api/divisiones/permisos/").data["puede_mover"])
         self.assertTrue(self.api(self.direccion).get("/api/divisiones/permisos/").data["puede_mover"])
         self.assertFalse(self.api(self.entrenador).get("/api/divisiones/permisos/").data["puede_mover"])
         self.assertFalse(self.api(self.otro_coach).get("/api/divisiones/permisos/").data["puede_mover"])
@@ -87,13 +90,13 @@ class RankingDivisionTests(MoverDivisionTests):
         self.assertEqual(set(self.puestos().values()), {None})
 
     def test_ordenar(self):
-        r = self.ordenar(self.dani, self.d1, [self.carla.id, self.ana.id])
+        r = self.ordenar(self.direccion, self.d1, [self.carla.id, self.ana.id])
         self.assertEqual(r.status_code, 200, r.data)
         # Quien no viene en la lista se queda detrás.
         self.assertEqual(self.puestos(), {"Carla": 1, "Ana": 2, "Bea": 3})
 
     def test_solo_quien_mueve_divisiones(self):
-        for u in (self.otro_coach, self.entrenador):
+        for u in (self.dani, self.otro_coach, self.entrenador):
             self.assertEqual(self.ordenar(u, self.d1, [self.bea.id]).status_code, 403)
 
     def test_no_admite_alumnos_de_otra_division(self):

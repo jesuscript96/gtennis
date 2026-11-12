@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from academy.models import Aviso, Coach, Entrenador, Escuela, Jugador
-from users.models import User
+from users.models import Funcion, User
 
 from . import catalogo, drive, ia, pdf, recordatorios
 from . import informes as informes_mod
@@ -46,6 +46,11 @@ class InformeTests(TestCase):
         Coach.objects.create(nombre="Ivan Gallego", user=self.ivan_g)
         MiembroTardes.objects.create(usuario=self.salva, funcion="TENIS")
         MiembroTardes.objects.create(usuario=self.josep, funcion="FISICO")
+        # 10/11/2026: coordinar y validar son funciones asignadas, no nombres.
+        for u, codigos in ((self.alberto, ["COORDINA_TARDES", "VALIDA_INFORMES"]),
+                           (self.dani, ["VALIDA_INFORMES"]), (self.ivan_g, ["VALIDA_INFORMES"])):
+            for codigo in codigos:
+                Funcion.objects.create(usuario=u, codigo=codigo)
 
     def api(self, user):
         c = APIClient()
@@ -81,10 +86,12 @@ class InformeTests(TestCase):
         self.assertTrue(Aviso.objects.filter(usuario=self.alberto, titulo__contains="listo para validar").exists())
         self.assertFalse(Aviso.objects.filter(usuario=self.ivan, titulo__contains="listo para validar").exists())
         self.assertFalse(Aviso.objects.filter(usuario=self.dani, titulo__contains="listo para validar").exists())
-        # Iván Gallego valida pero no evalúa tenis.
+        # Quien valida abre y corrige las dos partes (decisión 11).
         self.assertEqual(self.api(self.ivan_g).get(f"/api/informes/{inf.id}/").data["puede_validar"], True)
-        self.assertEqual(self.api(self.ivan_g).post("/api/evaluaciones/", {"jugador": self.nino.id},
-                                                    format="json").status_code, 403)
+        r = self.api(self.ivan_g).get(f"/api/evaluaciones/{t}/")
+        self.assertEqual((r.status_code, r.data["puede_editar"]), (200, True))
+        r = self.api(self.ivan_g).get(f"/api/evaluaciones-fisicas/{f}/")
+        self.assertEqual((r.status_code, r.data["puede_editar"]), (200, True))
 
         # No hay dos evaluaciones de tenis en el mismo informe: se sigue con la que hay.
         r = self.api(self.alberto).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json")
@@ -127,8 +134,22 @@ class InformeTests(TestCase):
         self.assertEqual(Informe.objects.count(), 2)
         self.assertEqual(Evaluacion.objects.get(pk=t2).informe.estado, "EN_CURSO")
 
-        # Corregir una parte del ya validado lo devuelve a validar como versión 2.
-        self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        # Un informe aprobado no se toca (10/11/2026): ni su autor ni quien
+        # coordina, hasta que quien valida lo reabre.
+        for u in (self.salva, self.alberto):
+            self.assertEqual(self.api(u).post(f"/api/evaluaciones/{t}/terminar/", {},
+                                              format="json").status_code, 403, u.username)
+            self.assertEqual(self.api(u).delete(f"/api/evaluaciones/{t}/").status_code, 403, u.username)
+        self.assertEqual(self.api(self.josep).patch(f"/api/evaluaciones-fisicas/{f}/",
+                                                    {"textos": {"notas_fisio": "x"}},
+                                                    format="json").status_code, 403)
+        self.assertEqual(self.api(self.salva).post(f"/api/informes/{inf.id}/reabrir/", {},
+                                                   format="json").status_code, 403)
+        r = self.api(self.dani).post(f"/api/informes/{inf.id}/reabrir/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        # Reabierto, se corrige y vuelve a validar como versión 2.
+        r = self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
         inf.refresh_from_db()
         self.assertEqual((inf.estado, inf.version), ("PENDIENTE", 2))
 
@@ -224,7 +245,9 @@ class InformeTests(TestCase):
         self._tenis(self.salva)
 
     def test_administracion_no_valida(self):
-        adm = User.objects.create_user(username="administracion", password="x", role=User.Role.SUPERADMIN)
+        # 10/11/2026 (decisión 10): Administración es un perfil, no un nombre
+        # de usuario: envía los informes pero no los valida.
+        adm = User.objects.create_user(username="administracion", password="x", role=User.Role.ADMINISTRACION)
         t = self._tenis()
         self.api(self.salva).post(f"/api/evaluaciones/{t}/terminar/", {}, format="json")
         f = self._fisico()
@@ -259,6 +282,7 @@ class RecordatoriosTests(TestCase):
                                             fecha_alta=self.hoy - timedelta(days=3))
         self.salva = User.objects.create_user(username="salva.barcala", password="x", role=User.Role.ENTRENADOR)
         self.alberto = User.objects.create_user(username="alberto.sanz", password="x", role=User.Role.ENTRENADOR)
+        Funcion.objects.create(usuario=self.alberto, codigo="COORDINA_TARDES")
         self.josep = User.objects.create_user(username="josep.mari", password="x", role=User.Role.PREPARADOR)
         self.ivan = User.objects.create_user(username="ivan", password="x", role=User.Role.SUPERADMIN)
 
@@ -312,11 +336,13 @@ class RecordatoriosTests(TestCase):
 
 
 class CoordinadorTardesTests(TestCase):
-    """Alberto lleva Competición de tardes: jugadores y equipo (02/11/2026)."""
+    """Alberto lleva Competición de tardes: jugadores y equipo (02/11/2026).
+    Desde el 10/11/2026 es la función «Coordina Competición de tardes»."""
 
     def setUp(self):
         self.ct = Escuela.objects.create(nombre="Competición de tardes", solo_informes=True)
         self.alberto = User.objects.create_user(username="alberto.sanz", password="x", role=User.Role.ENTRENADOR)
+        Funcion.objects.create(usuario=self.alberto, codigo="COORDINA_TARDES")
         self.milla = User.objects.create_user(username="jorge.milla", password="x", role=User.Role.ENTRENADOR)
         Entrenador.objects.create(nombre="Jorge Milla", user=self.milla)
         self.blas = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
@@ -360,9 +386,12 @@ class CoordinadorTardesTests(TestCase):
         self.assertFalse(MiembroTardes.objects.exists())
         self.assertEqual(self.api(self.blas).post("/api/tardes/equipo/", {"usuario": self.blas.id, "funcion": "TENIS"},
                                                   format="json").status_code, 403)
-        # El coordinador valida y lo puede todo en tardes.
+        # El coordinador lo puede todo en tardes; validar es otra función.
         me = c.get("/api/auth/me/").data
-        self.assertTrue(me["valida_informes"] and me["coordina_informes"] and me["evalua_tenis_informes"])
+        self.assertTrue(me["coordina_informes"] and me["evalua_tenis_informes"])
+        self.assertFalse(me["valida_informes"])
+        Funcion.objects.create(usuario=self.alberto, codigo="VALIDA_INFORMES")
+        self.assertTrue(self.api(User.objects.get(pk=self.alberto.pk)).get("/api/auth/me/").data["valida_informes"])
 
 
 @override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="{}", DRIVE_INFORMES_ID="", DRIVE_CT_USUARIO="gestion@gtennis.com",

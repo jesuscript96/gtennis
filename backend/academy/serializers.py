@@ -69,6 +69,9 @@ class EntrenadorSerializer(serializers.ModelSerializer):
             "turnos_display", "reserva", "orden_banquillo", "solo_manual", "division_desde",
             "division_hasta", "solo_con",
         ]
+        # «Disponible esta semana» ya no se cambia aquí (10/11/2026): lo que no
+        # puede va en su calendario. Se deja de solo lectura.
+        read_only_fields = ["disponible_semana"]
 
     def get_turnos_display(self, obj):
         codigos = [t.codigo for t in (obj.turno_manana, obj.turno_tarde) if t]
@@ -106,8 +109,9 @@ class VacacionesEntrenadorSerializer(serializers.ModelSerializer):
         model = VacacionesEntrenador
         fields = [
             "id", "entrenador", "entrenador_nombre", "fecha_inicio", "fecha_fin",
-            "motivo", "ambito",
+            "motivo", "ambito", "hora_desde", "hora_hasta", "creada_por", "created_at",
         ]
+        read_only_fields = ["creada_por", "created_at"]
 
 
 class GuardaHorarioJugador:
@@ -142,7 +146,60 @@ class HorarioJugadorSerializer(serializers.ModelSerializer):
                   "entrena_manana", "entrena_tarde"]
 
 
-class JugadorSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
+class RelacionConElJugador:
+    """«Mis jugadores» significa lo mismo en toda la aplicación (decisión 6,
+    10/11/2026): los de su columna de Grupos (es su responsable o comparte la
+    gestión). Con los que entrena por porcentaje salen aparte.
+
+    `relacion` para quien pregunta:
+      * "mio": lo gestiona él (su columna de Grupos).
+      * "grupo": lo gestiona alguien de su grupo de color (head coach: su
+        bloque).
+      * "entrena": no lo gestiona, pero le entrena por porcentaje.
+      * "sin_grupo": nadie lo gestiona todavía.
+      * "otro": el resto que pueda ver (dirección).
+    """
+
+    def _conjuntos(self):
+        cache = self.context.setdefault("_relacion", {})
+        if "listo" in cache:
+            return cache
+        from .models import ResponsableJugador
+
+        req = self.context.get("request")
+        user = getattr(req, "user", None)
+        ent = getattr(user, "entrenador", None) if user and user.is_authenticated else None
+        coach = getattr(user, "coach", None) if user and user.is_authenticated else None
+        grupo = set()
+        if coach is not None and coach.activo and not user.is_superadmin:
+            grupo |= set(coach.entrenadores.values_list("pk", flat=True))
+        if ent is not None:
+            grupo |= set(ent.companeros_de_grupo().values_list("pk", flat=True))
+        cache.update(
+            ent=ent.pk if ent else None,
+            grupo=grupo,
+            entrena=set(ResponsableJugador.objects.filter(entrenador=ent, activo=True)
+                        .values_list("jugador_id", flat=True)) if ent else set(),
+            listo=True,
+        )
+        return cache
+
+    def get_relacion(self, obj):
+        c = self._conjuntos()
+        gestores = {obj.entrenador_responsable_id, *[e.pk for e in obj.cogestores.all()]} - {None}
+        if c["ent"] and c["ent"] in gestores:
+            return "mio"
+        if gestores & c["grupo"]:
+            return "grupo"
+        if obj.pk in c["entrena"]:
+            return "entrena"
+        if not gestores:
+            return "sin_grupo"
+        return "otro"
+
+
+class JugadorSerializer(RelacionConElJugador, GuardaHorarioJugador, serializers.ModelSerializer):
+    relacion = serializers.SerializerMethodField()
     division_nivel = serializers.IntegerField(
         source="division.nivel", read_only=True, default=None
     )
@@ -168,14 +225,15 @@ class JugadorSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
             "cogestores_nombres", "escuela", "escuela_nombre", "foto_url",
             "activo", "notas",
             "fecha_alta", "fecha_baja", "turno_manana", "turno_tarde", "horario",
-            "pareja_division", "vecindad", "sexo",
+            "pareja_division", "vecindad", "sexo", "relacion",
         ]
         # `edad` sigue siendo escribible por los alumnos antiguos de los que
         # solo consta el número, pero en cuanto hay `fecha_nacimiento` manda la
         # fecha: `Jugador.save` recalcula la edad en cada guardado.
 
 
-class JugadorTurnosSerializer(GuardaHorarioJugador, serializers.ModelSerializer):
+class JugadorTurnosSerializer(RelacionConElJugador, GuardaHorarioJugador, serializers.ModelSerializer):
+    relacion = serializers.SerializerMethodField()
     """Vista del jugador para un ENTRENADOR.
 
     El entrenador no gestiona la ficha del alumno — ni datos personales, ni
@@ -203,7 +261,7 @@ class JugadorTurnosSerializer(GuardaHorarioJugador, serializers.ModelSerializer)
         fields = [
             "id", "nombre", "turno_manana", "turno_tarde", "horario",
             "entrenador_responsable", "entrenador_nombre", "cogestores",
-            "cogestores_nombres", "fecha_baja",
+            "cogestores_nombres", "fecha_baja", "relacion",
         ]
         read_only_fields = ["id", "nombre", "entrenador_responsable", "cogestores",
                             "fecha_baja"]

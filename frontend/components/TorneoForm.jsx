@@ -63,7 +63,6 @@ export default function TorneoForm({ inicial, circuitos = [], onGuardar, onCance
         </label>
         <label className="field"><span>Estado</span>
           <select value={f.estado} onChange={set("estado")}>
-            <option value="PROPUESTO">Propuesto (pendiente de validar)</option>
             <option value="VALIDADO">Validado</option>
             <option value="CANCELADO">Cancelado</option>
           </select>

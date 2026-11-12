@@ -62,14 +62,37 @@ class Evaluacion(models.Model):
     def __str__(self):
         return f"{self.jugador} · {self.fecha:%d-%m-%Y} · {self.nombre_evaluador}"
 
+    def _informe_cerrado(self):
+        inf = getattr(self, "informe", None)
+        return inf is not None and inf.estado == Informe.Estado.VALIDADO
+
     def puede_editar(self, user):
-        if user.is_superadmin or (self.evaluador_id and self.evaluador_id == user.id):
+        """Quién cambia esta evaluación (10/11/2026): su autor, quien coordina
+        Competición de tardes y quien valida (corrige antes de aprobar). Un
+        informe ya aprobado no se toca: primero se reabre."""
+        from academy.permissions import (
+            coordina_informes, es_direccion, evalua_tenis_solo_informes, valida_informes,
+        )
+        if self._informe_cerrado():
+            return False
+        if es_direccion(user) or (self.evaluador_id and self.evaluador_id == user.id):
             return True
-        # Competición de tardes (27/10/2026): sus entrenadores de tarde y gestión
-        # deportiva corrigen cualquiera (todos evalúan a todos; la validación corrige).
-        from academy.permissions import evalua_tenis_solo_informes
+        if getattr(self, "informe", None) is not None and valida_informes(user):
+            return True
+        # Competición de tardes: «todos evalúan a todos» (29/10/2026). Quien
+        # coordina y el equipo de tenis siguen o corrigen la parte de tenis de
+        # otro mientras el informe no esté aprobado (p. ej. si el coordinador
+        # reasigna al jugador con la evaluación a medias). Borrarla, no.
         return bool(self.jugador.escuela_id and self.jugador.escuela.solo_informes
-                    and evalua_tenis_solo_informes(user))
+                    and (coordina_informes(user) or evalua_tenis_solo_informes(user)))
+
+    def puede_borrar(self, user):
+        """Solo el autor y quien coordina; en un informe aprobado, nadie."""
+        from academy.permissions import coordina_informes, es_direccion
+        if self._informe_cerrado():
+            return False
+        return bool(es_direccion(user) or (self.evaluador_id and self.evaluador_id == user.id)
+                    or coordina_informes(user))
 
 
 class CarpetaJugador(models.Model):
@@ -122,9 +145,25 @@ class EvaluacionFisica(models.Model):
     def __str__(self):
         return f"{self.jugador} · físico · {self.fecha:%d-%m-%Y}"
 
+    def _informe_cerrado(self):
+        inf = getattr(self, "informe", None)
+        return inf is not None and inf.estado == Informe.Estado.VALIDADO
+
     def puede_editar(self, user):
-        from academy.permissions import gestion_deportiva
-        return bool(gestion_deportiva(user) or (self.evaluador_id and self.evaluador_id == user.id))
+        """Su autor, dirección y quien valida (abre y corrige las dos partes,
+        decisión 11). Un informe aprobado no se toca: primero se reabre."""
+        from academy.permissions import es_direccion, valida_informes
+        if self._informe_cerrado():
+            return False
+        return bool(es_direccion(user) or valida_informes(user)
+                    or (self.evaluador_id and self.evaluador_id == user.id))
+
+    def puede_borrar(self, user):
+        from academy.permissions import coordina_informes, es_direccion
+        if self._informe_cerrado():
+            return False
+        return bool(es_direccion(user) or coordina_informes(user)
+                    or (self.evaluador_id and self.evaluador_id == user.id))
 
 
 class Informe(models.Model):
@@ -162,8 +201,14 @@ class Informe(models.Model):
     validado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
                                      blank=True, related_name="informes_validados")
     validado_en = models.DateTimeField(null=True, blank=True)
-    # A quién se enviará cuando el envío por correo esté activo: [{"email", "quien"}].
+    # A quién se envía por correo: [{"email", "quien"}].
     destinatarios = models.JSONField(default=list, blank=True)
+    # Envío a la familia (10/11/2026, decisión 13).
+    enviado_en = models.DateTimeField(null=True, blank=True)
+    enviado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name="informes_enviados")
+    # db_default: la versión anterior crea informes sin esta columna (despliegue).
+    envio_error = models.CharField(max_length=300, blank=True, default="", db_default="")
     # Textos de la parte física pasados al idioma del informe si no es español.
     # Sin uso desde el 02/11/2026: la traducción va en `EvaluacionFisica.traduccion`.
     textos_fisico_traducidos = models.JSONField(default=dict, blank=True)
@@ -184,9 +229,18 @@ class Informe(models.Model):
         return f"{self.jugador} · {self.get_estado_display()} · {self.creado:%d-%m-%Y}"
 
     @property
+    def circuito(self):
+        """«tardes» (tenis + físico) o «alto_rendimiento» (solo tenis). Desde el
+        10/11/2026 los dos pasan por la validación (decisión 12)."""
+        j = self.jugador
+        return "tardes" if (j.escuela_id and j.escuela.solo_informes) else "alto_rendimiento"
+
+    @property
     def completo(self):
-        return bool(self.tenis and self.tenis.estado == Evaluacion.Estado.TERMINADA
-                    and self.fisica and self.fisica.estado == EvaluacionFisica.Estado.TERMINADA)
+        tenis = bool(self.tenis and self.tenis.estado == Evaluacion.Estado.TERMINADA)
+        if self.circuito == "alto_rendimiento":
+            return tenis
+        return bool(tenis and self.fisica and self.fisica.estado == EvaluacionFisica.Estado.TERMINADA)
 
 
 class FotoJugador(models.Model):

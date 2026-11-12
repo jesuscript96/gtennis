@@ -126,16 +126,31 @@ def falta_de(asignacion, cache):
 
 
 class AusenciaJugadorSerializer(serializers.ModelSerializer):
+    """Una falta: el único registro de faltas desde el 10/11/2026. Lleva
+    siempre quién la apuntó y cuándo."""
+
     jugador_nombre = serializers.CharField(source="jugador.nombre", read_only=True)
+    estado_display = serializers.CharField(source="get_estado_display", read_only=True)
+    subtipo_display = serializers.CharField(source="get_subtipo_display", read_only=True)
+    ambito_display = serializers.CharField(source="get_ambito_display", read_only=True)
+    apuntada_por = serializers.SerializerMethodField()
+
+    def get_apuntada_por(self, obj):
+        if obj.creada_por_id:
+            return obj.creada_por.get_full_name() or obj.creada_por.username
+        if obj.declarada_por_id:
+            return obj.declarada_por.nombre
+        return None
 
     class Meta:
         model = AusenciaJugador
         fields = [
             "id", "jugador", "jugador_nombre", "fecha_inicio", "fecha_fin",
-            "ambito", "hora_desde", "hora_hasta", "estado", "subtipo", "nota",
-            "declarada_por", "created_at", "tardia",
+            "ambito", "ambito_display", "hora_desde", "hora_hasta", "estado",
+            "estado_display", "subtipo", "subtipo_display", "nota",
+            "declarada_por", "creada_por", "apuntada_por", "created_at", "tardia",
         ]
-        read_only_fields = ["declarada_por", "created_at", "tardia"]
+        read_only_fields = ["declarada_por", "creada_por", "created_at", "tardia"]
 
     def validate(self, data):
         ini = data.get("fecha_inicio") or getattr(self.instance, "fecha_inicio", None)

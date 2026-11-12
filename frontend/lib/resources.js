@@ -55,6 +55,9 @@ const fmtFecha = (v) => {
   try { return new Date(v).toLocaleDateString("es-ES"); } catch { return v; }
 };
 
+// Administración da altas y datos personales; lo deportivo no (decisión 10).
+const noAdministracion = (u) => u?.perfil !== "administracion";
+
 export const RESOURCES = {
   jugadores: {
     endpoint: "jugadores",
@@ -92,12 +95,13 @@ export const RESOURCES = {
         { value: "CHICO", label: "Chico" },
         { value: "CHICA", label: "Chica" },
       ], help: "Un chico no comparte pista con una chica de división más baja. «—» = sin declarar, no se le aplica la regla." },
-      { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel },
-      { name: "entrenador_responsable", label: "Entrenador responsable (principal)", type: "fk", endpoint: "entrenadores", optionLabel: (o) => o.nombre },
-      { name: "cogestores", label: "Comparte la gestión con", type: "mfk", endpoint: "entrenadores", optionLabel: (o) => o.nombre, help: "Solo si otro entrenador lleva también a este jugador. Le sale marcado como «Gestión» igual que al responsable." },
-      { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO },
-      { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO },
-      { name: "vecindad", label: "Con qué divisiones entrena", type: "select", options: [
+      // Quién le gestiona se cambia en Grupos; la división y el ranking, solo
+      // dirección y también en Grupos (decisiones 4 y 5). Aquí, la división
+      // solo al darle de alta.
+      { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel, soloCrear: true, ve: (u) => u?.mueve_divisiones, help: "Después se cambia en Grupos." },
+      { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO, ve: noAdministracion },
+      { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO, ve: noAdministracion },
+      { name: "vecindad", ve: noAdministracion, label: "Con qué divisiones entrena", type: "select", options: [
         { value: "CLUB", label: "La del club (la horquilla general)" },
         { value: "SOLO", label: "Solo su división" },
         { value: "ARRIBA", label: "Su división y la de encima (D−1)" },
@@ -105,7 +109,7 @@ export const RESOURCES = {
         { value: "AMBAS", label: "Su división y las dos vecinas (±1)" },
       ], default: "CLUB", help: "Regla dura: nunca se rompe. Sirve para el alumno que solo entrena con su nivel o con el de encima. La D1 es la más alta." },
       // La D1 es la división más alta: «hacia arriba» es con la de número menor.
-      { name: "pareja_division", label: "Se empareja preferentemente", type: "select", options: [
+      { name: "pareja_division", ve: noAdministracion, label: "Se empareja preferentemente", type: "select", options: [
         { value: "ARRIBA", label: "Hacia arriba · con la división mejor (D−1)" },
         { value: "ABAJO", label: "Hacia abajo · con la división de debajo (D+1)" },
       ], help: "Siempre dentro de ±1 división. «—» = le da igual. La D1 es la más alta." },
@@ -118,7 +122,8 @@ export const RESOURCES = {
     ],
     rowActions: [
       {
-        label: "Entrenadores",
+        label: "Porcentajes",
+        ve: noAdministracion,
         onClick: (row) => {
           window.location.href = `/jugador-responsables?jugador=${row.id}&nombre=${encodeURIComponent(row.nombre)}`;
         },
@@ -126,7 +131,8 @@ export const RESOURCES = {
       {
         // Las dos franjas fijas están en la ficha; aquí se ven los días que se
         // salen de lo habitual, que necesitan rejilla y no caben en el formulario.
-        label: "Turnos",
+        label: "Horario",
+        ve: noAdministracion,
         onClick: (row) => {
           window.location.href = `/jugador-turnos?jugador=${row.id}`;
         },
@@ -165,7 +171,6 @@ export const RESOURCES = {
       { key: "turnos_display", label: "Franjas" },
       { key: "division_desde", label: "Grupo", render: (v, row) => (v || row.division_hasta ? `D${v ?? "?"}–D${row.division_hasta ?? "?"}` : "—") },
       { key: "activo", label: "Activo", type: "bool" },
-      { key: "disponible_semana", label: "Disp. semana", type: "bool" },
       { key: "reserva", label: "Banquillo", type: "bool" },
       { key: "orden_banquillo", label: "Sale del banquillo", render: (v) => (v ? `${v}º` : "—") },
       { key: "solo_manual", label: "Solo a mano", type: "bool" },
@@ -178,11 +183,14 @@ export const RESOURCES = {
       { name: "division_desde", label: "Entrena desde la división", type: "number", help: "La más alta de su grupo; la 1 es la mejor. Vacío = cualquiera." },
       { name: "division_hasta", label: "…hasta la división", type: "number", help: "La más baja de su grupo. Si no queda nadie de ese grupo el motor le pone otro, pero cuesta." },
       { name: "disponibilidad_notas", label: "Notas de disponibilidad", type: "text" },
-      { name: "disponible_semana", label: "Disponible esta semana (fallback manual)", type: "bool", default: true },
-      { name: "reserva", label: "Solo a mano (banquillo)", type: "bool", help: "No entra en el reparto normal. El motor solo le saca si faltan entrenadores (según su orden en el banquillo) o si un contrato le llama; si no, se le coloca a mano desde el cuadrante." },
+      // «Disponible esta semana» ya no existe (10/11/2026): lo que no puede
+      // va en su calendario, en Hoy / Agenda.
+      { name: "reserva", label: "Banquillo", type: "bool", help: "No entra en el reparto normal. El motor solo le saca si faltan entrenadores (según su orden en el banquillo) o si un contrato le llama; si no, se le coloca a mano desde el cuadrante." },
       { name: "orden_banquillo", label: "Orden en el banquillo", type: "number", help: "Cuando faltan entrenadores para las pistas que lo necesitan (1, 3, 4 y 6 del Resort, la resina, Sta. Bárbara), el motor saca a los del banquillo por este orden: 1 el primero. Vacío = no sale." },
-      { name: "solo_manual", label: "Nunca en automático", type: "bool", help: "Más estricto que el banquillo: el motor no le pone nunca, ni por contrato ni para cubrir una pista. Solo entra si lo arrastras a una pista en el cuadrante." },
-      { name: "activo", label: "Activo", type: "bool", default: true },
+      { name: "solo_manual", label: "Solo a mano", type: "bool", help: "Más estricto que el banquillo: el motor no le pone nunca, ni por contrato ni para cubrir una pista. Solo entra si lo arrastras a una pista en el cuadrante." },
+      // Altas y bajas de entrenadores: dirección (10/11/2026).
+      // Dirección, y el head coach para los de su grupo (el servidor lo comprueba).
+      { name: "activo", label: "Activo", type: "bool", default: true, ve: (u) => ["direccion", "head_coach"].includes(u?.perfil) },
     ],
   },
 
@@ -305,7 +313,7 @@ export const RESOURCES = {
 
   rencillas: {
     endpoint: "rencillas",
-    title: "Rencillas (vetos)",
+    title: "Rencillas",
     singular: "rencilla",
     columns: [
       { key: "jugador_a_nombre", label: "Jugador A" },
@@ -376,6 +384,8 @@ export const RESOURCES = {
 
   mantenimiento: {
     endpoint: "mantenimiento",
+    // Cualquiera del club apunta una incidencia; el estado lo lleva dirección.
+    crear: (u) => ["direccion", "head_coach", "entrenador"].includes(u?.perfil),
     title: "Mantenimiento",
     singular: "tarea",
     search: true,
@@ -397,6 +407,7 @@ export const RESOURCES = {
 
   feedback: {
     endpoint: "feedback",
+    crear: (u) => ["direccion", "head_coach"].includes(u?.perfil),
     title: "Feedback y peticiones",
     singular: "feedback",
     search: true,
@@ -422,7 +433,7 @@ export const RESOURCES = {
 
   coaches: {
     endpoint: "coaches",
-    title: "Coaches",
+    title: "Head coaches",
     singular: "coach",
     search: true,
     help:

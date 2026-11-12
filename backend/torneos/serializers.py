@@ -110,6 +110,20 @@ class TorneoSerializer(serializers.ModelSerializer):
     acompanantes_detalle = EntrenadorMiniSerializer(source="acompanantes", many=True, read_only=True)
     n_jugadores = serializers.SerializerMethodField()
     creado_por_nombre = serializers.SerializerMethodField()
+    puede_borrar = serializers.SerializerMethodField()
+
+    def get_puede_borrar(self, t):
+        """Con jugadores de otro grupo, solo dirección (10/11/2026)."""
+        from academy.permissions import es_direccion
+        from .views import es_de_mi_grupo, manda
+
+        req = self.context.get("request")
+        if req is None or not manda(req.user):
+            return False
+        if es_direccion(req.user):
+            return True
+        return not any(p.jugador is not None and not es_de_mi_grupo(req.user, p.jugador)
+                       for p in t.participantes.all())
 
     class Meta:
         model = Torneo
@@ -119,7 +133,7 @@ class TorneoSerializer(serializers.ModelSerializer):
             "estado", "estado_display", "acompanantes",
             "acompanantes_detalle", "acompanante_nota", "notas", "fuente", "alias",
             "participantes", "n_jugadores", "creado_por", "creado_por_nombre",
-            "created_at", "updated_at",
+            "puede_borrar", "created_at", "updated_at",
         ]
         read_only_fields = ["creado_por", "created_at", "updated_at"]
 
@@ -169,7 +183,7 @@ class TorneoListaSerializer(TorneoSerializer):
     jugadores = serializers.SerializerMethodField()
 
     class Meta(TorneoSerializer.Meta):
-        fields = [f for f in TorneoSerializer.Meta.fields if f != "participantes"] + ["jugadores"]
+        fields = [f for f in TorneoSerializer.Meta.fields if f not in ("participantes", "puede_borrar")] + ["jugadores"]
 
     def get_jugadores(self, obj):
         return [{"id": p.id, "nombre": p.nombre, "jugador": p.jugador_id, "certeza": p.certeza,

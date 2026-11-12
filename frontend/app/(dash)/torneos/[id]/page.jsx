@@ -125,7 +125,7 @@ export default function TorneoDetallePage() {
               else cargar();
             }} />
             {puedeEditar && <button className="btn ghost" onClick={() => setEditando(true)}>Editar</button>}
-            {puedeEditar && <button className="btn danger" onClick={borrar}>Borrar</button>}
+            {puedeEditar && t.puede_borrar && <button className="btn danger" onClick={borrar}>Borrar</button>}
           </div>
         )}
       </div>

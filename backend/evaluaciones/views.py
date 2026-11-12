@@ -11,7 +11,7 @@ from rest_framework.response import Response
 
 from academy.models import Jugador
 from academy.permissions import (
-    coordina_informes, evalua_fisico, evalua_tenis_solo_informes, valida_informes, ve_informes,
+    coordina_informes, envia_informes, evalua_fisico, evalua_tenis_solo_informes, valida_informes, ve_informes,
 )
 from academy.scope import jugadores_visibles, puede_ver_jugador
 
@@ -67,6 +67,10 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         filtro = Q(jugador__in=visibles)
         if evalua_tenis_solo_informes(user):
             filtro |= Q(jugador__escuela__solo_informes=True)
+        # Quien valida abre cualquier evaluación que esté en un informe, también
+        # las de Alto rendimiento (decisiones 11 y 12).
+        if valida_informes(user):
+            filtro |= Q(informe__isnull=False)
         qs = Evaluacion.objects.filter(filtro).select_related("jugador").distinct()
         p = self.request.query_params
         if p.get("jugador"):
@@ -98,7 +102,9 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
 
     def _editable(self, ev):
         if not ev.puede_editar(self.request.user):
-            raise PermissionDenied("Solo quien hizo la evaluación o dirección pueden cambiarla.")
+            if ev._informe_cerrado():
+                raise PermissionDenied("El informe ya está aprobado: para corregirlo, primero se reabre en Informes.")
+            raise PermissionDenied("La cambian quien la hizo, quien coordina y quien valida.")
         return ev
 
     def perform_update(self, serializer):
@@ -106,7 +112,9 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        self._editable(instance).delete()
+        if not instance.puede_borrar(self.request.user):
+            raise PermissionDenied("La borran quien la hizo y quien coordina; un informe aprobado no se borra.")
+        instance.delete()
 
     @action(detail=False)
     def catalogo(self, request):
@@ -278,7 +286,9 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
 
     def _editable(self, ev):
         if not ev.puede_editar(self.request.user):
-            raise PermissionDenied("Solo quien la hizo o gestión deportiva pueden cambiarla.")
+            if ev._informe_cerrado():
+                raise PermissionDenied("El informe ya está aprobado: para corregirlo, primero se reabre en Informes.")
+            raise PermissionDenied("La cambian quien la hizo y quien valida.")
         return ev
 
     def perform_update(self, serializer):
@@ -286,7 +296,9 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        self._editable(instance).delete()
+        if not instance.puede_borrar(self.request.user):
+            raise PermissionDenied("La borran quien la hizo y quien coordina; un informe aprobado no se borra.")
+        instance.delete()
 
     @action(detail=False)
     def catalogo(self, request):
@@ -330,11 +342,16 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         if not ve_informes(request.user):
-            raise PermissionDenied("Los informes de Competición de tardes son de sus evaluadores y de dirección.")
+            raise PermissionDenied("Los informes son de quien evalúa, quien valida y quien los envía.")
 
     def get_queryset(self):
-        qs = (Informe.objects.filter(jugador__escuela__solo_informes=True)
-              .select_related("jugador", "tenis", "fisica", "validado_por", "devuelto_por"))
+        """Tardes y, desde el 10/11/2026, Alto rendimiento (decisión 12). Los de
+        Alto rendimiento los ven quien valida, quien envía y su evaluador."""
+        u = self.request.user
+        qs = Informe.objects.select_related("jugador", "jugador__escuela", "tenis", "fisica",
+                                            "validado_por", "devuelto_por", "enviado_por")
+        if not (valida_informes(u) or envia_informes(u)):
+            qs = qs.filter(Q(jugador__escuela__solo_informes=True) | Q(tenis__evaluador=u))
         p = self.request.query_params
         if p.get("estado"):
             qs = qs.filter(estado=p["estado"])
@@ -344,7 +361,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
 
     def _validador(self):
         if not valida_informes(self.request.user):
-            raise PermissionDenied("Validan Sergio, Iván, Dani Gimeno y dirección.")
+            raise PermissionDenied("Validan quienes tienen la función «Valida informes» (Club → Personas y funciones).")
 
     @action(detail=False)
     def panel(self, request):
@@ -413,11 +430,11 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         # En español para revisarlo; `?idioma=EN`, el que se envía a la familia.
         idioma = request.query_params.get("idioma") if request.query_params.get("idioma") in ("ES", "EN") else "ES"
         try:
-            contenido = pdf.generar_informe(inf, idioma)
+            nombre, contenido = informes.pdf_de(inf, idioma)
         except ia.IANoDisponible as e:
             raise ValidationError({"detail": f"No se ha podido traducir el PDF: {e}"})
         respuesta = HttpResponse(contenido, content_type="application/pdf")
-        respuesta["Content-Disposition"] = content_disposition_header(True, pdf.nombre_informe(inf, idioma))
+        respuesta["Content-Disposition"] = content_disposition_header(True, nombre)
         return respuesta
 
     @action(detail=True, methods=["post"])
@@ -433,7 +450,37 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             aviso = informes.aprobar(inf, request.user, destinatarios)
         except informes.InformeError as e:
             raise ValidationError({"detail": str(e)})
+        # «Aprobar y enviar» (decisión 13): si quien aprueba también envía.
+        if request.data.get("enviar") and envia_informes(request.user):
+            try:
+                informes.enviar(inf, request.user)
+            except informes.InformeError as e:
+                aviso = " ".join(filter(None, [aviso, f"Aprobado, pero no enviado: {e}"]))
         return Response({**self.get_serializer(inf).data, "aviso": aviso})
+
+    @action(detail=True, methods=["post"])
+    def enviar(self, request, pk=None):
+        """Envía a la familia un informe aprobado (dirección, Administración y
+        quien tenga la función)."""
+        if not envia_informes(request.user):
+            raise PermissionDenied("Envían los informes dirección, Administración y quien tenga la función.")
+        inf = self.get_object()
+        try:
+            informes.enviar(inf, request.user)
+        except informes.InformeError as e:
+            raise ValidationError({"detail": str(e)})
+        return Response(self.get_serializer(inf).data)
+
+    @action(detail=True, methods=["post"])
+    def reabrir(self, request, pk=None):
+        """Reabre un informe aprobado para corregirlo; después vuelve a validar."""
+        self._validador()
+        inf = self.get_object()
+        try:
+            informes.reabrir(inf, request.user)
+        except informes.InformeError as e:
+            raise ValidationError({"detail": str(e)})
+        return Response(self.get_serializer(inf).data)
 
     @action(detail=True, methods=["post"])
     def devolver(self, request, pk=None):

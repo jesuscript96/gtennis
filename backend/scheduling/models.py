@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from academy.models import Entrenador, Jugador, Pista, Turno
@@ -143,7 +144,9 @@ class CambioSemana(models.Model):
     Se conservan las últimas `MAXIMO` de cada semana.
     """
 
-    MAXIMO = 20
+    # 20 hasta el 11/11/2026; con la foto de la generación de las 19:00 y de
+    # «viene además» se llenaba antes y se perdía el rastro de los cambios a mano.
+    MAXIMO = 60
 
     semana = models.ForeignKey(
         "Semana", on_delete=models.CASCADE, related_name="cambios"
@@ -238,6 +241,12 @@ class AusenciaJugador(models.Model):
     declarada_por = models.ForeignKey(
         "academy.Entrenador", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="ausencias_declaradas",
+    )
+    # Quién la apuntó, sea quien sea (10/11/2026): antes, si la metía alguien
+    # sin ficha de entrenador (dirección), quedaba sin autor.
+    creada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="faltas_apuntadas",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     # Declarada después del corte de su primer día (19:00 del día anterior;

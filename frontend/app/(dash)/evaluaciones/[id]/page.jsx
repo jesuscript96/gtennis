@@ -126,7 +126,7 @@ export default function EvaluacionPage() {
                 </select>
               </label>
             )}
-            {ev.puede_editar && <button type="button" className="btn danger" onClick={borrar}>Borrar</button>}
+            {ev.puede_borrar && <button type="button" className="btn danger" onClick={borrar}>Borrar</button>}
           </div>
           {drive === "subiendo" && <p className="eval-nota" role="status">Guardando en la carpeta del jugador en Drive…</p>}
           {drive?.aviso && <p className="err" role="alert">{drive.aviso}</p>}

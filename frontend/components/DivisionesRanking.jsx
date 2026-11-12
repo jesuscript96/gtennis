@@ -1,20 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ResourceCrud from "../../../components/ResourceCrud";
-import { getGrupos, getPermisosDivisiones, getUser, moverDeDivision, ordenarDivision, resource } from "../../../lib/api";
-import { roleRank } from "../../../lib/perms";
-import { RESOURCES } from "../../../lib/resources";
+import { getGruposDivisiones, getPermisosDivisiones, moverDeDivision, ordenarDivision, resource } from "../lib/api";
 
 /**
+ * Grupos → «Por división» (10/11/2026; antes, la pantalla Divisiones): una
+ * columna por división con sus alumnos y su ranking. Solo dirección mueve de
+ * división y ordena (decisión 5); el resto mira. Los niveles y sus nombres se
+ * editan en Club → Divisiones.
+ *
  * Divisiones con el aspecto de Grupos (21/10/2026): una columna por división
  * con sus alumnos debajo. Dirección y Dani Gimeno mueven alumnos de una
  * división a otra (arrastrando, o tocando al alumno y luego el destino) y el
  * cambio se guarda en su ficha al momento; el resto solo mira. Dirección
  * conserva, plegada, la tabla para crear o editar divisiones.
  *
- * Los alumnos salen de /grupos/, que ya devuelve a todos los activos con su
- * división (en algún grupo o en «sin grupo»); aquí solo se reagrupan.
+ * Los alumnos salen de /grupos/divisiones/: todos los que entrenan (sin bajas
+ * ya pasadas), también los de bloques que alguien no ve, con su responsable y
+ * su edad debajo, como en la antigua vista «Por división» (11/11/2026).
  *
  * Ranking (27/10/2026): dentro de cada columna, arrastrar a un alumno encima o
  * debajo de otro cambia su puesto en la división (1 = el mejor); soltarlo
@@ -32,7 +35,7 @@ function enOrden(jugadores) {
     return pa === pb ? a.nombre.localeCompare(b.nombre, "es") : pa - pb;
   });
 }
-export default function Page() {
+export default function DivisionesRanking({ pestanas }) {
   const [divisiones, setDivisiones] = useState(null);
   const [alumnos, setAlumnos] = useState([]);
   const [puedeMover, setPuedeMover] = useState(false);
@@ -43,17 +46,12 @@ export default function Page() {
   const [encima, setEncima] = useState(null); // columna bajo el arrastre
   const [caer, setCaer] = useState(null); // {id, despues}: dónde caería en la columna
   const [ocupado, setOcupado] = useState(false);
-  const direccion = roleRank(getUser()) >= 3;
 
   useEffect(() => {
-    Promise.all([resource("divisiones").list(), getGrupos()])
+    Promise.all([resource("divisiones").list(), getGruposDivisiones()])
       .then(([divs, g]) => {
-        const porId = new Map();
-        for (const b of g.bloques || []) {
-          for (const gr of b.grupos || []) for (const j of gr.jugadores || []) porId.set(j.id, j);
-        }
-        for (const j of g.sin_grupo || []) porId.set(j.id, j);
-        setAlumnos([...porId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")));
+        const todos = (g.divisiones || []).flatMap((d) => d.jugadores || []);
+        setAlumnos(todos.sort((a, b) => a.nombre.localeCompare(b.nombre, "es")));
         setDivisiones([...divs].sort((a, b) => a.nivel - b.nivel));
       })
       .catch((e) => setError(e.message));
@@ -70,7 +68,8 @@ export default function Page() {
   if (!divisiones) {
     return (
       <div className="page grupos">
-        <div className="page-head"><h1>Divisiones</h1></div>
+        <div className="page-head"><h1>Grupos</h1></div>
+        {pestanas}
         {error ? <p className="err">{error}</p> : <p className="msg">Cargando…</p>}
       </div>
     );
@@ -187,14 +186,14 @@ export default function Page() {
   return (
     <div className={`page grupos divisiones-vista${puedeMover ? " movible" : ""}`}>
       <div className="page-head">
-        <h1>Divisiones</h1>
-        {!puedeMover && <span className="pill no">Solo lectura</span>}
+        <h1>Grupos</h1>
       </div>
+      {pestanas}
       <p className="help">
         Los alumnos activos, cada uno bajo su división ({alumnos.length} en total).
         {puedeMover
           ? " Arrastra a un alumno encima o debajo de otro para cambiar su puesto en la división (1º = el mejor), o a otra división. Tocando: toca al alumno y luego a aquel delante del que va, o «Traer aquí». Se guarda al momento."
-          : " El número es su puesto en la división (1º = el mejor). La división de un alumno se cambia en su ficha."}
+          : " El número es su puesto en la división (1º = el mejor). La división y el puesto los cambia dirección."}
       </p>
 
       <div className="toolbar">
@@ -295,6 +294,10 @@ export default function Page() {
                             }}>
                             {conRanking && <span className="puesto">{puesto ? `${puesto}º` : "—"}</span>}
                             <span className="txt">{j.nombre}</span>
+                            <span className="resp">
+                              {[j.responsable || "Sin grupo", j.edad ? `${j.edad} año${j.edad === 1 ? "" : "s"}` : null]
+                                .filter(Boolean).join(" · ")}
+                            </span>
                           </button>
                         </li>
                       );
@@ -307,12 +310,6 @@ export default function Page() {
         </div>
       </section>
 
-      {direccion && (
-        <details className="editar-divisiones">
-          <summary>Editar divisiones</summary>
-          <ResourceCrud config={RESOURCES.divisiones} />
-        </details>
-      )}
     </div>
   );
 }

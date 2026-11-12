@@ -8,7 +8,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from academy.models import Coach, Entrenador, Escuela, Jugador
-from users.models import User
+from users.models import Funcion, User
 
 from . import catalogo
 from .models import EvaluacionFisica
@@ -25,6 +25,9 @@ class FisicoTests(TestCase):
         self.josep = User.objects.create_user(username="josep.mari", password="x", role=User.Role.PREPARADOR)
         self.dani = User.objects.create_user(username="daniel.gimeno", password="x", role=User.Role.COACH)
         Coach.objects.create(nombre="Dani", user=self.dani)
+        # 10/11/2026: quien valida abre la parte física (por su función, no
+        # por su nombre).
+        Funcion.objects.create(usuario=self.dani, codigo="VALIDA_INFORMES")
         self.ivan = User.objects.create_user(username="ivan", password="x", role=User.Role.SUPERADMIN)
         self.blas = User.objects.create_user(username="blas", password="x", role=User.Role.ENTRENADOR)
         Entrenador.objects.create(nombre="Blas", user=self.blas)
@@ -62,7 +65,7 @@ class FisicoTests(TestCase):
         c.patch(url, {"puntuaciones": TODAS}, format="json")
         r = c.post(url + "terminar/", {}, format="json")
         self.assertEqual(r.data["estado"], "TERMINADA")
-        # Gestión deportiva la ve y la puede corregir; un entrenador ni la ve.
+        # Quien valida la ve y la puede corregir; un entrenador ni la ve.
         self.assertEqual(self.api(self.dani).patch(url, {"textos": {"notas_fisio": "ok"}}, format="json").status_code, 200)
         self.assertEqual(self.api(self.blas).get(url).status_code, 403)
 

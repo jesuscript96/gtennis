@@ -45,7 +45,8 @@ def jugadores_visibles(user, base=None):
     """Queryset de Jugador que `user` puede ver. `base` permite partir de un
     queryset ya filtrado (p. ej. activos)."""
     qs = base if base is not None else Jugador.objects.filter(activo=True)
-    if user.is_superadmin:
+    # Dirección y Administración (altas y datos de jugadores) ven a todos.
+    if user.is_superadmin or getattr(user, "is_administracion", False):
         return qs
     coach = _coach(user)
     if coach is not None:
@@ -56,7 +57,6 @@ def jugadores_visibles(user, base=None):
             Q(entrenador_responsable__isnull=True)
             | Q(entrenador_responsable__in=ents)
             | Q(cogestores__in=ents)
-            | Q(entrenadores_gestores__in=ents)
             | Q(responsables__entrenador__in=ents)
         ).distinct()
     ent = getattr(user, "entrenador", None)
@@ -71,7 +71,7 @@ def jugadores_visibles(user, base=None):
 
 def puede_ver_jugador(user, jugador):
     """¿`user` tiene a `jugador` dentro de su alcance?"""
-    if user.is_superadmin:
+    if user.is_superadmin or getattr(user, "is_administracion", False):
         return True
     return jugadores_visibles(user).filter(pk=jugador.pk).exists()
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { getAgendaJugador, getUser, jugadorExtra, quitarExtra, resource } from "../lib/api";
+import { getAgendaJugador, getReglasJugador, getUser, guardarReglaJugador, jugadorExtra, quitarExtra, resource } from "../lib/api";
 import { roleRank } from "../lib/perms";
 import CalendarioAusencias from "./CalendarioAusencias";
 import PanelTurnos, { SemanaHabitual } from "./PanelTurnos";
@@ -43,19 +43,21 @@ export default function MisJugadores() {
   // marcados; debajo, los que entrena y los de los demás de su grupo de
   // gestión, que también puede editar.
   const yo = getUser();
-  const miId = yo?.entrenador_id;
   const esCoach = roleRank(yo) >= 2;
-  const mios = miId ? visibles.filter((j) => j.entrenador_responsable === miId
-    || (j.cogestores || []).includes(miId)) : [];
-  // Las altas nuevas llegan sin entrenador de gestión: el head coach las ve
-  // aparte, arriba, para completarles la ficha deportiva.
-  // El que se abrió desde aquí se queda aquí aunque ya tenga entrenador: si
-  // saltara a la otra lista a mitad de rellenarlo, se perdería de vista.
+  const esDir = roleRank(yo) >= 3;
+  // «Mis jugadores» significa lo mismo en toda la aplicación (10/11/2026): los
+  // de tu columna de Grupos. Lo calcula el servidor (`relacion`). Con los que
+  // entrenas por porcentaje salen aparte.
+  // El que se abrió desde «Sin grupo» se queda ahí aunque ya tenga grupo: si
+  // saltara de lista a mitad de rellenarlo, se perdería de vista.
   const sinGestion = esCoach
-    ? visibles.filter((j) => fijos.includes(j.id)
-      || (!j.entrenador_responsable && !(j.cogestores || []).length))
+    ? visibles.filter((j) => fijos.includes(j.id) || j.relacion === "sin_grupo")
     : [];
-  const resto = visibles.filter((j) => !mios.includes(j) && !sinGestion.includes(j));
+  const deLista = (rel) => visibles.filter((j) => j.relacion === rel && !sinGestion.includes(j));
+  const mios = deLista("mio");
+  const delGrupo = deLista("grupo");
+  const entrena = deLista("entrena");
+  const resto = deLista("otro");
 
   function resumen(j) {
     const m = turnos.find((t) => t.id === j.turno_manana);
@@ -95,7 +97,7 @@ export default function MisJugadores() {
 
         {activo && (
           <div className="detalle-jugador">
-            {esCoach && <FichaDeportiva jugador={j} onGuardado={actualizar} />}
+            {esCoach && <FichaDeportiva jugador={j} esDir={esDir} />}
             <AgendaJugador jugador={j} turnos={turnos} onGuardado={actualizar}
               cambiaHorario={esCoach} />
 
@@ -104,9 +106,7 @@ export default function MisJugadores() {
               <CalendarioAusencias jugador={j} />
             </div>
 
-            <div className="accesos">
-              <Link href={`/ausencias?jugador=${j.id}`}>Parte de esta semana</Link>
-            </div>
+            {yo?.ve_reglas_jugador && <ReglasJugador jugador={j} />}
           </div>
         )}
       </li>
@@ -115,7 +115,7 @@ export default function MisJugadores() {
 
   return (
     <div className="page">
-      <h1>Mis jugadores</h1>
+      <h1>{esDir ? "Jugadores" : "Mis jugadores"}</h1>
       <p className="hint">
         {esCoach
           ? "Declara cuándo entrena cada uno y sus faltas."
@@ -130,19 +130,23 @@ export default function MisJugadores() {
       {error && <p className="error">{error}</p>}
 
       {sinGestion.length > 0 && <>
-        <h2 className="titulo-lista">Sin entrenador de gestión <small>({sinGestion.length})</small></h2>
-        <p className="hint">Altas nuevas: ábrelas y completa su ficha deportiva.</p>
+        <h2 className="titulo-lista">Sin grupo <small>({sinGestion.length})</small></h2>
+        <p className="hint">Altas nuevas: ponlas en un grupo desde Grupos y completa aquí su ficha deportiva.</p>
         <ul className="lista-jugadores">{sinGestion.map((j) => fila(j, false))}</ul>
       </>}
 
-      {mios.length > 0 && <>
-        <h2 className="titulo-lista">Los que gestionas <small>({mios.length})</small></h2>
-        <ul className="lista-jugadores">{mios.map((j) => fila(j, true))}</ul>
-      </>}
-      {(mios.length > 0 || sinGestion.length > 0) && resto.length > 0 && (
-        <h2 className="titulo-lista">Resto de jugadores <small>({resto.length})</small></h2>
-      )}
-      <ul className="lista-jugadores">{resto.map((j) => fila(j, false))}</ul>
+      {[
+        [mios, "Mis jugadores", "Los de tu columna en Grupos.", true],
+        [delGrupo, esCoach ? "De tu grupo" : "De tu grupo de color", "Los gestiona otro entrenador de tu grupo.", false],
+        [entrena, "Entrenas por porcentaje", "No los gestionas, pero entrenan contigo.", false],
+        [resto, sinGestion.length || mios.length || delGrupo.length || entrena.length ? "Resto de jugadores" : null, null, false],
+      ].map(([lista, titulo, ayuda, gestion]) => lista.length > 0 && (
+        <div key={titulo || "resto"}>
+          {titulo && <h2 className="titulo-lista">{titulo} <small>({lista.length})</small></h2>}
+          {ayuda && <p className="hint">{ayuda}</p>}
+          <ul className="lista-jugadores">{lista.map((j) => fila(j, gestion))}</ul>
+        </div>
+      ))}
 
       {!visibles.length && <p className="hint">Ningún jugador con ese nombre.</p>}
     </div>
@@ -387,26 +391,24 @@ const PAREJA = [
  * coach no tiene la tabla de fichas de dirección, así que lo rellena aquí,
  * sin salir de su lista. Cada cambio se guarda al momento.
  */
-function FichaDeportiva({ jugador: j, onGuardado }) {
+function FichaDeportiva({ jugador: j, esDir }) {
   const [divisiones, setDivisiones] = useState([]);
-  const [entrenadores, setEntrenadores] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [actual, setActual] = useState(j);
 
   useEffect(() => {
     resource("divisiones").list().then(setDivisiones).catch(() => {});
-    resource("entrenadores").list()
-      .then((l) => setEntrenadores(l.filter((e) => e.activo)))
-      .catch(() => {});
   }, []);
+  useEffect(() => setActual(j), [j]);
 
   const guardar = async (cambio) => {
     setGuardando(true);
     setError("");
     setMsg("");
     try {
-      onGuardado(await resource("jugadores").update(j.id, cambio));
+      setActual(await resource("jugadores").update(j.id, cambio));
       setMsg("Guardado.");
     } catch (e) {
       setError(e.message);
@@ -415,15 +417,10 @@ function FichaDeportiva({ jugador: j, onGuardado }) {
     }
   };
 
-  const cogestores = j.cogestores || [];
-  const alternarCogestor = (id) => guardar({
-    cogestores: cogestores.includes(id)
-      ? cogestores.filter((x) => x !== id) : [...cogestores, id],
-  });
-  const pendiente = !j.division || !j.entrenador_responsable;
-  // Abierta de entrada si está sin completar, y así se queda mientras se
-  // rellena: si dependiera de `pendiente`, se cerraría sola a medio camino.
+  const div = divisiones.find((d) => d.id === actual.division);
+  const pendiente = !actual.division || !actual.entrenador_responsable;
   const [abiertaAlEntrar] = useState(pendiente);
+  const gestores = [actual.entrenador_nombre, ...(actual.cogestores_nombres || [])].filter(Boolean);
 
   return (
     <details className="ficha-deportiva" open={abiertaAlEntrar}>
@@ -432,46 +429,21 @@ function FichaDeportiva({ jugador: j, onGuardado }) {
         {pendiente && <span className="marca-baja">Sin completar</span>}
       </summary>
       {error && <p className="error">{error}</p>}
-      <div className="fila-form">
-        <label>División
-          <select value={j.division || ""} disabled={guardando}
-            onChange={(e) => guardar({ division: e.target.value ? Number(e.target.value) : null })}>
-            <option value="">—</option>
-            {divisiones.map((d) => (
-              <option key={d.id} value={d.id}>{d.nombre || `División ${d.nivel}`}</option>
-            ))}
-          </select>
-        </label>
-        <label>Entrenador de gestión
-          <select value={j.entrenador_responsable || ""} disabled={guardando}
-            onChange={(e) => guardar({
-              entrenador_responsable: e.target.value ? Number(e.target.value) : null,
-            })}>
-            <option value="">—</option>
-            {entrenadores.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-          </select>
-        </label>
-      </div>
-      <div className="cogestores">
-        <span className="etiqueta">Comparte la gestión con <small>(solo si lo llevan dos)</small></span>
-        <div className="chips">
-          {entrenadores.filter((e) => e.id !== j.entrenador_responsable).map((e) => (
-            <button key={e.id} type="button" disabled={guardando}
-              className={cogestores.includes(e.id) ? "chip on" : "chip"}
-              aria-pressed={cogestores.includes(e.id)}
-              onClick={() => alternarCogestor(e.id)}>{e.nombre}</button>
-          ))}
-        </div>
-      </div>
+      {/* Quién gestiona se cambia en Grupos; la división y el ranking, solo
+          dirección, también en Grupos (decisiones 4 y 5, 10/11/2026). */}
+      <dl className="ficha-lectura">
+        <div><dt>Le gestiona</dt><dd>{gestores.length ? gestores.join(" y ") : "Nadie todavía"} · <Link href="/grupos">se cambia en Grupos</Link></dd></div>
+        <div><dt>División</dt><dd>{div ? (div.nombre || `División ${div.nivel}`) : "—"}{esDir ? <> · <Link href="/grupos?vista=division">se cambia en Grupos</Link></> : " · la cambia dirección"}</dd></div>
+      </dl>
       <div className="fila-form">
         <label>Con qué divisiones entrena
-          <select value={j.vecindad || "CLUB"} disabled={guardando}
+          <select value={actual.vecindad || "CLUB"} disabled={guardando}
             onChange={(e) => guardar({ vecindad: e.target.value })}>
             {VECINDAD.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
           </select>
         </label>
         <label>Se empareja preferentemente
-          <select value={j.pareja_division || ""} disabled={guardando}
+          <select value={actual.pareja_division || ""} disabled={guardando}
             onChange={(e) => guardar({ pareja_division: e.target.value || null })}>
             {PAREJA.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
           </select>
@@ -484,9 +456,135 @@ function FichaDeportiva({ jugador: j, onGuardado }) {
       </p>
       <div className="accesos">
         <Link href={`/jugador-responsables?jugador=${j.id}&nombre=${encodeURIComponent(j.nombre)}`}>
-          Porcentajes con otros entrenadores →
+          Con quién entrena y en qué porcentaje →
         </Link>
       </div>
+    </details>
+  );
+}
+
+
+/**
+ * Las reglas del jugador, juntas (10/11/2026): con quién no coincide, con qué
+ * entrenador va siempre o nunca, su pareja, su entrenador por franja y su
+ * superficie. Solo dirección y head coaches.
+ */
+function ReglasJugador({ jugador }) {
+  const [r, setR] = useState(null);
+  const [jugadores, setJugadores] = useState([]);
+  const [entrenadores, setEntrenadores] = useState([]);
+  const [turnos, setTurnos] = useState([]);
+  const [error, setError] = useState("");
+  const [nuevo, setNuevo] = useState({ tipo: "rencilla" });
+  const api = resource("jugadores");
+
+  useEffect(() => {
+    getReglasJugador(jugador.id).then(setR).catch((e) => setError(e.message));
+  }, [jugador.id]);
+
+  async function cargarListas() {
+    if (jugadores.length) return;
+    const [js, es, ts] = await Promise.all([
+      resource("jugadores").list(), resource("entrenadores").list(), resource("turnos").list()]);
+    setJugadores(js.filter((x) => x.id !== jugador.id));
+    setEntrenadores(es.filter((e) => e.activo));
+    setTurnos(ts);
+  }
+
+  async function enviar(cuerpo, metodo = "POST") {
+    setError("");
+    try { setR(await guardarReglaJugador(jugador.id, cuerpo, metodo)); }
+    catch (e) { setError(e.message); }
+  }
+
+  if (!r) return error ? <p className="error">{error}</p> : null;
+  const fila = (tipo, x, texto) => (
+    <li key={`${tipo}-${x.id}`}>{texto}
+      <button type="button" className="btn ghost sm" onClick={() => enviar({ tipo, id: x.id }, "DELETE")}>Quitar</button>
+    </li>
+  );
+  const tipos = {
+    rencilla: ["No coincide con", "jugador"],
+    contrato: ["Contrato de patrocinio con", "entrenador"],
+    veto: ["No entrena con", "entrenador"],
+    pareja: ["Entrena con (pareja)", "jugador"],
+    franja: ["Entrenador por franja", "entrenador"],
+  };
+  const quien = tipos[nuevo.tipo]?.[1];
+
+  return (
+    <details className="ficha-deportiva" onToggle={(e) => e.target.open && cargarListas()}>
+      <summary>Reglas</summary>
+      {error && <p className="error">{error}</p>}
+      <ul className="lista-reglas">
+        {r.rencillas.map((x) => fila("rencilla", x, `No coincide con ${x.nombre}${x.motivo ? ` (${x.motivo})` : ""}`))}
+        {r.contratos.map((x) => fila("contrato", x, `Contrato con ${x.nombre} · ${x.tipo_display}`))}
+        {r.vetos.map((x) => fila("veto", x, `No entrena con ${x.nombre}`))}
+        {r.parejas.map((x) => fila("pareja", x, `Pareja: ${x.nombre} · ${x.tipo_display}`))}
+        {r.franjas.map((x) => fila("franja", x, `En ${x.turno_codigo}, con ${x.nombre} · ${x.tipo_display}`))}
+        {r.superficie && fila("superficie", r.superficie, `Superficie: ${r.superficie.superficie === "RESINA" ? "resina" : "tierra"}${r.superficie.estricta ? " (siempre)" : " (si se puede)"}`)}
+        {!r.rencillas.length && !r.contratos.length && !r.vetos.length && !r.parejas.length && !r.franjas.length && !r.superficie
+          && <li className="hint">Sin reglas.</li>}
+      </ul>
+      <form className="fila-form" onSubmit={(e) => { e.preventDefault(); enviar(nuevo); }}>
+        <label>Añadir
+          <select value={nuevo.tipo} onChange={(e) => setNuevo({ tipo: e.target.value })}>
+            {Object.entries(tipos).map(([k, [t]]) => <option key={k} value={k}>{t}</option>)}
+            <option value="superficie">Superficie fija</option>
+          </select>
+        </label>
+        {quien === "jugador" && (
+          <label>Jugador
+            <select required value={nuevo.jugador || ""} onChange={(e) => setNuevo({ ...nuevo, jugador: e.target.value })}>
+              <option value="">—</option>
+              {jugadores.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+            </select>
+          </label>
+        )}
+        {quien === "entrenador" && (
+          <label>Entrenador
+            <select required value={nuevo.entrenador || ""} onChange={(e) => setNuevo({ ...nuevo, entrenador: e.target.value })}>
+              <option value="">—</option>
+              {entrenadores.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+            </select>
+          </label>
+        )}
+        {nuevo.tipo === "franja" && (
+          <label>Franja
+            <select required value={nuevo.turno || ""} onChange={(e) => setNuevo({ ...nuevo, turno: e.target.value })}>
+              <option value="">—</option>
+              {turnos.map((t) => <option key={t.id} value={t.id}>{t.codigo}</option>)}
+            </select>
+          </label>
+        )}
+        {nuevo.tipo === "contrato" && (
+          <label>Tipo
+            <select value={nuevo.tipo_contrato || "DURO"} onChange={(e) => setNuevo({ ...nuevo, tipo_contrato: e.target.value })}>
+              <option value="DURO">Siempre con él</option><option value="BLANDO">Cuando se pueda</option>
+            </select>
+          </label>
+        )}
+        {nuevo.tipo === "pareja" && (
+          <label>Tipo
+            <select value={nuevo.tipo_pareja || "SOFT"} onChange={(e) => setNuevo({ ...nuevo, tipo_pareja: e.target.value })}>
+              <option value="SOFT">Si se puede</option><option value="HARD">Siempre en la misma pista</option>
+            </select>
+          </label>
+        )}
+        {nuevo.tipo === "superficie" && <>
+          <label>Superficie
+            <select required value={nuevo.superficie || ""} onChange={(e) => setNuevo({ ...nuevo, superficie: e.target.value })}>
+              <option value="">—</option><option value="TIERRA">Tierra</option><option value="RESINA">Resina</option>
+            </select>
+          </label>
+          <label className="check"><input type="checkbox" checked={Boolean(nuevo.estricta)}
+            onChange={(e) => setNuevo({ ...nuevo, estricta: e.target.checked })} /> Siempre</label>
+        </>}
+        {nuevo.tipo === "rencilla" && (
+          <label>Motivo <input value={nuevo.motivo || ""} onChange={(e) => setNuevo({ ...nuevo, motivo: e.target.value })} /></label>
+        )}
+        <button className="btn sm" type="submit">Añadir</button>
+      </form>
     </details>
   );
 }

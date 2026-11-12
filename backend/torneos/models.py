@@ -12,8 +12,10 @@ from .categorias import CATEGORIAS
 
 
 class Torneo(models.Model):
+    # «Propuesto (pendiente de validar)» se quitó el 10/11/2026: nadie lo
+    # validaba. Lo pendiente de confirmar es el jugador apuntado
+    # (`Participante.certeza`), no el torneo.
     class Estado(models.TextChoices):
-        PROPUESTO = "PROPUESTO", "Propuesto"
         VALIDADO = "VALIDADO", "Validado"
         CANCELADO = "CANCELADO", "Cancelado"
 

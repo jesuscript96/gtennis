@@ -1,39 +1,53 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { getToken, getUser } from "../../lib/api";
+import { getToken, getUser, refrescarUsuario } from "../../lib/api";
 import { canVisit, inicio } from "../../lib/perms";
+import { RUTAS_VIEJAS } from "../../lib/menu";
 import Sidebar from "../../components/Sidebar";
-import SettingsMenu from "../../components/SettingsMenu";
+import SectionTabs from "../../components/SectionTabs";
+
+// Cada cuánto, como mucho, se vuelven a pedir los permisos al navegar.
+const REFRESCO_MS = 30 * 1000;
 
 export default function DashLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [ok, setOk] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const ultimo = useRef(0);
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
       return;
     }
-    // Guard por rol: si la ruta exige más nivel del que tiene, al inicio.
+    if (RUTAS_VIEJAS[pathname]) {
+      router.replace(RUTAS_VIEJAS[pathname]);
+      return;
+    }
+    // Si la ruta no le toca, a su inicio.
     if (!canVisit(pathname)) {
-      // El entrenador no tiene panel general (su inicio es su agenda) y el
-      // preparador físico solo tiene Evaluaciones.
       router.replace(inicio(getUser()));
       return;
     }
     setOk(true);
+    // Los permisos se vuelven a pedir al navegar: si dirección le cambia el
+    // perfil o una función, lo nota sin cerrar sesión.
+    if (Date.now() - ultimo.current > REFRESCO_MS) {
+      ultimo.current = Date.now();
+      refrescarUsuario().then((u) => {
+        window.dispatchEvent(new Event("gt-user"));
+        if (!canVisit(pathname, u)) router.replace(inicio(u));
+      }).catch(() => {});
+    }
   }, [router, pathname]);
 
-  // Cierra el drawer al cambiar de ruta (navegación en móvil).
   useEffect(() => {
     setNavOpen(false);
   }, [pathname]);
 
-  // Evita el scroll del fondo cuando el drawer está abierto en móvil.
   useEffect(() => {
     document.body.classList.toggle("nav-locked", navOpen);
     return () => document.body.classList.remove("nav-locked");
@@ -53,7 +67,6 @@ export default function DashLayout({ children }) {
           <span /><span /><span />
         </button>
         <div className="mobile-brand">G<span>Tennis</span></div>
-        <SettingsMenu align="right" />
       </header>
 
       <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
@@ -61,9 +74,7 @@ export default function DashLayout({ children }) {
       <Sidebar onNavigate={() => setNavOpen(false)} />
 
       <main className="content">
-        <div className="topbar">
-          <SettingsMenu align="right" />
-        </div>
+        <SectionTabs />
         {children}
       </main>
     </div>

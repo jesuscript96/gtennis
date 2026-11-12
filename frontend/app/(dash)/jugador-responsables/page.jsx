@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   getEntrenadoresJugador, guardarEntrenadoresJugador, resource,
 } from "../../../lib/api";
@@ -45,7 +46,7 @@ function Inner() {
   }, [jugadorId]);
 
   if (!jugadorId) {
-    return <p className="msg">Abre esta página desde el botón «Entrenadores» de un jugador.</p>;
+    return <p className="msg">Abre esta página desde «Porcentajes» en la ficha de un jugador (Jugadores).</p>;
   }
   if (!datos) return error ? <p className="err">{error}</p> : <p className="msg">Cargando…</p>;
 
@@ -102,8 +103,8 @@ function Inner() {
   const guardar = async () => {
     setGuardando(true); setError(""); setAviso("");
     try {
+      // Quién le gestiona ya no se cambia aquí (decisión 4): solo los porcentajes.
       cargar(await guardarEntrenadoresJugador(jugadorId, {
-        responsable: responsable ? Number(responsable) : null,
         entrenadores: filas.map((f) => ({
           entrenador: f.entrenador, prioridad: f.prioridad,
           porcentaje: Number(f.porcentaje) || 0,
@@ -126,12 +127,10 @@ function Inner() {
       </p>
 
       <div className="card">
-        <label>Responsable · le gestiona{" "}
-          <select value={responsable} onChange={(e) => setResponsable(e.target.value)}>
-            <option value="">— sin responsable —</option>
-            {entrenadores.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-          </select>
-        </label>
+        <p className="msg">
+          Le gestiona: <b>{entrenadores.find((e) => String(e.id) === responsable)?.nombre || "nadie (sin grupo)"}</b>.
+          {" "}Quién le gestiona se cambia en <Link href="/grupos">Grupos</Link>.
+        </p>
       </div>
 
       <div className="card">

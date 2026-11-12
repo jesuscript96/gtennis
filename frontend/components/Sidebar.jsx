@@ -3,113 +3,33 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { getAvisos, getUser, logout, refrescarUsuario } from "../lib/api";
-import { roleRank } from "../lib/perms";
-import SettingsMenu from "./SettingsMenu";
+import { getAvisos, getUser, logout } from "../lib/api";
+import { dondeEsta, menuDe, perfil } from "../lib/menu";
 
-// Menú por secciones. El 3er elemento de cada item es el rol mínimo para verlo
-// ("direccion" o "coach"); sin él, lo ve cualquiera.
-const SECTIONS = [
-  { items: [
-    ["/", "Inicio"],
-    ["/cuadrante", "Cuadrante (día)"],
-    ["/semana", "Semana"],
-    ["/semanas", "Semanas"],
-  ] },
-  { title: "Disponibilidad", items: [
-    ["/ausencias", "Ausencias y estados"],
-    ["/ausencias-fechas", "Bajas por fechas"],
-    ["/mi-agenda", "Agenda de entrenadores"],
-    ["/disponibilidad-entrenador", "Disp. entrenadores"],
-    ["/vacaciones", "Vacaciones"],
-  ] },
-  { title: "Datos", items: [
-    ["/jugadores", "Jugadores"],
-    ["/mis-jugadores", "Jugadores · faltas", "direccion"],
-    ["/grupos", "Grupos"],
-    ["/divisiones", "Divisiones"],
-    ["/entrenadores", "Entrenadores", "coach"],
-    ["/coaches", "Coaches", "direccion"],
-    ["/escuelas", "Escuelas", "direccion"],
-    ["/preferencias-superficie", "Pref. superficie"],
-  ] },
-  { title: "Torneos", items: [
-    ["/torneos", "Calendario de torneos"],
-    ["/torneos/jugadores", "Torneos por jugador"],
-    ["/torneos/nuevo", "Nuevo torneo", "coach"],
-  ] },
-  { title: "Rendimiento", items: [
-    ["/evaluaciones", "Evaluaciones"],
-    ["/informes", "Informes", "informes"],
-    ["/tardes", "Competición de tardes", "tardes"],
-  ] },
-  { title: "Gestión", items: [
-    ["/invitados", "Invitados"],
-    ["/mantenimiento", "Mantenimiento"],
-    ["/avisos", "Avisos"],
-    ["/feedback", "Feedback"],
-  ] },
-  { items: [
-    ["/mi-cuenta", "Mi cuenta"],
-  ] },
-];
+const NOMBRE_PERFIL = {
+  direccion: "Dirección",
+  head_coach: "Head coach",
+  entrenador: "Entrenador",
+  preparador: "Preparador físico",
+  administracion: "Administración",
+};
 
-const NEED = { direccion: 3, coach: 2 };
-
-// El entrenador no necesita el panel general del club: solo lo suyo — su
-// jornada y sus ausencias — y lo que declara de sus jugadores.
-const SECTIONS_ENTRENADOR = [
-  { items: [
-    ["/mi-agenda", "Mi agenda"],
-    ["/avisos", "Avisos"],
-  ] },
-  { title: "Mis jugadores", items: [
-    // El coordinador de tardes (Alberto) lleva los jugadores de Competición de tardes.
-    ["/jugadores", "Mis jugadores", "no-tardes"],
-    ["/tardes", "Mis jugadores", "tardes"],
-    ["/grupos", "Grupos"],
-    ["/divisiones", "Divisiones"],
-    ["/ausencias", "Ausencias de la semana"],
-    ["/ausencias-fechas", "Bajas por fechas"],
-  ] },
-  { title: "Torneos", items: [
-    ["/torneos", "Calendario de torneos"],
-    ["/torneos/jugadores", "Torneos por jugador"],
-  ] },
-  { title: "Rendimiento", items: [
-    ["/evaluaciones", "Evaluaciones"],
-    ["/informes", "Informes", "informes"],
-  ] },
-  { items: [
-    ["/mi-cuenta", "Mi cuenta"],
-  ] },
-];
-
-// El preparador físico (21/10/2026): solo la parte física de los informes.
-const SECTIONS_PREPARADOR = [
-  { items: [
-    ["/avisos", "Avisos"],
-  ] },
-  { title: "Rendimiento", items: [
-    ["/evaluaciones", "Evaluaciones físicas"],
-    ["/informes", "Informes", "informes"],
-  ] },
-  { items: [
-    ["/mi-cuenta", "Mi cuenta"],
-  ] },
-];
-
+// El menú: una entrada por cosa (13 como mucho) y, dentro, sus pestañas
+// (`SectionTabs`). Cada perfil ve solo lo que puede usar.
 export default function Sidebar({ onNavigate }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState(getUser);
-  // Al abrir la app se piden otra vez los permisos: quien entró antes de un
-  // permiso nuevo (Informes, 27/10/2026) lo ve sin tener que volver a entrar.
-  useEffect(() => { refrescarUsuario().then(setUser).catch(() => {}); }, []);
-  const secciones = user?.is_preparador ? SECTIONS_PREPARADOR
-    : roleRank(user) === 1 ? SECTIONS_ENTRENADOR : SECTIONS;
-  // Avisos sin leer (faltas tras el corte, generación del día…): se miran al
-  // cambiar de página, sin sondear.
+  // El layout vuelve a pedir los permisos al navegar y avisa con este evento:
+  // un cambio de perfil o de funciones se nota sin cerrar sesión.
+  useEffect(() => {
+    const onUser = () => setUser(getUser());
+    window.addEventListener("gt-user", onUser);
+    return () => window.removeEventListener("gt-user", onUser);
+  }, []);
+  const entradas = menuDe(user);
+  const actual = dondeEsta(pathname, user)?.entrada.key;
+  // Avisos sin leer: se miran al cambiar de página, sin sondear.
   const [sinLeer, setSinLeer] = useState(0);
   useEffect(() => {
     getAvisos().then((a) => setSinLeer(a.filter((x) => !x.leido).length)).catch(() => {});
@@ -124,31 +44,21 @@ export default function Sidebar({ onNavigate }) {
     <aside className="sidebar">
       <div className="brand">G<span>Tennis</span></div>
       <nav>
-        {secciones.map((section, i) => (
-          <div key={i} className="nav-section">
-            {section.title && <div className="nav-section-title">{section.title}</div>}
-            {section.items
-              // «informes»: quien evalúa Competición de tardes o valida (permiso, no rango).
-              .filter(([, , role]) => role === "informes" ? user?.ve_informes
-                : role === "tardes" ? user?.coordina_informes
-                : role === "no-tardes" ? !user?.coordina_informes
-                : !role || roleRank(user) >= NEED[role])
-              .map(([href, label]) => (
-                <Link key={href} href={href} className={pathname === href || (href === "/torneos" && /^\/torneos\/\d+/.test(pathname)) || (href === "/evaluaciones" && pathname.startsWith("/evaluaciones/")) || (href === "/informes" && pathname.startsWith("/informes/")) ? "active" : ""} onClick={onNavigate}>
-                  {label}
-                  {href === "/avisos" && sinLeer > 0 && <span className="nav-badge">{sinLeer}</span>}
-                </Link>
-              ))}
-          </div>
-        ))}
+        <div className="nav-section">
+          {entradas.map((e) => (
+            <Link key={e.key} href={e.href} className={actual === e.key ? "active" : ""} onClick={onNavigate}>
+              {e.label}
+              {e.key === "avisos" && sinLeer > 0 && <span className="nav-badge">{sinLeer}</span>}
+            </Link>
+          ))}
+        </div>
       </nav>
       <div className="user">
         <div className="user-row">
           <div className="user-id">
             <div className="name">{user?.nombre || user?.username || "—"}</div>
-            <div className="role">{user?.is_superadmin ? "Super Admin" : user?.is_coach ? "Coach" : user?.is_preparador ? "Preparador físico" : "Entrenador"}</div>
+            <div className="role">{NOMBRE_PERFIL[perfil(user)] || ""}</div>
           </div>
-          <SettingsMenu align="left" up />
         </div>
         <button onClick={onLogout}>Cerrar sesión</button>
       </div>

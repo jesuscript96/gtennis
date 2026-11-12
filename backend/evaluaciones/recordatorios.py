@@ -15,7 +15,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from academy.models import Aviso, Jugador
-from academy.permissions import usuarios_valida_informes
+from academy.permissions import usuarios_valida_informes, ve_informes
 
 from . import informes
 from .models import AsignacionInforme, Informe, RecordatorioInforme
@@ -30,6 +30,14 @@ def _jugadores():
     from django.db.models import Q
     return (Jugador.objects.filter(escuela__solo_informes=True)
             .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy)).select_related("escuela"))
+
+
+def _jugadores_alto_rendimiento():
+    hoy = timezone.localdate()
+    from django.db.models import Q
+    return (Jugador.objects.filter(activo=True).exclude(escuela__solo_informes=True)
+            .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy))
+            .select_related("entrenador_responsable__user").prefetch_related("cogestores__user"))
 
 
 def revisar(hoy=None):
@@ -76,6 +84,34 @@ def revisar(hoy=None):
             usuarios[u.pk] = u
             if j.nombre not in por_usuario[u.pk][etapa]:
                 por_usuario[u.pk][etapa].append(j.nombre)
+    # Alto rendimiento (10/11/2026, decisión 12): mismo ciclo de 75 y 90 días
+    # desde su último informe validado, a quien le gestiona (su columna de
+    # Grupos). Sin informe validado todavía no se recuerda nada: así no salta
+    # un aviso por cada alumno el primer día.
+    for j in _jugadores_alto_rendimiento():
+        if informes.ultimo_validado(j) is None:
+            continue
+        c = informes.ciclo(j, hoy)
+        if c["estado"] not in ("pronto", "vencido"):
+            continue
+        abierto = informes.informe_abierto(j, crear=False)
+        if abierto is not None and abierto.tenis_id:
+            continue
+        try:
+            with transaction.atomic():
+                RecordatorioInforme.objects.create(jugador=j, etapa=ETAPA[c["estado"]], referencia=c["desde"])
+        except IntegrityError:
+            continue
+        nuevos += 1
+        gestores = [e.user for e in [j.entrenador_responsable, *j.cogestores.all()]
+                    if e is not None and e.user_id and e.user.is_active]
+        destinatarios = [(u, c["estado"]) for u in gestores]
+        if c["estado"] == "vencido" or not gestores:
+            destinatarios += [(u, c["estado"]) for u in validadores]
+        for u, etapa in destinatarios:
+            usuarios[u.pk] = u
+            if j.nombre not in por_usuario[u.pk][etapa]:
+                por_usuario[u.pk][etapa].append(j.nombre)
     textos = {
         "primera": ("Toca el primer informe", "Jugadores de Competición de tardes que aún no tienen informe"),
         "pronto": ("Toca pronto el siguiente informe", "Han pasado 75 días desde su último informe"),
@@ -87,7 +123,10 @@ def revisar(hoy=None):
         for etapa, nombres in etapas.items():
             titulo, explica = textos[etapa]
             lista = ", ".join(nombres[:12]) + (f" y {len(nombres) - 12} más" if len(nombres) > 12 else "")
+            # Cada uno, a la pantalla que puede abrir: el entrenador de Alto
+            # rendimiento no entra en Informes; su parte se hace en Evaluaciones.
+            donde = "Rendimiento → Informes" if ve_informes(usuarios[uid]) else "Rendimiento → Evaluaciones"
             Aviso.objects.create(usuario=usuarios[uid], tipo=Aviso.Tipo.GENERAL,
                                  titulo=f"{titulo}: {len(nombres)} jugador{'es' if len(nombres) != 1 else ''}",
-                                 mensaje=f"{explica}: {lista}. Lo tienes en Informes.")
+                                 mensaje=f"{explica}: {lista}. Lo tienes en {donde}.")
     return nuevos

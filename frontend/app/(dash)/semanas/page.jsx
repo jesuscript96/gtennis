@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { resource, generarSemana, publicarSemana, despublicarSemana } from "../../../lib/api";
+import { puede } from "../../../lib/perms";
 
 const api = resource("semanas");
 
 export default function SemanasPage() {
+  // Crear, generar y publicar: quien toca el cuadrante (decisión 1).
+  const editable = puede("toca_cuadrante");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fecha, setFecha] = useState("");
@@ -49,13 +52,13 @@ export default function SemanasPage() {
 
   return (
     <div>
-      <div className="page-head"><h1>Semanas</h1></div>
+      <div className="page-head"><h1>Todas las semanas</h1></div>
 
-      <form className="toolbar" onSubmit={crear}>
+      {editable && <form className="toolbar" onSubmit={crear}>
         <input type="date" style={{ maxWidth: 200 }} value={fecha} onChange={(e) => setFecha(e.target.value)} required />
         <button className="btn">Crear semana</button>
         <span style={{ color: "var(--muted)", fontSize: 12 }}>(lunes de la semana)</span>
-      </form>
+      </form>}
       {error && <p className="err">{error}</p>}
 
       <div className="card">
@@ -84,6 +87,7 @@ export default function SemanasPage() {
                   <td>{s.publicado_at ? "Sí" : "—"}</td>
                   <td>
                     <div className="row-actions">
+                      {editable && <>
                       <button
                         className="btn ghost sm"
                         disabled={busy}
@@ -122,6 +126,7 @@ export default function SemanasPage() {
                           {busy === `${s.id}-pub` ? "…" : "Publicar"}
                         </button>
                       )}
+                      </>}
                       <Link className="btn sm" href={`/cuadrante?semana=${s.id}`}>Ver</Link>
                     </div>
                   </td>

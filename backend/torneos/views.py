@@ -187,7 +187,22 @@ class TorneoViewSet(viewsets.ModelViewSet):
         historial.registrar(self.request.user, f"{que} «{t.nombre}»", t.id)
         serializer.save()
 
+    def _assert_sin_ajenos(self, torneo):
+        """Un torneo con jugadores de otro grupo solo lo borra (o lo funde)
+        dirección (10/11/2026): si no, un head coach se lleva por delante a
+        jugadores que no puede tocar."""
+        user = self.request.user
+        if es_direccion(user):
+            return
+        ajenos = [p.nombre for p in torneo.participantes.select_related("jugador")
+                  if p.jugador is not None and not es_de_mi_grupo(user, p.jugador)]
+        if ajenos:
+            raise PermissionDenied(
+                f"Este torneo tiene jugadores de otro grupo ({', '.join(ajenos[:3])}"
+                f"{'…' if len(ajenos) > 3 else ''}): solo dirección lo borra.")
+
     def perform_destroy(self, instance):
+        self._assert_sin_ajenos(instance)
         historial.registrar(self.request.user, f"Borrar «{instance.nombre}»", instance.id)
         instance.delete()
 
@@ -226,9 +241,11 @@ class TorneoViewSet(viewsets.ModelViewSet):
         se le pone en el cuadrante justo porque acompaña, y le escondía del
         desplegable del torneo al que va."""
         p = request.query_params
+        # Unas horas sueltas («hasta las 10:00») tampoco impiden viajar.
         vac = VacacionesEntrenador.objects.filter(
             ambito__in=[VacacionesEntrenador.Ambito.DIA, VacacionesEntrenador.Ambito.MANANA,
-                        VacacionesEntrenador.Ambito.TARDE]).exclude(motivo__icontains="torneo")
+                        VacacionesEntrenador.Ambito.TARDE],
+            hora_desde__isnull=True, hora_hasta__isnull=True).exclude(motivo__icontains="torneo")
         if p.get("desde"):
             vac = vac.filter(fecha_fin__gte=p["desde"])
         if p.get("hasta"):
@@ -253,6 +270,7 @@ class TorneoViewSet(viewsets.ModelViewSet):
         otro = get_object_or_404(Torneo, pk=request.data.get("con"))
         if otro.pk == t.pk:
             raise ValidationError({"con": "Elige otro torneo."})
+        self._assert_sin_ajenos(otro)
         with transaction.atomic():
             historial.registrar(request.user, f"Fusionar «{otro.nombre}» en «{t.nombre}»", t.id, otro.id)
             nombres = set(t.participantes.values_list("nombre", flat=True))

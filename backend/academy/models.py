@@ -253,7 +253,8 @@ class Entrenador(models.Model):
         """Filtro de los jugadores a su alcance: los que gestiona (responsable
         o comparte la gestión), los que entrena (porcentajes de
         ResponsableJugador) y los que gestionan los demás de su grupo de
-        gestión. `jugadores_gestionados` sigue por compatibilidad."""
+        gestión. La lista antigua de acceso (`jugadores_gestionados`) ya no
+        cuenta (10/11/2026): se revisa con `manage.py lista_antigua_acceso`."""
         from django.db.models import Q
 
         grupo = self.companeros_de_grupo()
@@ -261,7 +262,6 @@ class Entrenador(models.Model):
             Q(entrenador_responsable=self)
             | Q(cogestores=self)
             | Q(responsables__entrenador=self)
-            | Q(entrenadores_gestores=self)
             | Q(entrenador_responsable__in=grupo)
             | Q(cogestores__in=grupo)
         )
@@ -843,8 +843,15 @@ class PreferenciaEntrenadorFranja(models.Model):
 
 
 class VacacionesEntrenador(models.Model):
-    """Periodo de vacaciones/baja larga de un entrenador (#11). El motor lo
-    excluye de la generación en las fechas dentro del rango."""
+    """El calendario del entrenador: los días o ratos en que no puede dar
+    clase, con su motivo (vacaciones, torneo, baja…). El motor lo excluye en
+    esas fechas.
+
+    Desde el 10/11/2026 es el único sitio donde se apunta que un entrenador no
+    está (decisión «un solo calendario del entrenador»): sustituye a «Disp.
+    entrenadores» (`scheduling.DisponibilidadEntrenador`) y al interruptor
+    «Disponible esta semana» de su ficha.
+    """
 
     entrenador = models.ForeignKey(
         Entrenador, on_delete=models.CASCADE, related_name="vacaciones"
@@ -870,9 +877,24 @@ class VacacionesEntrenador(models.Model):
         help_text="Todo el día, un bloque o una franja concreta.",
     )
 
-    def afecta_turno(self, turno):
+    # Horas en que no está, para un solo día ("de 8:30 a 10:00 no puede").
+    # Vacías = todo el ámbito.
+    hora_desde = models.TimeField(null=True, blank=True)
+    hora_hasta = models.TimeField(null=True, blank=True)
+    creada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+
+    def afecta_turno(self, turno, fecha=None):
         """¿Deja al entrenador fuera de este turno?"""
-        return self.ambito in (self.Ambito.DIA, turno.bloque, turno.codigo)
+        if self.ambito not in (self.Ambito.DIA, turno.bloque, turno.codigo):
+            return False
+        if not self.hora_desde and not self.hora_hasta:
+            return True
+        ini, fin = turno.horas(fecha)
+        desde = self.hora_desde or ini
+        hasta = self.hora_hasta or fin
+        return desde < fin and hasta > ini
 
     class Meta:
         verbose_name = "Vacaciones de entrenador"

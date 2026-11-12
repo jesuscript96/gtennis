@@ -3,13 +3,13 @@ from datetime import datetime, timedelta, timezone
 from django.utils import timezone as djtz
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academy.models import Entrenador, Jugador, Sede, Turno
-from academy.permissions import ReadOnlyOrDireccion
+from academy.permissions import ReadOnlyOrDireccion, TocaCuadrante, toca_cuadrante
 from engine.service import (
     _effective_state, _overrides, generate, hay_entrenamiento, regenerate_afternoon,
 )
@@ -65,6 +65,9 @@ def _turnos_payload(dia=None):
         for t in Turno.objects.all()
         if dia is None or hay_entrenamiento(dia, t.bloque)
     ]
+
+
+DIAS_TXT = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado"]
 
 
 class ConfiguracionView(APIView):
@@ -228,27 +231,31 @@ def _pide_confirmar(semana, dias, request, bloques=None):
 def _rehacer(semana, request, dias=None, bloques=None):
     """Rehace con lo que se haya decidido sobre los cambios a mano, guardando
     antes una foto para poder deshacerlo."""
-    from .historial import registrar
+    from .historial import que_dias, registrar
 
     mantener = request.data.get("manual", "mantener") != "rehacer"
-    registrar(semana.id, "Rehacer el cuadrante" + ("" if mantener else " desde cero"),
-              request.user)
+    registrar(semana.id, f"Rehacer {que_dias(dias, bloques)}" + ("" if mantener else " desde cero"),
+              request.user, request)
     return generate(semana, dias=dias, bloques=bloques, mantener_manual=mantener)
 
 
 class SemanaViewSet(viewsets.ModelViewSet):
     queryset = Semana.objects.all()
     serializer_class = SemanaSerializer
-    # Todos consultan el cuadrante; crear semanas y generar/publicar (POST) es
-    # de dirección (la generación es global de club).
-    permission_classes = [ReadOnlyOrDireccion]
+    # Todos consultan el cuadrante. Crear semanas, generar, rehacer, deshacer y
+    # publicar es de quien toca el cuadrante: dirección y quien tenga la
+    # función (decisión 1, 10/11/2026: quien rehace también mueve y deshace).
+    permission_classes = [TocaCuadrante]
 
-    def get_permissions(self):
-        # Rehacer días también lo pueden los coaches (01/10/2026): cuando no
-        # está Iván, lo hacen Sergio o Dani.
-        if self.action == "generar":
-            return [IsAuthenticated()]
-        return super().get_permissions()
+    def finalize_response(self, request, response, *args, **kwargs):
+        from .historial import descartar_si_fallo
+        descartar_si_fallo(request, response)
+        return super().finalize_response(request, response, *args, **kwargs)
+
+    def handle_exception(self, exc):
+        from .historial import descartar_pendiente
+        descartar_pendiente(self.request)
+        return super().handle_exception(exc)
 
     @action(detail=True, methods=["get"])
     def tabla(self, request, pk=None):
@@ -289,9 +296,6 @@ class SemanaViewSet(viewsets.ModelViewSet):
         elif dias is not None:
             dias = [int(d) for d in dias]
 
-        user = request.user
-        if not (user.is_superadmin or user.is_coach):
-            raise PermissionDenied("Generar es de dirección y coaches.")
         aviso = _pide_confirmar(semana, dias, request, bloques)
         if aviso is not None:
             return aviso
@@ -489,10 +493,7 @@ class SemanaViewSet(viewsets.ModelViewSet):
             (h.entrenador_id, h.dia): (h.manana, h.tarde)
             for h in HorarioEntrenador.objects.filter(dia=dia)
         }
-        partes = {
-            d.entrenador_id: d
-            for d in DisponibilidadEntrenador.objects.filter(semana=semana, dia=dia)
-        }
+        partes = {}  # todo está en el calendario del entrenador (10/11/2026)
         donde = {}
         for a in Asignacion.objects.filter(semana=semana, dia=dia).exclude(
             entrenador=None
@@ -548,6 +549,13 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
 
     def _entrenador(self):
         return getattr(self.request.user, "entrenador", None)
+
+    def _solo_viene_ademas(self, datos):
+        """Desde el 10/11/2026 las faltas van todas al registro por fechas
+        (`/ausencias-fechas/`); el parte semanal solo guarda «viene además»."""
+        if type(self) is DisponibilidadViewSet and datos.get("estado", Estado.EXTRA) != Estado.EXTRA:
+            raise ValidationError(
+                {"estado": "Las faltas se apuntan en el calendario del jugador (Faltas)."})
 
     def create(self, request, *args, **kwargs):
         """Un parte puede cubrir varias franjas de una vez.
@@ -635,10 +643,13 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
                    self.request.user, "ya no viene además")
 
     def perform_create(self, serializer):
+        self._solo_viene_ademas(serializer.validated_data)
         self._assert_puede(serializer.validated_data["jugador"])
         self._tras_guardar(serializer.save())
 
     def perform_update(self, serializer):
+        self._solo_viene_ademas({"estado": serializer.validated_data.get(
+            "estado", serializer.instance.estado)})
         jugador = serializer.validated_data.get(
             "jugador", serializer.instance.jugador
         )
@@ -654,6 +665,9 @@ class DisponibilidadViewSet(viewsets.ModelViewSet):
 class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
     """Disponibilidad del entrenador (torneo / franjas horarias, #10).
 
+    Solo lectura desde el 10/11/2026: lo que un entrenador no puede se apunta
+    en su calendario (`VacacionesEntrenador`, «Mi agenda»).
+
     Un entrenador solo ve y edita SUS filas. Un coach, las de los entrenadores
     que tiene a su cargo: es quien recoge el parte del equipo y lo mete por
     ellos. El Super Admin, todas. Un entrenador suelto que mande otro
@@ -661,6 +675,7 @@ class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = DisponibilidadEntrenadorSerializer
+    http_method_names = ["get", "head", "options"]
     permission_classes = [IsAuthenticated]
 
     def _entrenador(self):
@@ -731,14 +746,25 @@ class DisponibilidadEntrenadorViewSet(viewsets.ModelViewSet):
 
 
 class AsignacionViewSet(viewsets.ModelViewSet):
-    """Read para cualquier autenticado; overrides manuales del cuadrante
-    (swap, manual_assign, set_coach, PATCH) solo dirección."""
+    """Lectura para cualquier autenticado; los cambios a mano del cuadrante
+    (swap, mover, manual_assign, set_coach, quitar, soltar) para quien toca el
+    cuadrante (decisión 1)."""
 
     serializer_class = AsignacionSerializer
-    permission_classes = [ReadOnlyOrDireccion]
+    permission_classes = [TocaCuadrante]
     queryset = Asignacion.objects.select_related(
         "jugador", "jugador__division", "entrenador", "turno", "pista", "pista__sede"
     ).all()
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        from .historial import descartar_si_fallo
+        descartar_si_fallo(request, response)
+        return super().finalize_response(request, response, *args, **kwargs)
+
+    def handle_exception(self, exc):
+        from .historial import descartar_pendiente
+        descartar_pendiente(self.request)
+        return super().handle_exception(exc)
 
     def perform_update(self, serializer):
         serializer.save(manual=True)
@@ -750,7 +776,7 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         from .historial import registrar
 
         a = self.get_object()
-        registrar(a.semana_id, f"Soltar a {a.jugador}", request.user)
+        registrar(a.semana_id, f"Soltar a {a.jugador}", request.user, request)
         a.manual = False
         a.save(update_fields=["manual"])
         return Response(AsignacionSerializer(a).data)
@@ -763,8 +789,8 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         from .models import QuitadoAMano
 
         registrar(instance.semana_id,
-                  f"Quitar a {instance.jugador} ({instance.turno.codigo})",
-                  self.request.user)
+                  f"Quitar a {instance.jugador} ({instance.turno.codigo}, {DIAS_TXT[instance.dia]})",
+                  self.request.user, self.request)
         QuitadoAMano.objects.get_or_create(
             semana_id=instance.semana_id, dia=instance.dia,
             turno_id=instance.turno_id, jugador_id=instance.jugador_id,
@@ -787,7 +813,10 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             A = Asignacion.objects.select_for_update().get(pk=a_id)
             B = Asignacion.objects.select_for_update().get(pk=b_id)
-            registrar(A.semana_id, f"Intercambiar {campo}", request.user)
+            registrar(A.semana_id,
+                      f"Intercambiar {A.jugador if campo == 'jugador' else A.entrenador or 'entrenador'}"
+                      f" y {B.jugador if campo == 'jugador' else B.entrenador or 'entrenador'}"
+                      f" ({DIAS_TXT[A.dia]})", request.user, request)
 
             if campo == "entrenador":
                 ca, cb = A.entrenador_id, B.entrenador_id
@@ -839,7 +868,8 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         if a is None:
             return Response({"error": "Esa asignación ya no existe."}, status=404)
         from .historial import registrar
-        registrar(a.semana_id, "Mover un jugador", request.user)
+        registrar(a.semana_id, f"Mover a {a.jugador} ({a.turno.codigo}, {DIAS_TXT[a.dia]})",
+                  request.user, request)
 
         turno = (Turno.objects.filter(pk=request.data.get("turno")).first()
                  if request.data.get("turno") else a.turno)
@@ -865,7 +895,9 @@ class AsignacionViewSet(viewsets.ModelViewSet):
                 {"error": "El jugador ya tiene asignación en esa franja."},
                 status=409,
             )
-        pista = Pista.objects.select_related("sede").get(pk=pista_id)
+        pista = Pista.objects.select_related("sede").filter(pk=pista_id).first()
+        if pista is None:
+            return Response({"error": "Esa pista no existe."}, status=404)
         tope = pista.sede.densidad_max or pista.sede.densidad_default
         if vecinas.count() >= tope:
             return Response(
@@ -970,7 +1002,8 @@ class AsignacionViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             from .historial import registrar
-            registrar(semana_id, "Mover una pista entera", request.user)
+            registrar(semana_id, f"Mover una pista entera ({DIAS_TXT[int(desde_dia)]})",
+                      request.user, request)
             # El destino se aparta primero: las dos pistas pueden cruzarse.
             for a in destino:
                 a.pista_id = desde_pista
@@ -1045,7 +1078,8 @@ class AsignacionViewSet(viewsets.ModelViewSet):
             turno,
         )
         from .historial import registrar
-        registrar(semana_id, "Colocar un jugador", request.user)
+        registrar(semana_id, f"Colocar a {Jugador.objects.filter(pk=jugador_id).first() or 'un jugador'}"
+                  f" ({turno.codigo}, {DIAS_TXT[int(dia)]})", request.user, request)
         # Una pista, un entrenador: quien entra en una pista que ya tiene
         # gente entrena con el suyo.
         vecina = Asignacion.objects.filter(
@@ -1084,9 +1118,20 @@ class AsignacionViewSet(viewsets.ModelViewSet):
         if not all([semana_id, dia is not None, turno_id, pista_id]):
             return Response({"error": "Faltan parámetros."}, status=400)
         from .historial import registrar
+
+        destino = Asignacion.objects.filter(
+            semana_id=semana_id, dia=dia, turno_id=turno_id, pista_id=pista_id)
+        if not destino.exists():
+            return Response(
+                {"error": "La pista está vacía: coloca primero a los jugadores "
+                          "y después al entrenador."},
+                status=409,
+            )
+        quien = Entrenador.objects.filter(pk=entrenador_id).first() if entrenador_id else None
         registrar(semana_id,
-                  "Quitar entrenador" if entrenador_id is None else "Poner entrenador",
-                  request.user)
+                  f"Quitar el entrenador ({DIAS_TXT[int(dia)]})" if quien is None
+                  else f"Poner a {quien.nombre} ({DIAS_TXT[int(dia)]})",
+                  request.user, request)
         if desde_pista and str(desde_pista) != str(pista_id):
             Asignacion.objects.filter(
                 semana_id=semana_id, dia=request.data.get("desde_dia", dia),
@@ -1116,7 +1161,9 @@ class AusenciaJugadorViewSet(DisponibilidadViewSet):
     serializer_class = AusenciaJugadorSerializer
 
     def get_queryset(self):
-        qs = AusenciaJugador.objects.select_related("jugador", "declarada_por")
+        from datetime import date as _date
+
+        qs = AusenciaJugador.objects.select_related("jugador", "declarada_por", "creada_por")
         user = self.request.user
         if not user.is_superadmin:
             from academy.scope import jugadores_visibles
@@ -1124,14 +1171,26 @@ class AusenciaJugadorViewSet(DisponibilidadViewSet):
             if getattr(user, "coach", None) is None and self._entrenador() is None:
                 return qs.none()
             qs = qs.filter(jugador__in=jugadores_visibles(user))
-        jugador = self.request.query_params.get("jugador")
-        return qs.filter(jugador=jugador) if jugador else qs
+        p = self.request.query_params
+        if p.get("jugador"):
+            qs = qs.filter(jugador=p["jugador"])
+        # Las faltas que pisan un periodo (la lista de Faltas de una semana).
+        try:
+            desde = _date.fromisoformat(p["desde"]) if p.get("desde") else None
+            hasta = _date.fromisoformat(p["hasta"]) if p.get("hasta") else None
+        except ValueError:
+            desde = hasta = None
+        if desde:
+            qs = qs.filter(fecha_fin__gte=desde)
+        if hasta:
+            qs = qs.filter(fecha_inicio__lte=hasta)
+        return qs.order_by("fecha_inicio", "jugador__nombre", "id")
 
     def perform_create(self, serializer):
         self._assert_puede(serializer.validated_data["jugador"])
-        # Queda registrado quién la declaró: para una baja larga conviene
-        # poder preguntar.
-        self._tras_guardar(serializer.save(declarada_por=self._entrenador()))
+        # Siempre queda quién la apuntó y cuándo, sea entrenador o no.
+        self._tras_guardar(serializer.save(
+            declarada_por=self._entrenador(), creada_por=self.request.user))
 
     @action(detail=True, methods=["post"])
     def quitar_dias(self, request, pk=None):

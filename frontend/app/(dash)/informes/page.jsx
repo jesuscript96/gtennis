@@ -7,10 +7,11 @@ import { asignarInforme, getInformes, getPanelInformes } from "../../../lib/api"
 import { ESTADO_INFORME, abrirParte, textoCiclo, textoParte } from "../../../lib/informes";
 import { fmtLarga } from "../../../lib/torneos";
 
-/** Filtros del panel: «Mis jugadores» para quien evalúa tenis y «Sin entrenador» para el coordinador. */
+/** Filtros del panel: «Asignados a mí» para quien evalúa tenis y «Sin entrenador» para el coordinador.
+ * («Mis jugadores» quedó solo para la columna de Grupos, 10/11/2026.) */
 function filtros(panel) {
   return [
-    ...(panel.evalua_tenis ? [["mios", "Mis jugadores"]] : []),
+    ...(panel.evalua_tenis ? [["mios", "Asignados a mí"]] : []),
     ["todos", "Todos"],
     ...(panel.puede_asignar ? [["sin", "Sin entrenador"]] : []),
     ["toca", "Les toca"],
@@ -176,10 +177,11 @@ function Informes() {
       <div className="page-head"><h1>Informes</h1></div>
       <p className="help">
         El informe trimestral de cada jugador de <b>Competición de tardes</b>: la evaluación de tenis y la
-        de preparación física van en un solo PDF. El coordinador asigna a cada jugador el entrenador que
-        hace su parte de tenis (los demás también pueden evaluarle). Cuando las dos partes están
-        terminadas, pasa al coordinador, que lo aprueba o lo devuelve con una nota. El siguiente
-        toca a los 90 días de validarlo.
+        de preparación física van en un solo PDF. Quien coordina asigna a cada jugador el entrenador que
+        hace su parte de tenis. Cuando las dos partes están terminadas, se avisa a quien coordina y pasa
+        a validar: quien tiene la función «Valida informes» lo aprueba (y lo envía a la familia) o lo
+        devuelve con una nota. Los de <b>Alto rendimiento</b> (solo tenis) también pasan por aquí, en
+        «Por validar». El siguiente toca a los 90 días de validarlo.
       </p>
       {panel.puede_validar && (
         <div className="tabs-inv" role="tablist">

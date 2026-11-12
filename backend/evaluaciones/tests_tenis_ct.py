@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from academy.models import Coach, Entrenador, Escuela, Jugador, ResponsableJugador
 from evaluaciones.models import MiembroTardes
-from users.models import User
+from users.models import Funcion, User
 
 
 class TenisCompeticionTardesTests(TestCase):
@@ -34,6 +34,9 @@ class TenisCompeticionTardesTests(TestCase):
         Coach.objects.create(nombre="Dani", user=self.dani)
         for u in (self.salva, self.milla):
             MiembroTardes.objects.create(usuario=u, funcion="TENIS")
+        # 10/11/2026: el coordinador y quien valida lo son por su función.
+        Funcion.objects.create(usuario=self.alberto, codigo="COORDINA_TARDES")
+        Funcion.objects.create(usuario=self.dani, codigo="VALIDA_INFORMES")
 
     def api(self, user):
         c = APIClient()

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Avatar from "../../../components/Avatar";
 import { useIsMobile } from "../../../lib/useIsMobile";
 import { SUPERFICIE_LABEL, SUPERFICIE_COLOR } from "../../../lib/format";
@@ -22,7 +22,10 @@ import {
   deshacerSemana,
   soltarAsignacion,
   getCambios,
+  resource,
 } from "../../../lib/api";
+import { puede } from "../../../lib/perms";
+import CuadranteSemana from "../../../components/CuadranteSemana";
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 // Falta declarada después de colocarle: sale tachado y no se mueve a nadie.
@@ -71,10 +74,38 @@ function benchPlayers(panel) {
   return out;
 }
 
+// El miércoles por la tarde y el sábado no hay tarde: no se ofrece rehacerla.
+const CON_TARDE = (dia) => dia !== 2 && dia !== 5;
+const MESES_C = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const fechaCorta = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return `${d} ${MESES_C[m - 1]}`; };
+
+// La semana que se abre: la que contiene pasado mañana si ya existe (así, en
+// cuanto el sábado se genera el lunes, se abre la semana nueva, como antes con
+// «la última creada»); si no, la última anterior; si no, la más reciente.
+// Una semana creada con mucha antelación no se abre sola.
+async function semanaPorDefecto(guardar) {
+  const lista = [...(await resource("semanas").list())].sort((a, b) => (a.fecha_inicio < b.fecha_inicio ? 1 : -1));
+  guardar(lista);
+  if (!lista.length) return null;
+  const ref = new Date();
+  ref.setDate(ref.getDate() + 2);
+  const dow = (ref.getDay() + 6) % 7;
+  const lunes = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - dow);
+  const iso = `${lunes.getFullYear()}-${String(lunes.getMonth() + 1).padStart(2, "0")}-${String(lunes.getDate()).padStart(2, "0")}`;
+  return lista.find((x) => x.fecha_inicio === iso) || lista.find((x) => x.fecha_inicio < iso) || lista[0];
+}
+
 function Inner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const qpSemana = searchParams.get("semana");
   const [semanaId, setSemanaId] = useState(null);
+  // Una sola pantalla (10/11/2026): vista de día o de semana y selector de semana.
+  const [vista, setVista] = useState(searchParams.get("vista") === "semana" ? "semana" : "dia");
+  const [semanas, setSemanas] = useState([]);
+  // Mover, rehacer, deshacer y publicar: quien tenga «Toca el cuadrante»
+  // (decisión 1). El resto lo ve sin botones que luego fallen.
+  const editable = puede("toca_cuadrante");
   const [dia, setDia] = useState(0);
   const [data, setData] = useState(null);
   const [panel, setPanel] = useState(null);
@@ -90,7 +121,7 @@ function Inner() {
   async function load(id, d) {
     setError(null);
     try {
-      const sid = id ?? (await getLatestSemana())?.id;
+      const sid = id ?? (await semanaPorDefecto(setSemanas))?.id;
       if (!sid) { setError("No hay semanas. Crea una en Semanas y pulsa Generar."); return; }
       setSemanaId(sid);
       const [cua, pan, cam] = await Promise.all([
@@ -109,6 +140,31 @@ function Inner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dia, qpSemana]);
 
+  useEffect(() => {
+    resource("semanas").list()
+      .then((l) => setSemanas([...l].sort((a, b) => (a.fecha_inicio < b.fecha_inicio ? 1 : -1))))
+      .catch(() => {});
+  }, []);
+
+  // La semana elegida va en la dirección (?semana=), como cuando se entra desde
+  // «Todas las semanas»: así no se pierde al cambiar de día o de vista.
+  function cambiarSemana(id) {
+    setSemanaId(id);
+    setData(null);
+    const q = new URLSearchParams(searchParams.toString());
+    q.set("semana", String(id));
+    router.replace(`/cuadrante?${q.toString()}`);
+  }
+
+  // Deshacer dice antes qué va a deshacer, cuándo se hizo y quién.
+  async function deshacerConAviso() {
+    const c = cambios[0];
+    if (!c) return;
+    const cuando = c.creado_at ? new Date(c.creado_at).toLocaleString("es-ES", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+    if (!window.confirm(`¿Deshacer «${c.descripcion}»?\n\n${[cuando, c.por ? `por ${c.por}` : ""].filter(Boolean).join(" · ")}\n\nEl cuadrante vuelve a como estaba justo antes de ese cambio.`)) return;
+    await run("deshacer", () => deshacerSemana(semanaId));
+  }
+
   async function run(label, fn) {
     setBusy(label);
     try { await fn(); await load(semanaId, dia); }
@@ -118,6 +174,7 @@ function Inner() {
 
   // Operación de drag&drop: ejecuta y recarga; muestra el error de la API si lo hay.
   async function op(fn) {
+    if (!editable) return;
     setError(null);
     try { await fn(); await load(semanaId, dia); }
     catch (e) {
@@ -185,6 +242,7 @@ function Inner() {
 
   // ----- Interacción táctil (móvil): tocar origen → tocar destino -----
   function pick(next) {
+    if (!editable) return;
     setSel((cur) =>
       cur && cur.k === next.k && cur.jugador === next.jugador &&
       cur.entrenador === next.entrenador && cur.asignacion === next.asignacion
@@ -223,6 +281,23 @@ function Inner() {
   const cellMap = {};
   for (const a of data.asignaciones) (cellMap[`${a.pista}_${a.turno}`] ||= []).push(a);
   const publicado = data.semana.estado === "PUBLICADO";
+  const cabecera = (
+    <div className="page-head cuadrante-head">
+      <h1>Cuadrante</h1>
+      <div className="semana-nav">
+        <select value={semanaId || ""} onChange={(e) => cambiarSemana(Number(e.target.value))} aria-label="Semana">
+          {semanas.map((x) => <option key={x.id} value={x.id}>Semana del {fechaCorta(x.fecha_inicio)}</option>)}
+        </select>
+        <div className="tabs-inv" role="tablist" style={{ margin: 0 }}>
+          {[["dia", "Día"], ["semana", "Semana"]].map(([k, t]) => (
+            <button key={k} type="button" role="tab" aria-selected={vista === k}
+              className={`chip${vista === k ? " on" : ""}`} onClick={() => setVista(k)}>{t}</button>
+          ))}
+        </div>
+        <span className={`badge ${publicado ? "pub" : ""}`}>{publicado ? "Publicado" : "Borrador"}</span>
+      </div>
+    </div>
+  );
   const bench = benchPlayers(panel);
   const benchCoaches = panel?.entrenadores_libres || [];
   // Todos los entrenadores con su estado franja a franja: los de la tabla de
@@ -237,11 +312,11 @@ function Inner() {
 
     return (
       <div className="mcuadrante">
-        <div className="page-head">
-          <h1>Cuadrante</h1>
-          <span className={`badge ${publicado ? "pub" : ""}`}>{publicado ? "Publicado" : "Borrador"}</span>
-        </div>
-        <p className="now-horas">{data.semana.fecha_inicio}</p>
+        {cabecera}
+        {vista === "semana" ? (
+          <CuadranteSemana key={semanaId} semanaId={semanaId} editable={false}
+            onAbrirDia={(d) => { setDia(d); setVista("dia"); }} />
+        ) : <>
 
         <div className="controls mscroll">
           {DIAS.map((d, i) => (
@@ -253,11 +328,11 @@ function Inner() {
             <button key={t.id} className={i === tIdx ? "active" : ""} onClick={() => setTurnoIdx(i)}>{t.codigo}</button>
           ))}
         </div>
-        <div className="controls">
+        {editable && <div className="controls">
           <button
             className="btn ghost sm"
             disabled={!!busy || cambios.length === 0}
-            onClick={() => run("deshacer", () => deshacerSemana(semanaId))}
+            onClick={deshacerConAviso}
             title={cambios.length ? `Deshacer: ${cambios[0].descripcion}` : ""}
           >
             {busy === "deshacer" ? "…" : "↩︎ Deshacer"}
@@ -327,7 +402,7 @@ function Inner() {
                       📅 Solo {DIAS[dia]}
                     </button>
                   )}
-                  <button
+                  {CON_TARDE(dia) && <button
                     className="btn ghost sm"
                     style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "6px 12px", border: "none" }}
                     onClick={() => {
@@ -336,7 +411,7 @@ function Inner() {
                     }}
                   >
                     🌤️ Tarde ({DIAS[dia]})
-                  </button>
+                  </button>}
                 </div>
               </>
             )}
@@ -355,11 +430,11 @@ function Inner() {
               {busy === "pub" ? "…" : "Publicar"}
             </button>
           )}
-        </div>
+        </div>}
 
         {error && <p className="err">{error}</p>}
 
-        {sel && (
+        {editable && sel && (
           <div className="tap-hint">
             <span>Movimiento: <b>{sel.label}</b> · toca una pista{sel.k === "cj" ? " o el banquillo" : ""}</span>
             <button className="btn ghost sm" onClick={() => setSel(null)}>Cancelar</button>
@@ -403,7 +478,7 @@ function Inner() {
                         <i className="dot" style={{ background: ESTADO_COLOR[a.estado] }} />
                         <span className="nombre-jug">{a.jugador_nombre}{a.division_nivel ? ` · D${a.division_nivel}` : ""}</span>
                         {a.forzada && <span className="aviso-forzada" title={a.motivo_forzado}>⚠ forzada</span>}
-                        <Fijado a={a} onSoltar={(id) => op(() => soltarAsignacion(id))} />
+                        <Fijado a={a} onSoltar={editable ? (id) => op(() => soltarAsignacion(id)) : null} />
                         {a.falta && <span className="falta-tag">{a.falta.motivo}</span>}
                       </div>
                     );
@@ -464,28 +539,25 @@ function Inner() {
             </>
           )}
         </div>
+        </>}
       </div>
     );
   }
 
   return (
     <div>
-      <div className="page-head">
-        <h1>Cuadrante · {data.semana.fecha_inicio}</h1>
-        <span className={`badge ${publicado ? "pub" : ""}`}>
-          {publicado ? "Publicado" : "Borrador · pendiente de publicar"}
-        </span>
-      </div>
+      {cabecera}
 
       <div className="controls">
-        {DIAS.map((d, i) => (
+        {vista === "dia" && DIAS.map((d, i) => (
           <button key={i} className={i === dia ? "active" : ""} onClick={() => setDia(i)}>{d}</button>
         ))}
         <span style={{ flex: 1 }} />
+        {editable && <>
         <button
           className="btn ghost sm"
           disabled={!!busy || cambios.length === 0}
-          onClick={() => run("deshacer", () => deshacerSemana(semanaId))}
+          onClick={deshacerConAviso}
           title={cambios.length
             ? `Deshacer: ${cambios[0].descripcion}`
             : "No hay cambios a mano que deshacer"}
@@ -536,7 +608,7 @@ function Inner() {
                     }
                   }}
                 >
-                  🔄 <b>Toda la semana</b> (Lunes a Viernes)
+                  🔄 <b>Toda la semana</b> (lunes a sábado)
                 </button>
 
                 {dia > 0 && dia < 5 && (
@@ -569,7 +641,7 @@ function Inner() {
                   </button>
                 )}
 
-                <button
+                {CON_TARDE(dia) && <button
                   className="btn ghost sm"
                   style={{ width: "100%", textAlign: "left", justifyContent: "flex-start", borderRadius: 0, padding: "8px 14px", border: "none" }}
                   onClick={() => {
@@ -578,7 +650,7 @@ function Inner() {
                   }}
                 >
                   🌤️ <b>Regenerar tarde</b> ({DIAS[dia]})
-                </button>
+                </button>}
               </div>
             </>
           )}
@@ -612,10 +684,16 @@ function Inner() {
             {busy === "pub" ? "Publicando…" : "Publicar"}
           </button>
         )}
+        </>}
       </div>
 
       {error && <p className="err">{error}</p>}
-      <p className="dnd-hint">Arrastra jugadores/entrenadores entre pistas para intercambiarlos, desde el banquillo a una pista para colocarlos, o de una pista al banquillo para quitarlos. Para abrir una pista vacía, suelta ahí a quien quieras —del banquillo o de otra pista— y después arrástrale el entrenador. Si la pista de destino tiene hueco se mueve, y la de origen se queda sin él; si está completa, se intercambian.</p>
+      {vista === "semana" ? (
+        <CuadranteSemana key={semanaId} semanaId={semanaId} editable={editable}
+          onAbrirDia={(d) => { setDia(d); setVista("dia"); }}
+          onCambio={() => getCambios(semanaId).then((c) => setCambios(Array.isArray(c) ? c : [])).catch(() => {})} />
+      ) : <>
+      {editable && <p className="dnd-hint">Arrastra jugadores/entrenadores entre pistas para intercambiarlos, desde el banquillo a una pista para colocarlos, o de una pista al banquillo para quitarlos. Para abrir una pista vacía, suelta ahí a quien quieras —del banquillo o de otra pista— y después arrástrale el entrenador. Si la pista de destino tiene hueco se mueve, y la de origen se queda sin él; si está completa, se intercambian.</p>}
 
       <div className="dnd-layout">
         <div className="dnd-main">
@@ -638,7 +716,7 @@ function Inner() {
                       )}
                     </td>
                     {data.turnos.map((t) => (
-                      <Cell
+                      <Cell editable={editable}
                         key={t.id}
                         items={cellMap[`${p.id}_${t.id}`]}
                         ctx={{ semana: semanaId, dia, turno: t.id, pista: p.id }}
@@ -646,7 +724,7 @@ function Inner() {
                         onDropCell={onDropCell}
                         onDropPlayer={onDropPlayer}
                         onDropCoach={onDropCoach}
-                        onSoltar={(id) => op(() => soltarAsignacion(id))}
+                        onSoltar={editable ? (id) => op(() => soltarAsignacion(id)) : null}
                       />
                     ))}
                   </tr>
@@ -663,7 +741,7 @@ function Inner() {
             <div className="bench-col-items">
               {bench.length === 0 ? <span className="bench-empty">Todos tienen pista.</span> :
                 bench.map((p) => (
-                  <div key={p.id} className={`bench-chip dnd${noDisponible(p.estado) ? " nd" : ""}`} draggable
+                  <div key={p.id} className={`bench-chip dnd${noDisponible(p.estado) ? " nd" : ""}`} draggable={editable}
                     onDragStart={(e) => setDrag(e, { k: "bj", jugador: p.id })}
                     title={`${p.nombre}${p.coach ? " · " + p.coach : ""}${noDisponible(p.estado) ? " · " + (ESTADO_LABEL[p.estado] || p.estado) + " (arrastra para forzar pista)" : ""}${p.aviso ? " · " + p.aviso : ""}`}>
                     {noDisponible(p.estado) && (
@@ -681,13 +759,13 @@ function Inner() {
                 <div className="bench-side-hint">Arrástralos a una pista. Se puede forzar a quien ya está en otra pista a esa hora.</div>
                 <table className="coach-grid">
                   <thead>
-                    <tr><th /> {data.turnos.map((t) => <th key={t.id}>{t.codigo}</th>)}</tr>
+                    <tr><th />{data.turnos.map((t) => <th key={t.id}>{t.codigo}</th>)}</tr>
                   </thead>
                   <tbody>
                     {coaches.map((c) => (
                       <tr key={c.id}>
                         <td>
-                          <div className="bench-chip dnd" draggable
+                          <div className="bench-chip dnd" draggable={editable}
                             onDragStart={(e) => setDrag(e, { k: "be", entrenador: c.id })}
                             onClick={() => pick({ k: "be", entrenador: c.id })}
                             title={`${c.nombre}${c.reserva ? " · de banquillo" : ""} · arrastra a una pista`}>
@@ -717,6 +795,7 @@ function Inner() {
           </div>
         </aside>
       </div>
+      </>}
     </div>
   );
 }
@@ -724,6 +803,7 @@ function Inner() {
 // Puesto a mano: se queda al rehacer. Tocar el 📌 lo suelta.
 function Fijado({ a, onSoltar }) {
   if (!a.manual) return null;
+  if (!onSoltar) return <span className="fijado" title="Puesto a mano: se mantiene al rehacer.">📌</span>;
   return (
     <button type="button" className="fijado" title="Puesto a mano: se mantiene al rehacer. Toca para soltarlo y que lo decida el motor."
       onClick={(e) => { e.stopPropagation(); onSoltar(a.id); }}
@@ -731,14 +811,14 @@ function Fijado({ a, onSoltar }) {
   );
 }
 
-function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach, onSoltar }) {
+function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach, onSoltar, editable }) {
   const empty = !items || items.length === 0;
   const color = empty ? "var(--border-strong)" : (ESTADO_COLOR[items[0].estado] || "var(--border-strong)");
   return (
     <td className={`cell ${empty ? "empty" : ""}${!empty && items.some((a) => a.forzada) ? " forzada" : ""}`} style={{ borderLeftColor: color }}
       onDragOver={overOn} onDragLeave={overOff} onDrop={onDropCell(ctx)}>
       {(items || []).map((a) => (
-        <div className={`player dnd${a.falta ? " tachado" : ""}`} key={a.id} draggable
+        <div className={`player dnd${a.falta ? " tachado" : ""}`} key={a.id} draggable={editable}
           onDragStart={(e) => setDrag(e, { k: "cj", asignacion: a.id })}
           onDragOver={overOn} onDragLeave={overOff}
           onDrop={onDropPlayer(a.id, ctx, items.length, densidad)}
@@ -753,7 +833,7 @@ function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach, onS
         </div>
       ))}
       {!empty && items[0].entrenador_nombre ? (
-        <div className="coach dnd" draggable
+        <div className="coach dnd" draggable={editable}
           onDragStart={(e) => setDrag(e, { k: "cc", asignacion: items[0].id, entrenadorId: items[0].entrenador,
                                            pista: ctx.pista, turno: ctx.turno, dia: ctx.dia })}
           onDragOver={overOn} onDragLeave={overOff} onDrop={onDropCoach(items[0].id, ctx)}
@@ -763,7 +843,7 @@ function Cell({ items, ctx, densidad, onDropCell, onDropPlayer, onDropCoach, onS
         </div>
       ) : null}
       {empty ? <span className="cell-empty-hint">—</span> : (
-        <span className="cell-grip dnd" draggable
+        <span className="cell-grip dnd" draggable={editable}
           onDragStart={(e) => setDrag(e, { k: "pista", pista: ctx.pista, turno: ctx.turno, dia: ctx.dia })}
           title="Arrastra la pista entera: se muda a una vacía o se intercambia con otra">⠿</span>
       )}

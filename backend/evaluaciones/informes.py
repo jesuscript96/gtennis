@@ -16,7 +16,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from academy.models import Aviso
-from academy.permissions import COORDINAN_COMPETICION_TARDES, usuarios_avisar_validar
+from academy.permissions import COORDINA_TARDES, usuarios_avisar_validar, usuarios_valida_informes
 
 from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, MiembroTardes
 
@@ -67,8 +67,11 @@ def informe_abierto(jugador, crear=True):
 def vincular(ev):
     """Cuelga una evaluación recién creada (de tenis o física) del informe
     abierto de su jugador. Si ese informe ya tiene esa parte, no deja crear
-    otra: hay que seguir con la que hay."""
-    if not es_de_informe(ev.jugador):
+    otra: hay que seguir con la que hay.
+
+    Desde el 10/11/2026 también Alto rendimiento (decisión 12): su informe es
+    solo la parte de tenis y pasa por la misma validación."""
+    if not es_de_informe(ev.jugador) and not isinstance(ev, Evaluacion):
         return None
     campo = "tenis" if isinstance(ev, Evaluacion) else "fisica"
     with transaction.atomic():
@@ -83,7 +86,7 @@ def vincular(ev):
 
 def parte_existente(jugador, campo):
     """La evaluación de esa parte que ya está en el informe abierto, si la hay."""
-    inf = informe_abierto(jugador, crear=False) if es_de_informe(jugador) else None
+    inf = informe_abierto(jugador, crear=False)
     return getattr(inf, campo) if inf else None
 
 
@@ -113,12 +116,48 @@ def idioma_pdf(inf):
     return idioma_familia(inf.jugador, inf.tenis.idioma if inf.tenis else "ES")
 
 
+def pdf_de(inf, idioma="ES"):
+    """(nombre, contenido) del PDF del informe: el conjunto de tardes o, en
+    Alto rendimiento, el de su evaluación de tenis."""
+    from . import pdf
+
+    if inf.circuito == "alto_rendimiento":
+        return pdf.nombre(inf.tenis, idioma), pdf.generar(inf.tenis, idioma)
+    return pdf.nombre_informe(inf, idioma), pdf.generar_informe(inf, idioma)
+
+
+def _drive_alto_rendimiento(inf, idioma):
+    """Alto rendimiento va a la carpeta del jugador, como antes, pero solo
+    una vez validado."""
+    from . import drive
+
+    if inf.estado != Informe.Estado.VALIDADO or not drive.configurado():
+        return None
+    ev = inf.tenis
+    try:
+        ev.drive_file_id, ev.drive_url = drive.subir(ev, idioma)
+        ev.save(update_fields=["drive_file_id", "drive_url", "actualizada"])
+        inf.drive_file_id, inf.drive_url, inf.drive_carpeta = ev.drive_file_id, ev.drive_url, "validados"
+        inf.save(update_fields=["drive_file_id", "drive_url", "drive_carpeta", "actualizado"])
+    except drive.DriveNoDisponible as e:
+        return f"{e} El informe está en la app; se reintenta al validar."
+    return None
+
+
 def guardar_en_drive(inf):
     """Genera el PDF conjunto y lo deja en la carpeta que toca según el
     estado. Devuelve un aviso si Drive o la traducción fallan (el informe
     sigue en la app)."""
     from . import drive, ia, traduccion
 
+    if inf.circuito == "alto_rendimiento":
+        idioma = idioma_pdf(inf)
+        try:
+            if idioma != "ES":
+                traduccion.tenis(inf.tenis, idioma)
+        except ia.IANoDisponible:
+            idioma = "ES"
+        return _drive_alto_rendimiento(inf, idioma)
     if not (drive.configurado() or drive.ct_configurado()):
         return None
     idioma, aviso = idioma_pdf(inf), None
@@ -159,10 +198,15 @@ def parte_terminada(ev):
     inf.save()
     guardar_en_drive(inf)
     nombre = inf.jugador.nombre
-    _avisar(usuarios_avisar_validar(),
+    # Tardes: se avisa a quien coordina (decisión 11). Alto rendimiento no tiene
+    # coordinador: a quien valida.
+    if inf.circuito == "alto_rendimiento":
+        quienes, partes = usuarios_valida_informes(), "La evaluación de tenis está terminada."
+    else:
+        quienes, partes = usuarios_avisar_validar(), "Tenis y preparación física están terminados."
+    _avisar(quienes,
             f"Informe de {nombre} {'corregido, ' if corregido else ''}listo para validar",
-            "Tenis y preparación física están terminados. Revísalo en Informes y apruébalo o "
-            "devuélvelo con una nota.")
+            f"{partes} Revísalo en Rendimiento → Informes y apruébalo o devuélvelo con una nota.")
     return inf
 
 
@@ -176,8 +220,61 @@ def aprobar(inf, usuario, destinatarios):
     inf.save()
     aviso_drive = guardar_en_drive(inf)
     _avisar(autores(inf), f"Informe de {inf.jugador.nombre} validado",
-            "Ya está en la carpeta «Validados» de Drive. El siguiente toca en unos 90 días.")
+            "Ya está validado y en la carpeta «Validados» de Drive. El siguiente toca en unos 90 días.")
     return aviso_drive
+
+
+def reabrir(inf, usuario):
+    """Para corregir un informe ya aprobado, primero se reabre (10/11/2026):
+    vuelve a «a medias» con una versión nueva y, al terminar otra vez la parte
+    corregida, pasa de nuevo a validar. Hasta entonces nadie puede cambiarlo."""
+    if inf.estado != Informe.Estado.VALIDADO:
+        raise InformeError("Solo se reabren informes ya aprobados.")
+    inf.estado = Informe.Estado.EN_CURSO
+    inf.version += 1
+    inf.validado_por = None
+    inf.validado_en = None
+    inf.save()
+    return inf
+
+
+def correo_configurado():
+    from django.conf import settings
+
+    return bool(getattr(settings, "EMAIL_HOST", "")) or settings.EMAIL_BACKEND.endswith("console.EmailBackend")
+
+
+def enviar(inf, usuario):
+    """Envía el informe aprobado a la familia por correo, con el PDF en su
+    idioma (10/11/2026, decisión 13). Deja constancia de cuándo y quién."""
+    from django.conf import settings
+    from django.core.mail import EmailMessage
+
+    from .correo import correo
+
+    if inf.estado != Informe.Estado.VALIDADO:
+        raise InformeError("Solo se envían informes aprobados.")
+    para = [d["email"] for d in inf.destinatarios or [] if d.get("email")]
+    if not para:
+        raise InformeError("Este informe no tiene a quién enviarse: añade el correo de la familia.")
+    if not correo_configurado():
+        raise InformeError("El envío por correo aún no está configurado en el servidor.")
+    idioma = idioma_pdf(inf)
+    try:
+        nombre_pdf, contenido = pdf_de(inf, idioma)
+        asunto, texto = correo(inf.jugador.nombre, idioma)
+        mensaje = EmailMessage(asunto, texto, settings.DEFAULT_FROM_EMAIL, para)
+        mensaje.attach(nombre_pdf, contenido, "application/pdf")
+        mensaje.send(fail_silently=False)
+    except Exception as e:  # noqa: BLE001 — se guarda el motivo y se dice
+        inf.envio_error = str(e)[:300]
+        inf.save(update_fields=["envio_error", "actualizado"])
+        raise InformeError(f"No se ha podido enviar: {e}")
+    inf.enviado_en = timezone.now()
+    inf.enviado_por = usuario
+    inf.envio_error = ""
+    inf.save(update_fields=["enviado_en", "enviado_por", "envio_error", "actualizado"])
+    return inf
 
 
 def devolver(inf, usuario, partes, nota):
@@ -236,11 +333,11 @@ def evaluadores_tenis_por_defecto():
     coordinador): entre ellos reparte el coordinador."""
     from django.db.models import Q
 
-    return _usuarios(Q(tardes__funcion=MiembroTardes.Funcion.TENIS) | Q(username__in=COORDINAN_COMPETICION_TARDES))
+    return _usuarios(Q(tardes__funcion=MiembroTardes.Funcion.TENIS) | Q(funciones__codigo=COORDINA_TARDES))
 
 
 def coordinadores():
-    return _usuarios(username__in=COORDINAN_COMPETICION_TARDES)
+    return _usuarios(funciones__codigo=COORDINA_TARDES)
 
 
 def preparadores():
@@ -268,5 +365,5 @@ def asignar(jugadores, evaluador, por):
         n = len(nuevos)
         _avisar([evaluador], f"Te han asignado {n} jugador{'es' if n != 1 else ''} para los informes",
                 f"Te toca hacer el informe de tenis de: {', '.join(nuevos)}. Los tienes en Informes, "
-                f"en «Mis jugadores».")
+                f"en «Asignados a mí».")
     return nuevos

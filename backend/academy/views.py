@@ -1,3 +1,4 @@
+from datetime import date
 from collections import defaultdict
 
 from django.db import transaction
@@ -33,7 +34,10 @@ from .models import (
     VetoEntrenador,
     VisitaInvitado,
 )
-from .permissions import DireccionOrCoachWrite, ReadOnlyOrDireccion, aprueba_invitados, mueve_divisiones
+from .permissions import (
+    DireccionOrCoachWrite, ReadOnlyOrDireccion, ReglasJugador, aprueba_invitados, es_administracion,
+    es_coach, es_direccion, mueve_divisiones, toca_cuadrante, ve_reglas_jugador,
+)
 from .scope import (
     coaches_del_entrenador,
     coaches_visibles,
@@ -107,9 +111,9 @@ class DivisionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
     def mover(self, request):
         """`{jugador, division}` → cambia la división del alumno (`division`
-        vacío = sin división). Dirección y Dani Gimeno, desde Divisiones."""
+        vacío = sin división). Solo dirección, desde Grupos (decisión 5)."""
         if not mueve_divisiones(request.user):
-            raise PermissionDenied("Solo dirección y Dani Gimeno pueden mover alumnos de división.")
+            raise PermissionDenied("La división la cambia dirección.")
         jugador = Jugador.objects.filter(pk=request.data.get("jugador"), activo=True).select_related("division").first()
         if jugador is None:
             raise NotFound("Ese alumno no existe o no está activo.")
@@ -138,7 +142,7 @@ class DivisionViewSet(viewsets.ModelViewSet):
         división se queda detrás, en el orden que tenía. Mismos permisos que
         mover de división."""
         if not mueve_divisiones(request.user):
-            raise PermissionDenied("Solo dirección y Dani Gimeno ordenan las divisiones.")
+            raise PermissionDenied("El ranking de las divisiones lo ordena dirección.")
         division = Division.objects.filter(pk=request.data.get("division")).first()
         if division is None:
             raise ValidationError({"division": "Esa división no existe."})
@@ -179,11 +183,38 @@ class EntrenadorViewSet(viewsets.ModelViewSet):
         return entrenadores_visibles(user)
 
     def perform_create(self, serializer):
+        if not es_direccion(self.request.user) and (
+                serializer.validated_data.get("gestiona_todos_jugadores")
+                or serializer.validated_data.get("activo") is False):
+            raise PermissionDenied("Eso solo lo cambia dirección.")
         # Un coach que da de alta un entrenador lo añade a su propio equipo.
         ent = serializer.save()
         coach = getattr(self.request.user, "coach", None)
-        if coach is not None:
+        if coach is not None and not self.request.user.is_superadmin:
             coach.entrenadores.add(ent)
+
+    # Lo que solo cambia dirección en la ficha de un entrenador (10/11/2026):
+    # quién ve a todos los jugadores. Las altas y bajas («Activo»), dirección
+    # y el head coach para los de su grupo, como antes (11/11/2026).
+    SOLO_DIRECCION = ("gestiona_todos_jugadores",)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if not es_direccion(user):
+            datos, inst = serializer.validated_data, serializer.instance
+            for campo in self.SOLO_DIRECCION:
+                if campo in datos and datos[campo] != getattr(inst, campo):
+                    raise PermissionDenied("Eso solo lo cambia dirección.")
+            if "activo" in datos and datos["activo"] != inst.activo:
+                coach = getattr(user, "coach", None)
+                if coach is None or not coach.entrenadores.filter(pk=inst.pk).exists():
+                    raise PermissionDenied("Solo das de alta o de baja a los entrenadores de tu grupo.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not es_direccion(self.request.user):
+            raise PermissionDenied("Solo dirección borra entrenadores.")
+        instance.delete()
 
 
 class CoachViewSet(viewsets.ModelViewSet):
@@ -211,11 +242,9 @@ class CoachViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        u = self.request.user
-        if not u.is_superadmin:
-            coach = getattr(u, "coach", None)
-            if coach is None or serializer.instance.pk != coach.pk:
-                raise PermissionDenied("No puedes editar este coach.")
+        # Un head coach no se amplía su propio bloque (10/11/2026): qué
+        # entrenadores lleva cada uno lo decide dirección.
+        self._assert_direccion()
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -473,10 +502,15 @@ class JugadorViewSet(viewsets.ModelViewSet):
                     avisar(jugador, fecha, fecha, turno.codigo, "falta",
                            request.user, "ya no viene además")
                 else:
-                    Asignacion.objects.filter(
+                    extra = Asignacion.objects.filter(
                         semana=semana, jugador=jugador, dia=dia, turno=turno,
                         estado=Estado.EXTRA,
-                    ).delete()
+                    )
+                    if extra.exists():
+                        from scheduling.historial import registrar
+                        registrar(semana.id, f"Quitar «viene además» de {jugador} ({turno.codigo})",
+                                  request.user)
+                        extra.delete()
             return Response(status=204)
 
         semana, _ = Semana.objects.get_or_create(fecha_inicio=lunes)
@@ -529,6 +563,9 @@ class JugadorViewSet(viewsets.ModelViewSet):
                                         "hacerle hueco."})
         _clave, pista, filas = min(opciones, key=lambda o: o[0])
         entrenador_id = next((f.entrenador_id for f in filas if f.entrenador_id), None)
+        # Se puede deshacer como cualquier otro cambio del cuadrante (10/11/2026).
+        from scheduling.historial import registrar
+        registrar(semana.id, f"Viene además: {jugador} ({turno.codigo})", request.user)
         Asignacion.objects.create(
             semana=semana, dia=dia, turno=turno, pista=pista, jugador=jugador,
             entrenador_id=entrenador_id, estado=Estado.EXTRA, manual=True,
@@ -552,15 +589,17 @@ class JugadorViewSet(viewsets.ModelViewSet):
 
         jugador = self.get_object()
         if request.method == "POST":
-            from .permissions import es_coach, es_direccion
-
             if not (es_direccion(request.user) or es_coach(request.user)):
                 raise PermissionDenied(
-                    "Los porcentajes los ponen dirección y los coaches."
+                    "Los porcentajes los ponen dirección y los head coaches."
                 )
+            if not es_direccion(request.user):
+                suyos = set(request.user.coach.entrenadores.values_list("pk", flat=True))
+                if jugador.entrenador_responsable_id not in suyos | {None}:
+                    raise PermissionDenied("Ese jugador es de otro grupo.")
             try:
-                responsable_id = request.data.get("responsable")
-                responsable_id = int(responsable_id) if responsable_id else None
+                # Quién gestiona no se cambia aquí (decisión 4): se mantiene.
+                responsable_id = jugador.entrenador_responsable_id
                 filas = [
                     (int(f["entrenador"]), int(f["prioridad"]),
                      int(f.get("porcentaje") or 0))
@@ -577,10 +616,7 @@ class JugadorViewSet(viewsets.ModelViewSet):
                 fallos.append("Algún entrenador no existe.")
             if fallos:
                 return Response({"detail": " ".join(fallos)}, status=400)
-            # Responsable y porcentajes van juntos: o se guardan los dos o nada.
             with transaction.atomic():
-                jugador.entrenador_responsable_id = responsable_id
-                jugador.save(update_fields=["entrenador_responsable"])
                 guardar(jugador, filas)
 
         filas_db = list(
@@ -625,7 +661,9 @@ class JugadorViewSet(viewsets.ModelViewSet):
         })
 
     def perform_create(self, serializer):
-        self._assert_direccion()
+        # Altas: dirección y Administración (decisión 10).
+        if not (es_direccion(self.request.user) or es_administracion(self.request.user)):
+            raise PermissionDenied("Las altas de jugadores las dan dirección y Administración.")
         serializer.save()
 
     def _assert_direccion(self):
@@ -636,16 +674,52 @@ class JugadorViewSet(viewsets.ModelViewSet):
             )
 
     def perform_update(self, serializer):
-        # El horario habitual del alumno no lo toca el entrenador (30/10/2026):
-        # él declara faltas y «viene además», que van por sus endpoints.
+        """Una sola regla para la ficha, se entre por donde se entre
+        (10/11/2026):
+
+          * Quién gestiona (responsable y comparte la gestión) se cambia en
+            Grupos, nunca desde la ficha (decisión 4).
+          * División y ranking, solo dirección (decisión 5).
+          * Altas y bajas, dirección y Administración.
+          * Administración no toca lo deportivo: horario, vecindad, pareja.
+          * El entrenador no cambia la ficha: declara faltas y «viene además».
+        """
         user = self.request.user
-        if not (user.is_superadmin or user.is_coach):
+        direccion = es_direccion(user)
+        admin = es_administracion(user)
+        if not (direccion or admin or es_coach(user)):
             raise PermissionDenied(
                 "El horario habitual del jugador lo cambian su head coach o "
                 "dirección. Tú puedes declarar sus faltas y los días que viene además."
             )
+        inst = serializer.instance
+        datos = serializer.validated_data
+
+        def cambia(campo):
+            if campo not in datos:
+                return False
+            nuevo = datos[campo]
+            if campo == "cogestores":
+                return {e.pk for e in nuevo} != set(inst.cogestores.values_list("pk", flat=True))
+            return nuevo != getattr(inst, campo)
+
+        if cambia("entrenador_responsable") or cambia("cogestores"):
+            raise PermissionDenied("Quién gestiona a un jugador se cambia en Grupos.")
+        if cambia("division") and not mueve_divisiones(user):
+            raise PermissionDenied("La división la cambia dirección, en Grupos.")
+        if cambia("activo") and not (direccion or admin):
+            # El head coach da de baja (o vuelve a dar de alta) a los de su
+            # grupo, como antes (11/11/2026); dirección recibe el aviso.
+            suyos = set(user.coach.entrenadores.values_list("pk", flat=True)) if es_coach(user) else set()
+            if inst.entrenador_responsable_id not in suyos | ({None} if suyos else set()):
+                raise PermissionDenied(
+                    "Las altas y bajas las dan dirección, Administración y el head coach de su grupo.")
+        if admin:
+            for campo in ("turno_manana", "turno_tarde", "horario", "vecindad", "pareja_division"):
+                if campo in datos and (campo == "horario" or cambia(campo)):
+                    raise PermissionDenied("Lo deportivo lo cambian dirección y el head coach.")
         # #18: al dar de baja (activo True->False) se avisa a dirección in-app.
-        antes_activo = serializer.instance.activo
+        antes_activo = inst.activo
         jugador = serializer.save()
         if antes_activo and not jugador.activo:
             Aviso.objects.create(
@@ -654,6 +728,37 @@ class JugadorViewSet(viewsets.ModelViewSet):
                 titulo=f"Baja de jugador: {jugador.nombre}",
                 mensaje=f"{jugador.nombre} se ha dado de baja (marcado como inactivo).",
             )
+
+    @action(detail=True, methods=["get", "post", "delete"])
+    def reglas(self, request, pk=None):
+        """Todas las reglas del jugador en un sitio (10/11/2026): rencillas,
+        contratos, veto de entrenador, pareja, entrenador por franja y
+        superficie. Dirección y head coaches (decisión 7).
+
+        POST {tipo, …} añade o cambia una; DELETE {tipo, id} la quita."""
+        from . import reglas
+
+        if not ve_reglas_jugador(request.user):
+            raise PermissionDenied("Las reglas del jugador las llevan dirección y los head coaches.")
+        jugador = self.get_object()
+        if request.method != "GET":
+            if not es_direccion(request.user):
+                suyos = set(request.user.coach.entrenadores.values_list("pk", flat=True))
+                if jugador.entrenador_responsable_id not in suyos | {None}:
+                    raise PermissionDenied("Ese jugador es de otro grupo.")
+            try:
+                with transaction.atomic():
+                    if request.method == "POST":
+                        reglas.anadir(jugador, request.data)
+                    else:
+                        reglas.quitar(jugador, request.data.get("tipo"), request.data.get("id"))
+            except (ValueError, Jugador.DoesNotExist, Entrenador.DoesNotExist) as e:
+                return Response({"detail": str(e) or "No existe."}, status=400)
+            except Exception as e:  # noqa: BLE001 - p. ej. un turno que no existe
+                if e.__class__.__name__ == "DoesNotExist":
+                    return Response({"detail": "No existe."}, status=400)
+                raise
+        return Response(reglas.leer(jugador))
 
     @action(detail=True, methods=["post"])
     def reportar_movimiento(self, request, pk=None):
@@ -691,21 +796,65 @@ class JugadorViewSet(viewsets.ModelViewSet):
         return Response({"ok": True, "avisos_creados": 1 + len(destinatarios)})
 
 
+def _assert_alguno_mio(user, jugadores):
+    """Fuera de dirección, una regla tiene que tocar a algún jugador propio."""
+    if es_direccion(user):
+        return
+    vis = jugadores_visibles(user)
+    if not any(j is not None and vis.filter(pk=j.pk).exists() for j in jugadores):
+        raise PermissionDenied("Ese jugador no es de tu grupo.")
+
+
 class RencillaViewSet(viewsets.ModelViewSet):
+    """Rencillas: solo dirección y head coaches, ni para leer (decisión 7)."""
+
     queryset = Rencilla.objects.all()
     serializer_class = RencillaSerializer
-    permission_classes = [DireccionOrCoachWrite]
+    permission_classes = [ReglasJugador, DireccionOrCoachWrite]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if not es_direccion(user):
+            vis = jugadores_visibles(user)
+            qs = qs.filter(Q(jugador_a__in=vis) | Q(jugador_b__in=vis))
+        jugador = self.request.query_params.get("jugador")
+        if jugador and str(jugador).isdigit():
+            qs = qs.filter(Q(jugador_a_id=jugador) | Q(jugador_b_id=jugador))
+        return qs
+
+    def perform_create(self, serializer):
+        _assert_alguno_mio(self.request.user, [serializer.validated_data.get("jugador_a"),
+                                               serializer.validated_data.get("jugador_b")])
+        serializer.save()
 
 
 class ContratoViewSet(viewsets.ModelViewSet):
+    """Contratos de patrocinio: solo dirección y head coaches (decisión 7)."""
+
     queryset = Contrato.objects.all()
     serializer_class = ContratoSerializer
-    permission_classes = [DireccionOrCoachWrite]
+    permission_classes = [ReglasJugador, DireccionOrCoachWrite]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if not es_direccion(self.request.user):
+            qs = qs.filter(jugador__in=jugadores_visibles(self.request.user))
+        jugador = self.request.query_params.get("jugador")
+        return qs.filter(jugador_id=jugador) if jugador and str(jugador).isdigit() else qs
+
+    def perform_create(self, serializer):
+        _assert_alguno_mio(self.request.user, [serializer.validated_data.get("jugador")])
+        serializer.save()
 
 
 class ResponsableJugadorViewSet(viewsets.ModelViewSet):
+    """Los porcentajes, fila a fila. Se cambian en la ficha del jugador
+    (`/jugadores/{id}/entrenadores/`); aquí solo lee cada uno lo suyo y
+    escribe dirección (10/11/2026)."""
+
     serializer_class = ResponsableJugadorSerializer
-    permission_classes = [DireccionOrCoachWrite]
+    permission_classes = [ReadOnlyOrDireccion]
     queryset = ResponsableJugador.objects.select_related(
         "jugador", "entrenador"
     ).all()
@@ -747,6 +896,27 @@ class VacacionesEntrenadorViewSet(viewsets.ModelViewSet):
             ent = getattr(user, "entrenador", None)
             return qs.filter(entrenador=ent) if ent else qs.none()
         return qs
+
+    def _assert_de_mi_grupo(self, ent):
+        # El head coach, solo para los de su bloque (10/11/2026).
+        if es_direccion(self.request.user):
+            return
+        coach = getattr(self.request.user, "coach", None)
+        if coach is None or not coach.entrenadores.filter(pk=ent.pk).exists():
+            raise PermissionDenied("Ese entrenador no es de tu grupo.")
+
+    def perform_create(self, serializer):
+        self._assert_de_mi_grupo(serializer.validated_data["entrenador"])
+        serializer.save(creada_por=self.request.user)
+
+    def perform_update(self, serializer):
+        self._assert_de_mi_grupo(serializer.instance.entrenador)
+        self._assert_de_mi_grupo(serializer.validated_data.get("entrenador", serializer.instance.entrenador))
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._assert_de_mi_grupo(instance.entrenador)
+        instance.delete()
 
 
 class EscuelaViewSet(viewsets.ModelViewSet):
@@ -847,10 +1017,17 @@ class PreferenciaSuperficieViewSet(viewsets.ModelViewSet):
 
 class AvisoViewSet(viewsets.ModelViewSet):
     """Avisos in-app mostrados en el perfil. Cada usuario ve los suyos; el Super
-    Admin ve además los dirigidos a dirección."""
+    Admin ve además los dirigidos a dirección.
+
+    Los avisos los crea la aplicación: por la API solo se leen y se marcan
+    leídos (10/11/2026: antes cualquiera podía crear avisos para otros)."""
 
     serializer_class = AvisoSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        raise PermissionDenied("Los avisos los crea la aplicación.")
 
     def get_queryset(self):
         u = self.request.user
@@ -871,7 +1048,7 @@ def _escuela_por_defecto(solicitante):
     """La escuela de los alumnos del entrenador que lo propone; si no tiene,
     Alto Rendimiento."""
     escuela = (
-        Jugador.objects.filter(entrenadores_gestores=solicitante, activo=True)
+        Jugador.objects.filter(entrenador_responsable=solicitante, activo=True)
         .values_list("escuela_id", flat=True).first()
     )
     if escuela is None:
@@ -1061,10 +1238,14 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         return nuevas
 
     def perform_create(self, serializer):
+        # Solo dirección (y quien tenga «Aprueba invitados») mete invitados
+        # (decisión 8, 10/11/2026).
+        if not aprueba_invitados(self.request.user):
+            raise PermissionDenied("Los invitados los mete dirección.")
         ent = self._entrenador()
         solicitante = serializer.validated_data.get("entrenador_solicitante") or ent
         if solicitante is None:
-            raise PermissionDenied("Tu usuario no está enlazado a un entrenador.")
+            raise PermissionDenied("Elige el entrenador que trae al invitado.")
         fechas = serializer.validated_data.get("fechas") or {}
         with transaction.atomic():
             inv = serializer.save(entrenador_solicitante=solicitante)
@@ -1109,8 +1290,8 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         from .serializers import fechas_validas
 
         inv = self.get_object()
-        if inv.estado == Invitado.Estado.RECHAZADO and not aprueba_invitados(request.user):
-            raise PermissionDenied("Dirección rechazó a este invitado.")
+        if not aprueba_invitados(request.user):
+            raise PermissionDenied("Los invitados los mete dirección.")
         fechas = fechas_validas(request.data.get("fechas") or {})
         if not fechas:
             raise ValidationError("Marca al menos un día.")
@@ -1244,6 +1425,18 @@ class TareaMantenimientoViewSet(viewsets.ModelViewSet):
     search_fields = ["titulo", "descripcion", "responsable"]
     ordering_fields = ["fecha_limite", "estado", "created_at"]
 
+    # Mantenimiento e incidencias (decisión 8): cualquiera del club crea y
+    # consulta; cambiar el estado o borrar, dirección.
+    def perform_update(self, serializer):
+        if not es_direccion(self.request.user):
+            raise PermissionDenied("El estado de una incidencia lo cambia dirección.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not es_direccion(self.request.user):
+            raise PermissionDenied("Las incidencias las borra dirección.")
+        instance.delete()
+
     def perform_create(self, serializer):
         tarea = serializer.save()
         # Aviso in-app a dirección (sin notificación externa por ahora).
@@ -1282,8 +1475,20 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
+        if not (es_direccion(self.request.user) or es_coach(self.request.user)):
+            raise PermissionDenied("Las peticiones de la app las apuntan dirección y los head coaches.")
         user = self.request.user if self.request.user.is_authenticated else None
         serializer.save(creado_por=user)
+
+    def perform_update(self, serializer):
+        if not es_direccion(self.request.user):
+            raise PermissionDenied("El estado de una petición lo cambia dirección.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not es_direccion(self.request.user):
+            raise PermissionDenied("Las peticiones las borra dirección.")
+        instance.delete()
 
 
 def _coach_activo(user):
@@ -1467,8 +1672,15 @@ class MiAgendaViewSet(viewsets.ViewSet):
             entrenador=ent, fecha_inicio__lte=hoy, fecha_fin__gte=hoy
         ))
         # Una ausencia de una franja (solo M1) no le quita la mañana entera.
-        fuera = {v.ambito for v in vacs}
-        vac = next((v for v in vacs if v.ambito == "DIA"), vacs[0] if vacs else None)
+        # Una de unas horas («hasta las 10:00») tampoco el día: cuenta solo en
+        # las franjas que tapa (11/11/2026, antes la ventana de «Disp.
+        # entrenadores» no le marcaba fuera).
+        completas = [v for v in vacs if not (v.hora_desde or v.hora_hasta)]
+        fuera = {v.ambito for v in completas}
+        for v in vacs:
+            if v.hora_desde or v.hora_hasta:
+                fuera |= {t.codigo for t in Turno.objects.all() if v.afecta_turno(t, hoy)}
+        vac = next((v for v in completas if v.ambito == "DIA"), vacs[0] if vacs else None)
         return Response({
             "fecha": hoy,
             "dia": fila["nombre"] if fila else None,
@@ -1514,12 +1726,30 @@ class MiAgendaViewSet(viewsets.ViewSet):
             ambito = request.data.get("ambito") or VacacionesEntrenador.Ambito.DIA
             if ambito not in VacacionesEntrenador.Ambito.values:
                 return Response({"error": "Esa franja no existe."}, status=400)
+            try:
+                ini = date.fromisoformat(str(request.data["fecha_inicio"]))
+                fin = date.fromisoformat(str(request.data["fecha_fin"]))
+            except (KeyError, ValueError):
+                return Response({"error": "Faltan las fechas."}, status=400)
+            if fin < ini:
+                return Response({"error": "La vuelta no puede ser anterior a la ida."}, status=400)
+            from datetime import time as _time
+
+            def _hora(campo):
+                v = request.data.get(campo)
+                try:
+                    return _time.fromisoformat(str(v)) if v else None
+                except ValueError:
+                    return None
+            desde, hasta = _hora("hora_desde"), _hora("hora_hasta")
+            if (desde or hasta) and ini != fin:
+                return Response({"error": "Las horas solo valen para un día suelto."}, status=400)
+            if desde and hasta and hasta <= desde:
+                return Response({"error": "La hora de fin debe ser posterior a la de inicio."}, status=400)
             VacacionesEntrenador.objects.create(
-                entrenador=ent,
-                fecha_inicio=request.data["fecha_inicio"],
-                fecha_fin=request.data["fecha_fin"],
-                motivo=request.data.get("motivo", ""),
-                ambito=ambito,
+                entrenador=ent, fecha_inicio=ini, fecha_fin=fin,
+                motivo=request.data.get("motivo", ""), ambito=ambito,
+                hora_desde=desde, hora_hasta=hasta, creada_por=request.user,
             )
         return Response(VacacionesEntrenadorSerializer(
             ent.vacaciones.order_by("fecha_inicio"), many=True).data)
@@ -1730,6 +1960,8 @@ class GrupoViewSet(viewsets.ViewSet):
             por_division[j.division_id].append({
                 "id": j.id,
                 "nombre": j.nombre,
+                "division": j.division_id,
+                "orden_division": j.orden_division,
                 "edad": j.edad,
                 "sexo": j.sexo,
                 "escuela": j.escuela.nombre if j.escuela_id else None,
@@ -1764,19 +1996,39 @@ class GrupoViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["post"])
     def mover(self, request):
-        """Mete al alumno en el grupo de este entrenador.
+        """Mete al alumno en el grupo de este entrenador: pasa a gestionarlo.
 
-        Pasa a ser su responsable y su principal, y el resto del bloque, sus
-        secundarios al 10%: la misma regla del organigrama. Los retoques, luego,
-        en su ficha."""
+        Desde el 10/11/2026 mover solo cambia quién gestiona (decisión 4). Los
+        porcentajes —con quién entrena— no se tocan aquí: se cambian aparte y a
+        la vista, en la ficha del jugador. Antes, mover repartía además un 10 %
+        con todo el bloque."""
         jugador, entrenador = self._jugador(request), self._entrenador(request)
         self._assert_gestiona(jugador, entrenador)
         with transaction.atomic():
-            pesos.guardar(jugador, pesos.propuesta(entrenador))
             jugador.entrenador_responsable = entrenador
             jugador.save(update_fields=["entrenador_responsable"])
             # Cambia de columna: quien compartía la gestión ya no la comparte.
             jugador.cogestores.clear()
+        entrena_con = list(
+            ResponsableJugador.objects.filter(jugador=jugador, activo=True)
+            .values_list("entrenador_id", flat=True))
+        return Response({
+            "ok": True,
+            # La interfaz avisa de que revise sus porcentajes si el nuevo
+            # gestor no está entre los que le entrenan.
+            "revisar_porcentajes": bool(entrena_con) and entrenador.id not in entrena_con,
+        })
+
+    @action(detail=False, methods=["post"])
+    def compartir(self, request):
+        """Otro entrenador comparte la gestión del alumno (sale también en su
+        columna). Misma regla que mover."""
+        jugador, entrenador = self._jugador(request), self._entrenador(request)
+        self._assert_gestiona(jugador, entrenador)
+        if jugador.entrenador_responsable_id is None:
+            raise ValidationError("Primero ponle en un grupo; luego se comparte.")
+        if jugador.entrenador_responsable_id != entrenador.id:
+            jugador.cogestores.add(entrenador)
         return Response({"ok": True})
 
     @action(detail=False, methods=["post"])
@@ -1840,22 +2092,21 @@ class GrupoViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["post"])
     def quitar(self, request):
-        """Este entrenador deja de llevar a este alumno.
+        """Este entrenador deja de gestionar a este alumno.
 
-        Si era su grupo (su responsable), el alumno sale del grupo entero: sin
-        responsable ni porcentajes, a «Sin grupo». Si solo le entrenaba, se le
-        quita a él y su parte pasa al principal."""
+        Si era su responsable, el alumno pasa a «Sin grupo». Si compartía la
+        gestión, deja de compartirla. Los porcentajes no se tocan aquí
+        (10/11/2026): se cambian en la ficha."""
         jugador, entrenador = self._jugador(request), self._entrenador(request)
         self._assert_gestiona(jugador, entrenador)
         with transaction.atomic():
             if jugador.entrenador_responsable_id == entrenador.id:
-                pesos.guardar(jugador, [])
                 jugador.entrenador_responsable = None
                 jugador.save(update_fields=["entrenador_responsable"])
                 jugador.cogestores.clear()
             elif jugador.cogestores.filter(pk=entrenador.pk).exists():
-                # Compartía la gestión: deja de compartirla, nada más.
                 jugador.cogestores.remove(entrenador)
             else:
-                pesos.quitar(jugador, entrenador.id)
+                raise ValidationError(
+                    "Ese entrenador no gestiona a este jugador. Con quién entrena se cambia en su ficha.")
         return Response({"ok": True})

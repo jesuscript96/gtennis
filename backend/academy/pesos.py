@@ -64,14 +64,15 @@ def errores(filas):
 
 def propuesta(entrenador):
     """El reparto de partida con este entrenador de principal y el resto de su
-    bloque de secundarios."""
+    grupo de color de secundarios. Solo cuentan los bloques con color: los de
+    sin color abarcaban a los 18 y repartían un 6 % a cada uno (10/11/2026)."""
     from .models import Entrenador
 
     if entrenador is None:
         return []
     otros = (
         Entrenador.objects.filter(
-            coaches__in=entrenador.coaches.filter(activo=True),
+            coaches__in=entrenador.coaches.filter(activo=True).exclude(color=""),
             activo=True, disponible_semana=True,
         )
         .exclude(pk=entrenador.pk).distinct().order_by("nombre")
