@@ -1133,10 +1133,11 @@ class GruposGestionNombresTests(SimpleTestCase):
 
 class FichaDeportivaCoachTests(TestCase):
     """El head coach completa lo deportivo de las altas nuevas (06/10/2026).
-    Desde el 10/11/2026 la división es de dirección (decisión 5) y quién
-    gestiona se pone en Grupos, nunca desde la ficha (decisión 4)."""
+    Desde el 10/11/2026 la división es de dirección (decisión 5); quién
+    gestiona, en Grupos o, desde el 13/11/2026, también en la ficha con la
+    misma regla. Compartir la gestión, solo en Grupos."""
 
-    def test_ve_el_alta_sin_gestion_y_la_coloca_en_grupos_no_en_la_ficha(self):
+    def test_ve_el_alta_sin_gestion_y_la_coloca_en_su_grupo(self):
         from rest_framework.test import APIClient
 
         from academy.models import Coach
@@ -1159,16 +1160,15 @@ class FichaDeportivaCoachTests(TestCase):
         self.assertIn("Nuevo", nombres)
         self.assertNotIn("De otro", nombres)
         url = f"/api/jugadores/{nuevo.id}/"
-        # Desde la ficha, ni gestión ni división.
-        for cuerpo in ({"entrenador_responsable": blas.id}, {"cogestores": [ajeno.id]},
-                       {"division": div.id}):
+        # Desde la ficha, ni compartir la gestión, ni división, ni el grupo de
+        # otro color.
+        for cuerpo in ({"cogestores": [ajeno.id]}, {"division": div.id}, {"entrenador_responsable": ajeno.id}):
             self.assertEqual(api.patch(url, cuerpo, format="json").status_code, 403, cuerpo)
         # Lo deportivo que sí es suyo, sí.
         r = api.patch(url, {"vecindad": "SOLO"}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
-        # Y le pone grupo desde Grupos.
-        r = api.post("/api/grupos/mover/", {"jugador": nuevo.id, "entrenador": blas.id},
-                     format="json")
+        # Y le pone en su grupo desde la ficha (o desde Grupos, que es lo mismo).
+        r = api.patch(url, {"entrenador_responsable": blas.id}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         nuevo.refresh_from_db()
         self.assertEqual((nuevo.division_id, nuevo.entrenador_responsable_id, nuevo.vecindad),

@@ -393,6 +393,10 @@ const PAREJA = [
  */
 function FichaDeportiva({ jugador: j, esDir }) {
   const [divisiones, setDivisiones] = useState([]);
+  // Los entrenadores que puede elegir para su grupo: el head coach, los de su
+  // color (lo que le devuelve el servidor); dirección, todos.
+  const [entrenadores, setEntrenadores] = useState([]);
+  const [revisar, setRevisar] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -400,6 +404,9 @@ function FichaDeportiva({ jugador: j, esDir }) {
 
   useEffect(() => {
     resource("divisiones").list().then(setDivisiones).catch(() => {});
+    resource("entrenadores").list()
+      .then((l) => setEntrenadores([...l].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))))
+      .catch(() => {});
   }, []);
   useEffect(() => setActual(j), [j]);
 
@@ -408,7 +415,9 @@ function FichaDeportiva({ jugador: j, esDir }) {
     setError("");
     setMsg("");
     try {
-      setActual(await resource("jugadores").update(j.id, cambio));
+      const r = await resource("jugadores").update(j.id, cambio);
+      setActual(r);
+      setRevisar(Boolean(r.revisar_porcentajes));
       setMsg("Guardado.");
     } catch (e) {
       setError(e.message);
@@ -420,7 +429,15 @@ function FichaDeportiva({ jugador: j, esDir }) {
   const div = divisiones.find((d) => d.id === actual.division);
   const pendiente = !actual.division || !actual.entrenador_responsable;
   const [abiertaAlEntrar] = useState(pendiente);
-  const gestores = [actual.entrenador_nombre, ...(actual.cogestores_nombres || [])].filter(Boolean);
+  const comparten = actual.cogestores_nombres || [];
+  // Puede cambiar el grupo si es dirección o si el alumno es de su color, no
+  // tiene grupo o su gestor está de baja (la misma regla que en Grupos; el
+  // servidor la comprueba igual).
+  const actualEnt = entrenadores.find((e) => e.id === actual.entrenador_responsable);
+  // (Al head coach el servidor solo le da los de su color: si el del alumno
+  // está en la lista, es de su color.)
+  const puedeGrupo = esDir || !actual.entrenador_responsable || Boolean(actualEnt);
+  const opciones = entrenadores.filter((e) => e.activo || e.id === actual.entrenador_responsable);
 
   return (
     <details className="ficha-deportiva" open={abiertaAlEntrar}>
@@ -429,10 +446,31 @@ function FichaDeportiva({ jugador: j, esDir }) {
         {pendiente && <span className="marca-baja">Sin completar</span>}
       </summary>
       {error && <p className="error">{error}</p>}
-      {/* Quién gestiona se cambia en Grupos; la división y el ranking, solo
-          dirección, también en Grupos (decisiones 4 y 5, 10/11/2026). */}
+      {/* El grupo también aquí, con la misma regla que en Grupos (13/11/2026);
+          compartir la gestión, la división y el ranking, en Grupos. */}
+      <div className="fila-form">
+        <label>Entrenador (su grupo)
+          {puedeGrupo ? (
+            <select value={actual.entrenador_responsable || ""} disabled={guardando}
+              onChange={(e) => guardar({ entrenador_responsable: e.target.value ? Number(e.target.value) : null })}>
+              <option value="">— sin grupo —</option>
+              {opciones.map((e) => <option key={e.id} value={e.id}>{e.nombre}{e.activo ? "" : " (de baja)"}</option>)}
+            </select>
+          ) : (
+            <span className="ficha-solo-lectura">{actual.entrenador_nombre} · es de otro grupo de color</span>
+          )}
+        </label>
+      </div>
+      {revisar && (
+        <p className="hint">
+          Su nuevo entrenador no está entre los que le entrenan:{" "}
+          <Link href={`/jugador-responsables?jugador=${j.id}&nombre=${encodeURIComponent(j.nombre)}`}>revisa sus porcentajes</Link>.
+        </p>
+      )}
       <dl className="ficha-lectura">
-        <div><dt>Le gestiona</dt><dd>{gestores.length ? gestores.join(" y ") : "Nadie todavía"} · <Link href="/grupos">se cambia en Grupos</Link></dd></div>
+        {comparten.length > 0 && (
+          <div><dt>Comparte la gestión</dt><dd>{comparten.join(" y ")} · <Link href="/grupos">se cambia en Grupos</Link></dd></div>
+        )}
         <div><dt>División</dt><dd>{div ? (div.nombre || `División ${div.nivel}`) : "—"}{esDir ? <> · <Link href="/grupos?vista=division">se cambia en Grupos</Link></> : " · la cambia dirección"}</dd></div>
       </dl>
       <div className="fila-form">

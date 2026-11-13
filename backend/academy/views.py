@@ -34,6 +34,7 @@ from .models import (
     VetoEntrenador,
     VisitaInvitado,
 )
+from . import grupos
 from .permissions import (
     DireccionOrCoachWrite, ReadOnlyOrDireccion, ReglasJugador, aprueba_invitados, es_administracion,
     es_coach, es_direccion, mueve_divisiones, toca_cuadrante, ve_reglas_jugador,
@@ -661,10 +662,22 @@ class JugadorViewSet(viewsets.ModelViewSet):
         })
 
     def perform_create(self, serializer):
-        # Altas: dirección y Administración (decisión 10).
+        # Altas: dirección y Administración (decisión 10). El grupo, al darle de
+        # alta solo dirección (Administración no toca lo deportivo).
         if not (es_direccion(self.request.user) or es_administracion(self.request.user)):
             raise PermissionDenied("Las altas de jugadores las dan dirección y Administración.")
+        if serializer.validated_data.get("entrenador_responsable") and not es_direccion(self.request.user):
+            raise PermissionDenied("El grupo lo pone dirección, o su head coach desde su ficha o Grupos.")
         serializer.save()
+
+    def update(self, request, *args, **kwargs):
+        # Si la ficha cambió el grupo, la respuesta dice si conviene revisar los
+        # porcentajes (lo mismo que contesta mover en Grupos).
+        self._revisar_porcentajes = None
+        r = super().update(request, *args, **kwargs)
+        if self._revisar_porcentajes is not None:
+            r.data["revisar_porcentajes"] = self._revisar_porcentajes
+        return r
 
     def _assert_direccion(self):
         user = self.request.user
@@ -677,8 +690,9 @@ class JugadorViewSet(viewsets.ModelViewSet):
         """Una sola regla para la ficha, se entre por donde se entre
         (10/11/2026):
 
-          * Quién gestiona (responsable y comparte la gestión) se cambia en
-            Grupos, nunca desde la ficha (decisión 4).
+          * Quién gestiona: el grupo (responsable) también desde la ficha, con
+            la misma regla y el mismo efecto que en Grupos (`academy.grupos`,
+            13/11/2026); compartir la gestión, solo en Grupos.
           * División y ranking, solo dirección (decisión 5).
           * Altas y bajas, dirección y Administración.
           * Administración no toca lo deportivo: horario, vecindad, pareja.
@@ -703,8 +717,11 @@ class JugadorViewSet(viewsets.ModelViewSet):
                 return {e.pk for e in nuevo} != set(inst.cogestores.values_list("pk", flat=True))
             return nuevo != getattr(inst, campo)
 
-        if cambia("entrenador_responsable") or cambia("cogestores"):
-            raise PermissionDenied("Quién gestiona a un jugador se cambia en Grupos.")
+        if cambia("cogestores"):
+            raise PermissionDenied("Compartir la gestión se hace en Grupos.")
+        nuevo_grupo = cambia("entrenador_responsable")
+        if nuevo_grupo:
+            grupos.assert_puede_mover(user, inst, datos["entrenador_responsable"])
         if cambia("division") and not mueve_divisiones(user):
             raise PermissionDenied("La división la cambia dirección, en Grupos.")
         if cambia("activo") and not (direccion or admin):
@@ -721,6 +738,10 @@ class JugadorViewSet(viewsets.ModelViewSet):
         # #18: al dar de baja (activo True->False) se avisa a dirección in-app.
         antes_activo = inst.activo
         jugador = serializer.save()
+        if nuevo_grupo:
+            # El mismo efecto que mover en Grupos: fuera quien compartía la
+            # gestión, porcentajes intactos y aviso si conviene revisarlos.
+            self._revisar_porcentajes = grupos.meter_en_grupo(jugador, jugador.entrenador_responsable)
         if antes_activo and not jugador.activo:
             Aviso.objects.create(
                 para_direccion=True,
@@ -1824,20 +1845,9 @@ class GrupoViewSet(viewsets.ViewSet):
         return coach is not None and bool(coach.color) and coach.pk == coach_id
 
     def _assert_gestiona(self, jugador, entrenador):
-        """Dirección mueve a cualquiera; el head coach, dentro de su color: el
-        alumno es de una columna de su color (o no tiene grupo) y la columna
-        a la que va o de la que sale, también."""
-        if self.request.user.is_superadmin:
-            return
-        suyos = self._color_propio()
-        responsable = jugador.entrenador_responsable
-        if suyos is not None and entrenador.pk in suyos and (
-                responsable is None or not responsable.activo
-                or responsable.pk in suyos):
-            return
-        raise PermissionDenied(
-            "Solo puedes mover a los alumnos de tu grupo de color."
-        )
+        """Dirección mueve a cualquiera; el head coach, dentro de su color
+        (la regla está en `academy.grupos`, la misma que usa la ficha)."""
+        grupos.assert_puede_mover(self.request.user, jugador, entrenador)
 
     def list(self, request):
         from collections import defaultdict
@@ -2004,20 +2014,9 @@ class GrupoViewSet(viewsets.ViewSet):
         con todo el bloque."""
         jugador, entrenador = self._jugador(request), self._entrenador(request)
         self._assert_gestiona(jugador, entrenador)
-        with transaction.atomic():
-            jugador.entrenador_responsable = entrenador
-            jugador.save(update_fields=["entrenador_responsable"])
-            # Cambia de columna: quien compartía la gestión ya no la comparte.
-            jugador.cogestores.clear()
-        entrena_con = list(
-            ResponsableJugador.objects.filter(jugador=jugador, activo=True)
-            .values_list("entrenador_id", flat=True))
-        return Response({
-            "ok": True,
-            # La interfaz avisa de que revise sus porcentajes si el nuevo
-            # gestor no está entre los que le entrenan.
-            "revisar_porcentajes": bool(entrena_con) and entrenador.id not in entrena_con,
-        })
+        # La interfaz avisa de que revise sus porcentajes si el nuevo gestor no
+        # está entre los que le entrenan.
+        return Response({"ok": True, "revisar_porcentajes": grupos.meter_en_grupo(jugador, entrenador)})
 
     @action(detail=False, methods=["post"])
     def compartir(self, request):

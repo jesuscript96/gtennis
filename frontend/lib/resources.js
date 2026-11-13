@@ -95,9 +95,15 @@ export const RESOURCES = {
         { value: "CHICO", label: "Chico" },
         { value: "CHICA", label: "Chica" },
       ], help: "Un chico no comparte pista con una chica de división más baja. «—» = sin declarar, no se le aplica la regla." },
-      // Quién le gestiona se cambia en Grupos; la división y el ranking, solo
-      // dirección y también en Grupos (decisiones 4 y 5). Aquí, la división
+      // El grupo (quién le gestiona) también aquí, con la misma regla que en
+      // Grupos (13/11/2026, lo pidió el club). Compartir la gestión, la
+      // división y el ranking, en Grupos (decisiones 4 y 5); la división, aquí
       // solo al darle de alta.
+      { name: "entrenador_responsable", label: "Entrenador (su grupo)", type: "fk", endpoint: "entrenadores",
+        // Todos, también los de baja (marcados): si faltara el suyo, guardar
+        // la ficha por otra cosa le sacaría del grupo sin querer.
+        optionLabel: (o) => (o.activo ? o.nombre : `${o.nombre} (de baja)`), ve: (u) => u?.perfil === "direccion",
+        help: "Le mete en el grupo de ese entrenador: es lo mismo que moverle en Grupos. Los porcentajes no cambian; revísalos en «Porcentajes»." },
       { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel, soloCrear: true, ve: (u) => u?.mueve_divisiones, help: "Después se cambia en Grupos." },
       { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO, ve: noAdministracion },
       { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO, ve: noAdministracion },

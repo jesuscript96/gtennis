@@ -173,15 +173,60 @@ class FichaDelJugadorTests(Base):
         self.assertEqual(self.api(self.pablo).patch(url, {"nombre": "Cuarta"}, format="json").status_code, 403)
         self.assertEqual(self.api(self.dir).patch(url, {"nombre": "Cuarta"}, format="json").status_code, 200)
 
-    def test_quien_gestiona_no_se_cambia_desde_la_ficha_ni_siendo_direccion(self):
+    def test_el_grupo_se_cambia_desde_la_ficha_con_la_regla_de_grupos(self):
+        """13/11/2026: la ficha vuelve a tener el grupo, con la misma regla y
+        el mismo efecto que mover en Grupos (academy.grupos)."""
         url = f"/api/jugadores/{self.ana.id}/"
-        for u in (self.dir, self.pablo):
-            for cuerpo in ({"entrenador_responsable": self.javi.id}, {"cogestores": [self.javi.id]}):
-                r = self.api(u).patch(url, cuerpo, format="json")
-                self.assertEqual(r.status_code, 403, (u.username, cuerpo))
-                self.assertIn("Grupos", r.json()["detail"])
+        ResponsableJugador.objects.create(jugador=self.ana, entrenador=self.blas, prioridad=1,
+                                          porcentaje_objetivo=100)
+        self.ana.cogestores.add(self.javi)
+        # Head coach, dentro de su color: sí; quien compartía, fuera; porcentajes intactos.
+        r = self.api(self.pablo).patch(url, {"entrenador_responsable": self.javi.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIs(r.json()["revisar_porcentajes"], True)
         self.ana.refresh_from_db()
-        self.assertEqual((self.ana.entrenador_responsable, list(self.ana.cogestores.all())), (self.blas, []))
+        self.assertEqual((self.ana.entrenador_responsable, list(self.ana.cogestores.all())), (self.javi, []))
+        self.assertEqual(list(ResponsableJugador.objects.filter(jugador=self.ana)
+                              .values_list("entrenador_id", "porcentaje_objetivo")), [(self.blas.id, 100)])
+        # A una columna de otro color, o un alumno de otro color: no.
+        self.assertEqual(self.api(self.pablo).patch(url, {"entrenador_responsable": self.otro.id},
+                                                    format="json").status_code, 403)
+        self.assertIn(self.api(self.pablo).patch(f"/api/jugadores/{self.ajeno.id}/",
+                                                 {"entrenador_responsable": self.blas.id},
+                                                 format="json").status_code, (403, 404))
+        # Sacarle del grupo, a «Sin grupo»: su head coach sí.
+        r = self.api(self.pablo).patch(url, {"entrenador_responsable": None}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        # Uno sin grupo: el head coach le mete en el suyo; dirección, en cualquiera.
+        self.assertEqual(self.api(self.pablo).patch(url, {"entrenador_responsable": self.blas.id},
+                                                    format="json").status_code, 200)
+        self.assertEqual(self.api(self.dir).patch(url, {"entrenador_responsable": self.otro.id},
+                                                  format="json").status_code, 200)
+        self.ana.refresh_from_db()
+        self.assertEqual(self.ana.entrenador_responsable, self.otro)
+        # Compartir la gestión, solo en Grupos; el entrenador y Administración, nada.
+        for u in (self.dir, self.pablo):
+            r = self.api(u).patch(url, {"cogestores": [self.javi.id]}, format="json")
+            self.assertEqual(r.status_code, 403, u.username)
+            self.assertIn("Grupos", r.json()["detail"])
+        adm = User.objects.create_user(username="adm", password="x", role=User.Role.ADMINISTRACION)
+        for u in (self.u_blas, adm):
+            self.assertIn(self.api(u).patch(url, {"entrenador_responsable": self.blas.id},
+                                            format="json").status_code, (403, 404))
+        self.ana.refresh_from_db()
+        self.assertEqual(self.ana.entrenador_responsable, self.otro)
+
+    def test_el_grupo_al_dar_de_alta_solo_direccion(self):
+        r = self.api(self.dir).post("/api/jugadores/", {"nombre": "Nuevo Grupo", "entrenador_responsable": self.blas.id},
+                                    format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(Jugador.objects.get(nombre="Nuevo Grupo").entrenador_responsable, self.blas)
+        adm = User.objects.create_user(username="adm2", password="x", role=User.Role.ADMINISTRACION)
+        r = self.api(adm).post("/api/jugadores/", {"nombre": "Otro Grupo", "entrenador_responsable": self.blas.id},
+                               format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(self.api(adm).post("/api/jugadores/", {"nombre": "Sin Grupo"},
+                                            format="json").status_code, 201)
 
     def test_mandar_el_mismo_responsable_no_es_cambiarlo(self):
         # El formulario de la ficha manda todos los campos: si el responsable
