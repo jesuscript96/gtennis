@@ -18,6 +18,7 @@ from .models import Evaluacion, Informe
 from .tests import SIN_CAPTURA_DE_PLANTILLAS, FakeDrive, FakeResp
 
 TENIS = {k: 7 for k in catalogo.CRITERIOS}
+FISICA = {k: 4 for k in catalogo.CRITERIOS_FISICO}
 
 
 class Base(TestCase):
@@ -338,3 +339,99 @@ class DriveAltoRendimientoTests(Base):
         ar.assert_called_once()
         ct.assert_not_called()
         self.assertEqual(inf.drive_carpeta, "pendientes")
+
+
+@SIN_CAPTURA_DE_PLANTILLAS
+@override_settings(ANTHROPIC_API_KEY="", GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")
+class FisicaAltoRendimientoTests(Base):
+    """17/11/2026: la parte física también para Alto rendimiento. Se suma al
+    informe de tenis (no hace falta para validarlo, pero si se empieza hay que
+    terminarla) y sale en el mismo PDF."""
+
+    def setUp(self):
+        super().setUp()
+        self.josep = User.objects.create_user(username="josep.mari", password="x", role=User.Role.PREPARADOR)
+
+    def fisica(self, jugador, terminar=True):
+        c = self.api(self.josep)
+        r = c.post("/api/evaluaciones-fisicas/", {"jugador": jugador.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        ev_id = r.json()["id"]
+        if terminar:
+            c.patch(f"/api/evaluaciones-fisicas/{ev_id}/", {"puntuaciones": FISICA}, format="json")
+            r = c.post(f"/api/evaluaciones-fisicas/{ev_id}/terminar/", {}, format="json")
+            self.assertEqual(r.status_code, 200, r.content)
+        return ev_id
+
+    def test_la_fisica_se_suma_al_informe_pendiente_y_al_pdf(self):
+        self.evaluar(self.u_blas, self.ana)
+        inf = Informe.objects.get(jugador=self.ana)
+        self.assertEqual(inf.estado, "PENDIENTE")
+        self.assertIsNone(pdf.datos_informe(inf)["fisico"])
+        fis_id = self.fisica(self.ana)
+        inf.refresh_from_db()
+        # Sigue siendo el mismo informe, pendiente, ahora con la física.
+        self.assertEqual((inf.estado, inf.fisica_id), ("PENDIENTE", fis_id))
+        self.assertEqual(Informe.objects.filter(jugador=self.ana).count(), 1)
+        datos = pdf.datos_informe(inf)
+        self.assertEqual(datos["fisico"]["evaluador"], "josep.mari")
+        self.assertIn("josep.mari", pdf.html_informe(inf))
+        # Quien valida se entera de que el PDF ya la lleva.
+        avisos = Aviso.objects.filter(titulo__contains="parte física terminada")
+        self.assertEqual(set(avisos.values_list("usuario__username", flat=True)), {"dir", "dani"})
+
+    def test_quien_hizo_la_fisica_ve_el_informe_y_un_entrenador_no_la_ve(self):
+        self.evaluar(self.u_blas, self.ana)
+        self.fisica(self.ana)
+        ver = self.api(self.josep).get("/api/informes/").json()
+        self.assertEqual([i["jugador_nombre"] for i in ver], ["Ana Blas"])
+        self.assertEqual(self.api(self.u_blas).get("/api/evaluaciones-fisicas/").status_code, 403)
+        # En el desplegable salen los de las dos escuelas.
+        lista = self.api(self.josep).get("/api/evaluaciones-fisicas/jugadores/").json()
+        self.assertEqual({j["nombre"]: j["solo_informes"] for j in lista if j["nombre"] in ("Ana Blas", "Nino Tardes")},
+                         {"Ana Blas": False, "Nino Tardes": True})
+
+    def test_a_medias_no_sale_en_el_pdf_ni_deja_aprobar(self):
+        self.evaluar(self.u_blas, self.ana)
+        inf = Informe.objects.get(jugador=self.ana)
+        fis_id = self.fisica(self.ana, terminar=False)
+        inf.refresh_from_db()
+        self.assertIsNone(pdf.datos_informe(inf)["fisico"])
+        r = self.api(self.dir).post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("física", r.json()["detail"])
+        c = self.api(self.josep)
+        c.patch(f"/api/evaluaciones-fisicas/{fis_id}/", {"puntuaciones": FISICA}, format="json")
+        self.assertEqual(c.post(f"/api/evaluaciones-fisicas/{fis_id}/terminar/", {}, format="json").status_code, 200)
+        r = self.api(self.dir).post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        inf.refresh_from_db()
+        self.assertEqual(inf.estado, "VALIDADO")
+        # Aprobado, la física ya no se toca sin reabrir.
+        r = c.patch(f"/api/evaluaciones-fisicas/{fis_id}/", {"textos": {"notas_fisio": "tarde"}}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_sin_fisica_se_valida_como_siempre(self):
+        self.evaluar(self.u_blas, self.ana)
+        inf = Informe.objects.get(jugador=self.ana)
+        r = self.api(self.dir).post(f"/api/informes/{inf.id}/aprobar/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_terminar_la_fisica_no_da_por_corregido_el_tenis(self):
+        self.evaluar(self.u_blas, self.ana)
+        inf = Informe.objects.get(jugador=self.ana)
+        r = self.api(self.dir).post(f"/api/informes/{inf.id}/devolver/", {"partes": ["tenis"], "nota": "Revés"},
+                                    format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.fisica(self.ana)
+        inf.refresh_from_db()
+        self.assertEqual((inf.estado, inf.devuelto_partes), ("DEVUELTO", ["tenis"]))
+
+    def test_primero_la_fisica_y_luego_el_tenis(self):
+        fis_id = self.fisica(self.ana)
+        inf = Informe.objects.get(jugador=self.ana)
+        self.assertEqual((inf.estado, inf.tenis_id, inf.fisica_id), ("EN_CURSO", None, fis_id))
+        self.evaluar(self.u_blas, self.ana)
+        inf.refresh_from_db()
+        self.assertEqual((inf.estado, inf.fisica_id), ("PENDIENTE", fis_id))
+        self.assertEqual(Informe.objects.filter(jugador=self.ana).count(), 1)

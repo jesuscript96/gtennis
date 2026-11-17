@@ -12,8 +12,9 @@ const TEXTO = {
 const PILL = { EN_CURSO: "gris", PENDIENTE: "pend", DEVUELTO: "no", VALIDADO: "ok" };
 
 /** El informe del que forma parte la evaluación (de Competición de tardes,
- *  tenis + físico; de Alto rendimiento, solo tenis y lo valida dirección), y
- *  la nota de quien lo devolvió si toca corregir esta parte. */
+ *  tenis + físico; de Alto rendimiento lo manda el tenis, la física se suma
+ *  si está hecha, y lo valida dirección o el head coach), y la nota de quien
+ *  lo devolvió si toca corregir esta parte. */
 export default function InformeDeLaEvaluacion({ informe, parte }) {
   if (!informe) return null;
   const devuelta = informe.estado === "DEVUELTO" && informe.devuelto_partes.includes(parte);
@@ -21,7 +22,9 @@ export default function InformeDeLaEvaluacion({ informe, parte }) {
     <div className={`informe-de-eval${devuelta ? " devuelta" : ""}`}>
       <span>
         {informe.circuito === "alto_rendimiento"
-          ? <>Es su <b>informe</b> de Alto rendimiento: al terminarla pasa a validar (el <b>head coach</b> de su color o <b>dirección</b>).{" "}</>
+          ? (parte === "fisico"
+            ? <>Se suma a su <b>informe</b> de Alto rendimiento (tenis + preparación física, en el mismo PDF). Quien valida el informe tiene que esperar a que la termines.{" "}</>
+            : <>Es su <b>informe</b> de Alto rendimiento: al terminarla pasa a validar (el <b>head coach</b> de su color o <b>dirección</b>); si hay física, va en el mismo PDF.{" "}</>)
           : <>Forma parte del <b>informe conjunto</b> (tenis + preparación física):{" "}</>}
         <span className={`pill ${PILL[informe.estado]}`}>
           {informe.estado === "EN_CURSO" && informe.circuito === "alto_rendimiento" ? "A medias" : TEXTO[informe.estado]}

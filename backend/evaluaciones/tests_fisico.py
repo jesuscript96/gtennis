@@ -45,10 +45,22 @@ class FisicoTests(TestCase):
         for u in (self.blas, self.pablo):
             self.assertEqual(self.api(u).get("/api/evaluaciones-fisicas/").status_code, 403, u.username)
 
-    def test_solo_jugadores_de_competicion_de_tardes(self):
-        nombres = [j["nombre"] for j in self.api(self.josep).get("/api/evaluaciones-fisicas/jugadores/").data]
-        self.assertEqual(nombres, ["Asier"])
+    def test_competicion_de_tardes_y_alto_rendimiento(self):
+        """17/11/2026: la física se hace también a los de Alto rendimiento (activos,
+        sin invitados); a nadie más."""
+        baja = Jugador.objects.create(nombre="Baja", escuela=self.ar, activo=False)
+        res = self.api(self.josep).get("/api/evaluaciones-fisicas/jugadores/").data
+        por_nombre = {j["nombre"]: j for j in res}
+        self.assertIn("Asier", por_nombre)
+        self.assertIn("Ana", por_nombre)
+        self.assertNotIn("Baja", por_nombre)
+        self.assertEqual((por_nombre["Asier"]["solo_informes"], por_nombre["Asier"]["escuela"]),
+                         (True, "Competición de tardes"))
+        self.assertEqual((por_nombre["Ana"]["solo_informes"], por_nombre["Ana"]["escuela"]),
+                         (False, "Alto Rendimiento X"))
         r = self.api(self.josep).post("/api/evaluaciones-fisicas/", {"jugador": self.ar_jug.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        r = self.api(self.josep).post("/api/evaluaciones-fisicas/", {"jugador": baja.id}, format="json")
         self.assertEqual(r.status_code, 403)
 
     def test_circuito_completo(self):

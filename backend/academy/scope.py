@@ -76,6 +76,16 @@ def puede_ver_jugador(user, jugador):
     return jugadores_visibles(user).filter(pk=jugador.pk).exists()
 
 
+def jugadores_alto_rendimiento(base=None):
+    """Los jugadores que llevan informe de Alto rendimiento: todos los que no
+    son de una escuela «solo informes» (Competición de tardes) ni invitados.
+    `base` por defecto son los activos; para ver los de antes,
+    `Jugador.objects.all()`. Lo usan quien evalúa el tenis y, desde el
+    17/11/2026, quien evalúa la parte física."""
+    qs = base if base is not None else Jugador.objects.filter(activo=True)
+    return qs.exclude(escuela__solo_informes=True).filter(invitaciones__isnull=True)
+
+
 def jugadores_que_evalua(user, base=None):
     """Los jugadores de Alto rendimiento a los que `user` hace el informe de
     tenis (12/11/2026), sin reparto de nadie:
@@ -90,8 +100,7 @@ def jugadores_que_evalua(user, base=None):
     invitados no se les hace informe. `base` por defecto son los activos; para
     ver informes de antes, `Jugador.objects.all()`.
     """
-    qs = base if base is not None else Jugador.objects.filter(activo=True)
-    qs = qs.exclude(escuela__solo_informes=True).filter(invitaciones__isnull=True)
+    qs = jugadores_alto_rendimiento(base)
     if user.is_superadmin:
         return qs
     coach = _coach(user)

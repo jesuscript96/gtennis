@@ -145,7 +145,7 @@ function PorValidar({ informes }) {
             <span className="eval-lista-nombre">{i.jugador_nombre}</span>
             <span className="eval-lista-meta">
               {i.circuito === "alto_rendimiento"
-                ? `Alto rendimiento · Tenis: ${i.tenis?.evaluador || "—"}`
+                ? `Alto rendimiento · Tenis: ${i.tenis?.evaluador || "—"}${i.fisica ? ` · Físico: ${i.fisica.evaluador || "—"}${i.fisica.estado === "TERMINADA" ? "" : " (a medias)"}` : ""}`
                 : `Tenis: ${i.tenis?.evaluador || "—"} · Físico: ${i.fisica?.evaluador || "—"}`}
               {i.version > 1 && ` · corregido (v${i.version})`}
             </span>
@@ -198,9 +198,9 @@ function Informes() {
         de preparación física van en un solo PDF. Quien coordina asigna a cada jugador el entrenador que
         hace su parte de tenis. Cuando las dos partes están terminadas, se avisa a quien coordina y pasa
         a validar: quien tiene la función «Valida informes» lo aprueba (y lo envía a la familia) o lo
-        devuelve con una nota. Los de <b>Alto rendimiento</b> (solo tenis, los hace el entrenador de su
-        grupo) los validan <b>dirección</b> y el <b>head coach</b> de su color, también aquí en «Por validar». El siguiente toca a los 90 días
-        de validarlo.
+        devuelve con una nota. Los de <b>Alto rendimiento</b> (el tenis lo hace el entrenador de su
+        grupo; la preparación física se suma si el preparador la hace) los validan <b>dirección</b> y el <b>head coach</b> de su color, también
+        aquí en «Por validar». El siguiente toca a los 90 días de validarlo.
       </p>
       {panel.puede_validar && (
         <div className="tabs-inv" role="tablist">

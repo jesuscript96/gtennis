@@ -14,7 +14,7 @@ from academy.permissions import (
     coordina_informes, envia_informes, es_coach, es_direccion, evalua_fisico, evalua_tenis_solo_informes,
     valida_alto_rendimiento, valida_informes, ve_informes, ve_tardes,
 )
-from academy.scope import jugadores_que_evalua
+from academy.scope import jugadores_alto_rendimiento, jugadores_que_evalua
 
 from . import catalogo, drive, fichero, ia, informes, pdf, traduccion
 from .models import (
@@ -272,10 +272,20 @@ def jugadores_evaluables_fisico():
             .select_related("escuela").order_by("nombre"))
 
 
+def jugadores_con_fisico():
+    """A quién se le puede hacer la parte física (17/11/2026): los de
+    Competición de tardes (en su informe conjunto, obligatoria) y, ahora
+    también, los de Alto rendimiento (se suma a su informe de tenis, opcional)."""
+    return (Jugador.objects.filter(Q(pk__in=jugadores_evaluables_fisico().values("pk"))
+                                   | Q(pk__in=jugadores_alto_rendimiento().values("pk")))
+            .select_related("escuela").order_by("nombre"))
+
+
 class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
-    """Parte física de los informes. Solo para el preparador físico y gestión
-    deportiva (dirección y Dani Gimeno); ven todas, y cambia o borra cada una
-    quien la hizo o gestión deportiva. Filtro: `?jugador=`."""
+    """Parte física de los informes, de Competición de tardes y de Alto
+    rendimiento. Solo para el preparador físico y gestión deportiva (dirección
+    y Dani Gimeno); ven todas, y cambia o borra cada una quien la hizo o
+    gestión deportiva. Filtro: `?jugador=`."""
 
     serializer_class = EvaluacionFisicaSerializer
     permission_classes = [IsAuthenticated]
@@ -294,8 +304,8 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         jugador = serializer.validated_data["jugador"]
-        if not jugadores_evaluables_fisico().filter(pk=jugador.pk).exists():
-            raise PermissionDenied("Ese jugador no está en Competición de tardes.")
+        if not jugadores_con_fisico().filter(pk=jugador.pk).exists():
+            raise PermissionDenied("A ese jugador no se le hace la parte física (solo Competición de tardes y Alto rendimiento).")
         _sin_duplicar(jugador, "fisica")
         ev = serializer.save(evaluador=self.request.user, nombre_evaluador=_nombre_evaluador(self.request.user))
         informes.vincular(ev)
@@ -331,8 +341,10 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
             ultimas[ev["jugador_id"]] = ev
         return Response([{
             "id": j.id, "nombre": j.nombre, "edad": j.edad, "foto": j.foto_url or "",
+            "escuela": j.escuela.nombre if j.escuela_id else "",
+            "solo_informes": bool(j.escuela_id and j.escuela.solo_informes),
             "ultima": str(ultimas[j.id]["fecha"]) if j.id in ultimas else None,
-        } for j in jugadores_evaluables_fisico()])
+        } for j in jugadores_con_fisico()])
 
     @action(detail=True, methods=["post"])
     def terminar(self, request, pk=None):
@@ -373,7 +385,9 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         qs = Informe.objects.select_related("jugador", "jugador__escuela", "tenis", "fisica",
                                             "validado_por", "devuelto_por", "enviado_por")
         if not (es_direccion(u) or envia_informes(u)):
-            q = Q(tenis__evaluador=u)
+            # Quien hizo la parte física de un informe de Alto rendimiento (Josep)
+            # también lo ve, para saber dónde está su parte.
+            q = Q(tenis__evaluador=u) | Q(fisica__evaluador=u)
             if ve_tardes(u):
                 q |= Q(jugador__escuela__solo_informes=True)
             if es_coach(u):

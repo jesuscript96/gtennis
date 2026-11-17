@@ -1,5 +1,7 @@
 """El circuito del informe de Competición de tardes (27/10/2026) y, desde el
-10/11/2026, también de Alto rendimiento (solo tenis; lo valida dirección).
+10/11/2026, también de Alto rendimiento (lo valida dirección y el head coach de
+su color). Desde el 17/11/2026 el de Alto rendimiento puede llevar además la
+parte física (opcional: manda el tenis).
 
 Tenis y físico se hacen por separado; cada uno queda colgando del informe
 abierto de su jugador. Cuando las dos partes están terminadas, el informe pasa
@@ -55,10 +57,6 @@ def destinatarios_propuestos(jugador):
     return out
 
 
-def es_de_informe(jugador):
-    return bool(jugador.escuela_id and jugador.escuela.solo_informes)
-
-
 def informe_abierto(jugador, crear=True):
     """El informe en curso del jugador (no validado). Si no hay y `crear`, uno nuevo."""
     inf = jugador.informes.exclude(estado=Informe.Estado.VALIDADO).order_by("-creado").first()
@@ -72,10 +70,10 @@ def vincular(ev):
     abierto de su jugador. Si ese informe ya tiene esa parte, no deja crear
     otra: hay que seguir con la que hay.
 
-    Desde el 10/11/2026 también Alto rendimiento (decisión 12): su informe es
-    solo la parte de tenis y pasa por la misma validación."""
-    if not es_de_informe(ev.jugador) and not isinstance(ev, Evaluacion):
-        return None
+    Desde el 10/11/2026 también Alto rendimiento (decisión 12): su informe pasa
+    por la misma validación y lo manda la parte de tenis. Desde el 17/11/2026
+    la parte física también se cuelga del informe de Alto rendimiento (se suma
+    al PDF, sin hacer falta para validarlo)."""
     campo = "tenis" if isinstance(ev, Evaluacion) else "fisica"
     with transaction.atomic():
         inf = informe_abierto(ev.jugador)
@@ -121,8 +119,8 @@ def idioma_pdf(inf):
 
 def pdf_de(inf, idioma="ES"):
     """(nombre, contenido) del PDF del informe. Tardes lleva tenis y físico;
-    Alto rendimiento, solo tenis, con la misma maqueta (foto subida y
-    evolución respecto al último validado)."""
+    Alto rendimiento, el tenis y la página física si ya está terminada, con
+    la misma maqueta (foto subida y evolución respecto al último validado)."""
     from . import pdf
 
     return pdf.nombre_informe(inf, idioma), pdf.generar_informe(inf, idioma)
@@ -215,10 +213,20 @@ def parte_terminada(ev):
     inf.refresh_from_db()
     if not inf.completo:
         return inf
+    fisica_de_ar = isinstance(ev, EvaluacionFisica) and inf.circuito == "alto_rendimiento"
+    if fisica_de_ar and inf.estado == Informe.Estado.DEVUELTO and "fisico" not in inf.devuelto_partes:
+        # La física no era lo devuelto: no se da por corregido el tenis.
+        return inf
     if inf.estado == Informe.Estado.PENDIENTE:
         # Ya estaba pendiente y se ha retocado: se rehace el PDF, sin avisar otra vez.
         inf.save(update_fields=["actualizado"])
         guardar_en_drive(inf)
+        if fisica_de_ar:
+            # Alto rendimiento: la física llega después del tenis; quien valida
+            # tiene que saber que el PDF ya la lleva.
+            _avisar(usuarios_validan(inf), f"Informe de {inf.jugador.nombre}: parte física terminada",
+                    f"{inf.fisica.nombre_evaluador} ha terminado la preparación física. "
+                    f"Ya está en el PDF del informe, que sigue pendiente de validar.")
         return inf
     corregido = inf.estado == Informe.Estado.VALIDADO
     if corregido:
@@ -243,6 +251,11 @@ def parte_terminada(ev):
 def aprobar(inf, usuario, destinatarios):
     if inf.estado != Informe.Estado.PENDIENTE:
         raise InformeError("Solo se aprueban informes pendientes de validar.")
+    if inf.circuito == "alto_rendimiento" and inf.fisica and inf.fisica.estado != EvaluacionFisica.Estado.TERMINADA:
+        # En Alto rendimiento la física es opcional, pero si se ha empezado no
+        # se deja a medias en un informe aprobado (que ya no se toca).
+        raise InformeError("La parte física está empezada y sin terminar: que se termine antes de aprobar el "
+                           "informe (o se borra, si no va a llevarla).")
     inf.estado = Informe.Estado.VALIDADO
     inf.validado_por = usuario
     inf.validado_en = timezone.now()

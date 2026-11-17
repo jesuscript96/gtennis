@@ -279,7 +279,11 @@ def datos_informe(inf, idioma="ES"):
             b["evol"] = _evol(b["media_num"], antes(claves), idioma)
         actual = _media(inf.tenis.puntuaciones, catalogo.CRITERIOS)
         d["evol_media"] = _evol(actual, antes(catalogo.CRITERIOS), idioma)
-    d["fisico"] = datos_fisico(inf, idioma) if inf.fisica else None
+    # La página física solo sale terminada: en Alto rendimiento puede estar a medias.
+    from .models import EvaluacionFisica
+
+    d["fisico"] = (datos_fisico(inf, idioma)
+                   if inf.fisica and inf.fisica.estado == EvaluacionFisica.Estado.TERMINADA else None)
     d["foto"] = _foto_subida(inf.jugador) or d["foto"]
     if inf.validado_en:
         d["fecha"] = _fecha(timezone.localtime(inf.validado_en).date(), d["t"])

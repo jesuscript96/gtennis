@@ -120,7 +120,8 @@ function Tenis({ pestanas }) {
 }
 
 /** La parte física (21/10/2026): la hace el preparador físico y también
- *  gestión deportiva, solo para los jugadores de Competición de tardes. */
+ *  gestión deportiva, para los jugadores de Competición de tardes y (desde el
+ *  17/11/2026) de Alto rendimiento. */
 function Fisico({ pestanas, soloFisico }) {
   const router = useRouter();
   const [evaluaciones, setEvaluaciones] = useState(null);
@@ -150,6 +151,14 @@ function Fisico({ pestanas, soloFisico }) {
   const lista = (evaluaciones || []).filter((e) =>
     !q || e.jugador_nombre.toLowerCase().includes(q) || e.nombre_evaluador.toLowerCase().includes(q));
   const sinEvaluar = jugadores.filter((j) => !j.ultima).length;
+  // Desde el 17/11/2026 la física también es de Alto rendimiento: dos grupos en el desplegable.
+  const tardes = jugadores.filter((j) => j.solo_informes);
+  const resto = jugadores.filter((j) => !j.solo_informes);
+  const opcion = (j) => (
+    <option key={j.id} value={j.id}>
+      {j.nombre}{j.ultima ? ` · última ${fmtLarga(j.ultima)}` : " · sin evaluar"}
+    </option>
+  );
 
   return (
     <div>
@@ -157,8 +166,11 @@ function Fisico({ pestanas, soloFisico }) {
       {pestanas}
       <p className="help">
         La parte de <b>preparación física</b> del informe trimestral de cada jugador de Competición de
-        tardes: 11 aspectos del 1 al 5 en tres bloques y tus observaciones. Se guarda bloque a bloque,
-        así que puedes dejarla a medias y seguir otro día.
+        tardes y de Alto rendimiento: 11 aspectos del 1 al 5 en tres bloques y tus observaciones. Se
+        guarda bloque a bloque, así que puedes dejarla a medias y seguir otro día. En Competición de
+        tardes el informe espera a que estén tenis y física; en Alto rendimiento la física se suma al
+        informe de tenis (en el mismo PDF) y no hace falta para validarlo, pero si la empiezas hay que
+        terminarla antes de aprobarlo.
       </p>
 
       <div className="card eval-nueva">
@@ -166,11 +178,12 @@ function Fisico({ pestanas, soloFisico }) {
         <div className="eval-nueva-fila">
           <select id="fis-jugador" value={elegido} onChange={(e) => setElegido(e.target.value)}>
             <option value="">Elige jugador…</option>
-            {jugadores.map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.nombre}{j.ultima ? ` · última ${fmtLarga(j.ultima)}` : " · sin evaluar"}
-              </option>
-            ))}
+            {tardes.length > 0 && resto.length > 0 ? (
+              <>
+                <optgroup label="Competición de tardes">{tardes.map(opcion)}</optgroup>
+                <optgroup label="Alto rendimiento">{resto.map(opcion)}</optgroup>
+              </>
+            ) : jugadores.map(opcion)}
           </select>
           <button type="button" className="btn" disabled={!elegido || creando} onClick={empezar}>
             {creando ? "Creando…" : "Empezar"}

@@ -16,10 +16,11 @@ const fecha = (iso) => (iso ? fmtLarga(iso.slice(0, 10)) : "");
 function Partes({ inf, user }) {
   const router = useRouter();
   const [error, setError] = useState("");
-  // Alto rendimiento: solo tenis (10/11/2026, decisión 12).
+  // Alto rendimiento: manda el tenis y la física es opcional (17/11/2026).
+  const ar = inf.circuito === "alto_rendimiento";
   const filas = [
     ["tenis", "Tenis", inf.tenis, user?.evalua_tenis_informes],
-    ...(inf.circuito === "alto_rendimiento" ? [] : [["fisico", "Preparación física", inf.fisica, user?.evalua_fisico]]),
+    ["fisico", ar ? "Preparación física (opcional)" : "Preparación física", inf.fisica, user?.evalua_fisico],
   ];
   return (
     <div className="inf-partes">
@@ -34,8 +35,11 @@ function Partes({ inf, user }) {
                 {p.evaluador || "—"} · {p.puntuados}/{p.total} notas
                 {p.terminada_en && ` · terminada el ${fecha(p.terminada_en)}`}
               </p>
-            ) : <p className="eval-nota">Nadie la ha empezado todavía.</p>}
-            {(p || puede) && (
+            ) : <p className="eval-nota">{ar && clave === "fisico"
+              ? "Nadie la ha empezado: el informe va solo con tenis."
+              : "Nadie la ha empezado todavía."}</p>}
+            {/* La física solo se abre quien la evalúa (el head coach ve que existe, nada más). */}
+            {(clave === "fisico" ? puede : (p || puede)) && (
               <button type="button" className="btn ghost sm"
                 onClick={() => abrirParte(router, inf.jugador, clave, p?.id).catch((e) => setError(e.message))}>
                 {p ? "Abrir evaluación" : "Evaluar"}
@@ -74,7 +78,12 @@ function Validar({ inf, onCambio }) {
       <h2>Validación</h2>
       <p className="eval-nota">
         Revisa el PDF. Si hay que cambiar algo pequeño, puedes corregirlo tú: abre la evaluación
-        {inf.circuito === "alto_rendimiento" ? "" : " (las dos partes)"}. Si no, devuélvelo a quien la hizo con una nota.
+        {inf.circuito === "alto_rendimiento" ? " de tenis" : " (las dos partes)"}. Si no, devuélvelo a quien la hizo con una nota.
+        {inf.circuito === "alto_rendimiento" && (inf.fisica
+          ? (inf.fisica.estado === "TERMINADA"
+            ? " Lleva también la preparación física."
+            : " La preparación física está a medias: hay que terminarla antes de aprobar.")
+          : " No lleva preparación física.")}
       </p>
       {!modo && (
         <div className="eval-acciones">
@@ -227,7 +236,7 @@ export default function InformePage() {
           </p>
           {inf.estado === "EN_CURSO" && (
             <p className="eval-nota">{inf.circuito === "alto_rendimiento"
-              ? "Cuando la evaluación de tenis esté terminada, pasa a validar."
+              ? "Cuando la evaluación de tenis esté terminada, pasa a validar (la física se suma si está hecha)."
               : "Cuando tenis y preparación física estén terminadas, pasa a validar."}</p>
           )}
           {inf.estado === "DEVUELTO" && (
