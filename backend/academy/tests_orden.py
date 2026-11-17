@@ -514,6 +514,59 @@ class GonzaloYaEsDeLaEscuelaTests(Base):
         self.assertEqual(self.gonzalo.fecha_baja, date(2026, 11, 12))
 
 
+class JorgeMicoFueraTests(Base):
+    """17/11/2026: Jorge Mico es de pádel y no sale en la aplicación (academy.0063)."""
+
+    def setUp(self):
+        super().setUp()
+        import importlib
+
+        from django.apps import apps
+
+        self.apps = apps
+        self.mig = importlib.import_module("academy.migrations.0063_jorge_mico_fuera_de_la_aplicacion")
+        self.u_mico = User.objects.create_user(username="jorge.mico", password="x", role=User.Role.ENTRENADOR)
+        self.mico = Entrenador.objects.create(nombre="Jorge Mico", user=self.u_mico, solo_manual=True)
+        self.grupo.entrenadores.add(self.mico)
+
+    def columnas(self):
+        r = self.api(self.dir).get("/api/grupos/")
+        return [g["entrenador"]["nombre"] for b in r.json()["bloques"] for g in b["grupos"]]
+
+    def test_deja_de_salir_y_no_entra(self):
+        self.assertIn("Jorge Mico", self.columnas())
+        self.mig.dar_de_baja(self.apps, None)
+        self.mico.refresh_from_db()
+        self.u_mico.refresh_from_db()
+        self.assertFalse(self.mico.activo)
+        self.assertFalse(self.u_mico.is_active)
+        self.assertNotIn("Jorge Mico", self.columnas())
+        # Nada se borra: sigue en su bloque y en la base.
+        self.assertTrue(self.grupo.entrenadores.filter(pk=self.mico.pk).exists())
+        # Y fuera de Personas y funciones.
+        r = self.api(self.dir).get("/api/auth/personal/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertNotIn("jorge.mico", [p["username"] for p in r.json()["personas"]])
+
+    def test_se_deshace_como_estaba(self):
+        self.mig.dar_de_baja(self.apps, None)
+        self.mig.deshacer(self.apps, None)
+        self.mico.refresh_from_db()
+        self.u_mico.refresh_from_db()
+        self.assertTrue(self.mico.activo)
+        self.assertTrue(self.u_mico.is_active)
+        self.assertTrue(self.mico.solo_manual)
+
+    def test_no_toca_a_otros_jorge_ni_hace_nada_si_no_esta(self):
+        milla = Entrenador.objects.create(nombre="Jorge Milla")
+        self.mico.delete()
+        self.mig.dar_de_baja(self.apps, None)
+        milla.refresh_from_db()
+        self.assertTrue(milla.activo)
+        self.u_mico.refresh_from_db()
+        self.assertTrue(self.u_mico.is_active)
+
+
 class ReglasDelJugadorTests(Base):
     def url(self, jugador=None):
         return f"/api/jugadores/{(jugador or self.ana).id}/reglas/"
