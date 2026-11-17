@@ -8,6 +8,7 @@ mejoras que escribe él (antes las proponía Claude a partir de las notas). Si n
 """
 import json
 import logging
+import re
 
 import anthropic
 from django.conf import settings
@@ -59,14 +60,45 @@ Un entrenador ha escrito o dictado un comentario sobre un jugador. Tu única tar
 - Escribe el resultado en el idioma que se te indique; si el entrenador habló en otro, traduce fielmente sin reinterpretar.
 - Devuelve un único párrafo, sin saltos de línea, sin comillas, sin corchetes y sin viñetas.
 
-Responde solo con el texto final, sin presentaciones ni explicaciones."""
+Pon en el campo «texto» solo el comentario ya redactado: sin presentaciones, explicaciones, avisos, correcciones ni una segunda versión. Si dudas entre dos redacciones, elige una; no escribas nunca las dos ni comentes lo que has hecho."""
+
+_ESQUEMA_PULIR = {
+    "type": "object",
+    "properties": {"texto": {"type": "string"}},
+    "required": ["texto"],
+    "additionalProperties": False,
+}
+
+# Lo que el modelo a veces cuela en el texto: «Corrección: no debo añadir
+# información. Versión fiel: …» (17/11/2026, informe de Ruohan).
+_FINAL = re.compile(r"(?:versi[oó]n fiel|versi[oó]n corregida|faithful version|corrected version)\s*:", re.I)
+_NOTA = re.compile(r"(?:correcci[oó]n|aclaraci[oó]n|correction)\s*:", re.I)
+
+
+def limpiar_respuesta(texto):
+    """El comentario en un solo párrafo y sin la charla del modelo: si dejó una
+    «versión fiel», vale lo que viene después; si solo hay párrafos de
+    «corrección» o «aclaración», se quitan."""
+    partes = [p.strip() for p in re.split(r"\n+", texto) if p.strip()]
+    for i in range(len(partes) - 1, -1, -1):
+        marcas = list(_FINAL.finditer(partes[i]))
+        if marcas:
+            final = " ".join(x for x in [partes[i][marcas[-1].end():].strip(), *partes[i + 1:]] if x)
+            if final:
+                return final
+            break
+    sin_notas = [p for p in partes if not _NOTA.match(p)]
+    return " ".join(sin_notas or partes)
 
 
 def pulir(texto, idioma, habilidad):
-    """Redacción limpia del comentario del entrenador sobre `habilidad`, en `idioma` (ES/EN)."""
+    """Redacción limpia del comentario del entrenador sobre `habilidad`, en `idioma` (ES/EN).
+    Va en un campo de una salida estructurada (como las frases y las traducciones)
+    para que el modelo no pueda añadir explicaciones, y aun así se limpia."""
     respuesta = _llamar(
         max_tokens=4000,
         system=SISTEMA_PULIR,
+        output_config={"format": {"type": "json_schema", "schema": _ESQUEMA_PULIR}},
         messages=[{
             "role": "user",
             "content": (f"Idioma del informe: {IDIOMA[idioma]}.\n"
@@ -74,7 +106,14 @@ def pulir(texto, idioma, habilidad):
                         f"Comentario del entrenador:\n{texto}"),
         }],
     )
-    return _texto(respuesta)
+    try:
+        datos = json.loads(_texto(respuesta))
+        limpio = limpiar_respuesta(str(datos["texto"]))
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        raise IANoDisponible("Claude ha devuelto un comentario que no se puede leer.") from e
+    if not limpio:
+        raise IANoDisponible("Claude no ha devuelto texto.")
+    return limpio
 
 
 SISTEMA_FRASES = """Pasas a limpio las fortalezas y las áreas de mejora que un entrenador de una academia de tenis ha escrito sobre su jugador, para el informe que recibe la familia.

@@ -229,14 +229,18 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
         """El informe maquetado, para descargarlo. Si la evaluación va en un
         informe de Alto rendimiento, el PDF de ese informe (con la foto y la
         evolución): en español hasta que se valida y después en el de la
-        familia. Si no, la evaluación sola en el idioma de la familia."""
+        familia. Si no, la evaluación sola en el idioma de la familia.
+        `?idioma=ES|EN` pide uno de los dos (17/11/2026: si la familia lo
+        recibe en inglés, quien lo hace puede tenerlo también en español)."""
         ev = self.get_object()
         inf = getattr(ev, "informe", None)
+        pedido = request.query_params.get("idioma")
+        pedido = pedido if pedido in ("ES", "EN") else None
         try:
             if inf is not None and inf.circuito == "alto_rendimiento":
-                nombre, contenido = informes.pdf_de(inf, informes.idioma_pdf(inf))
+                nombre, contenido = informes.pdf_de(inf, pedido or informes.idioma_pdf(inf))
             else:
-                idioma = informes.idioma_familia(ev.jugador, ev.idioma)
+                idioma = pedido or informes.idioma_familia(ev.jugador, ev.idioma)
                 nombre, contenido = pdf.nombre(ev, idioma), pdf.generar(ev, idioma)
         except ia.IANoDisponible as e:
             raise ValidationError({"detail": f"No se ha podido traducir el PDF: {e}"})

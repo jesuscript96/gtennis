@@ -435,3 +435,100 @@ class FisicaAltoRendimientoTests(Base):
         inf.refresh_from_db()
         self.assertEqual((inf.estado, inf.fisica_id), ("PENDIENTE", fis_id))
         self.assertEqual(Informe.objects.filter(jugador=self.ana).count(), 1)
+
+
+@SIN_CAPTURA_DE_PLANTILLAS
+@override_settings(ANTHROPIC_API_KEY="", GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")
+class InformeEnEspanolYEnInglesTests(Base):
+    """17/11/2026: si la familia recibe el informe en inglés, quien lo hace
+    también lo tiene en español (en la app y en Drive)."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import DatosInforme
+        self.evaluar(self.u_blas, self.ana)
+        self.inf = Informe.objects.get(jugador=self.ana)
+        DatosInforme.objects.update_or_create(jugador=self.ana, defaults={"idioma": "EN"})
+        self.ana.refresh_from_db()
+
+    def _guardar(self, estado):
+        self.inf.estado = estado
+        self.inf.save()
+        subidas = []
+
+        def subir(inf, idioma="ES", copia_es=False):
+            subidas.append((idioma, copia_es))
+            if copia_es:
+                inf.drive_file_id_es, inf.drive_url_es = "es1", "https://drive/es"
+            else:
+                inf.drive_file_id, inf.drive_url, inf.drive_carpeta = "main1", "https://drive/main", "x"
+
+        with mock.patch.object(drive, "configurado", return_value=True), \
+                mock.patch.object(drive, "subir_informe", side_effect=subir), \
+                mock.patch.object(drive, "a_la_papelera") as papelera, \
+                mock.patch("evaluaciones.traduccion.tenis"):
+            from . import informes
+            aviso = informes.guardar_en_drive(self.inf)
+        return subidas, papelera, aviso
+
+    def test_validado_en_ingles_deja_tambien_la_copia_en_espanol(self):
+        subidas, papelera, aviso = self._guardar(Informe.Estado.VALIDADO)
+        self.assertEqual(subidas, [("EN", False), ("ES", True)])
+        self.assertIsNone(aviso)
+        self.inf.refresh_from_db()
+        self.assertEqual((self.inf.drive_file_id_es, self.inf.drive_url_es), ("es1", "https://drive/es"))
+        papelera.assert_not_called()
+
+    def test_pendiente_va_solo_en_espanol_y_quita_la_copia_vieja(self):
+        self.inf.drive_file_id_es, self.inf.drive_url_es = "es-viejo", "https://drive/viejo"
+        self.inf.save()
+        subidas, papelera, _ = self._guardar(Informe.Estado.PENDIENTE)
+        self.assertEqual(subidas, [("ES", False)])
+        papelera.assert_called_once_with("es-viejo")
+        self.inf.refresh_from_db()
+        self.assertEqual((self.inf.drive_file_id_es, self.inf.drive_url_es), ("", ""))
+
+    def test_si_falla_la_copia_se_avisa_sin_perder_el_informe(self):
+        self.inf.estado = Informe.Estado.VALIDADO
+        self.inf.save()
+
+        def subir(inf, idioma="ES", copia_es=False):
+            if copia_es:
+                raise drive.DriveNoDisponible("No se ha podido guardar en Drive.")
+            inf.drive_file_id, inf.drive_url, inf.drive_carpeta = "main1", "https://drive/main", "validados"
+
+        with mock.patch.object(drive, "configurado", return_value=True), \
+                mock.patch.object(drive, "subir_informe", side_effect=subir), \
+                mock.patch("evaluaciones.traduccion.tenis"):
+            from . import informes
+            aviso = informes.guardar_en_drive(self.inf)
+        self.assertIn("copia en español", aviso)
+        self.inf.refresh_from_db()
+        self.assertEqual(self.inf.drive_file_id, "main1")
+
+    @override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="{}", DRIVE_CT_USUARIO="gestion@gtennis.com")
+    def test_la_copia_es_otro_fichero_en_la_misma_carpeta(self):
+        fake = FakeDrive()
+        with mock.patch.object(drive, "_sesion", return_value=fake), \
+                mock.patch.object(drive, "_carpeta_ar", return_value="carpeta-ar"), \
+                mock.patch.object(pdf, "generar_informe", return_value=b"%PDF"):
+            drive.subir_informe(self.inf, "EN")
+            drive.subir_informe(self.inf, "ES", copia_es=True)
+        self.assertEqual(len(fake.creados), 2)
+        self.assertNotEqual(self.inf.drive_file_id, self.inf.drive_file_id_es)
+        self.assertTrue(self.inf.drive_file_id and self.inf.drive_file_id_es)
+
+    def test_el_pdf_de_la_evaluacion_se_pide_en_cada_idioma(self):
+        ev = self.inf.tenis
+        c = self.api(self.u_blas)
+        with mock.patch.object(pdf, "generar_informe", return_value=b"%PDF"):
+            es = c.get(f"/api/evaluaciones/{ev.id}/pdf/", {"idioma": "ES"})
+            en = c.get(f"/api/evaluaciones/{ev.id}/pdf/", {"idioma": "EN"})
+        self.assertIn("-ES.pdf", es["Content-Disposition"])
+        self.assertIn("-EN.pdf", en["Content-Disposition"])
+
+    def test_el_informe_enseña_los_dos_enlaces_de_drive(self):
+        self.inf.drive_url, self.inf.drive_url_es = "https://drive/en", "https://drive/es"
+        self.inf.save()
+        d = self.api(self.dir).get(f"/api/informes/{self.inf.id}/").json()
+        self.assertEqual((d["drive_url"], d["drive_url_es"]), ("https://drive/en", "https://drive/es"))

@@ -223,6 +223,9 @@ class Informe(models.Model):
     drive_file_id = models.CharField(max_length=120, blank=True)
     drive_url = models.URLField(blank=True)
     drive_carpeta = models.CharField(max_length=20, blank=True)  # «pendientes» | «validados»
+    # Copia en español junto al PDF de la familia cuando este va en otro idioma (17/11/2026).
+    drive_file_id_es = models.CharField(max_length=120, blank=True)
+    drive_url_es = models.URLField(blank=True)
 
     creado = models.DateTimeField(auto_now_add=True)
     actualizado = models.DateTimeField(auto_now=True)

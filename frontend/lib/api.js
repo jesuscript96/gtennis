@@ -402,8 +402,9 @@ export const getFicheroEvaluacion = (id) => req(`/evaluaciones/${id}/fichero/`);
 export const guardarEvaluacionEnDrive = (id) =>
   req(`/evaluaciones/${id}/drive/`, { method: "POST", body: "{}" });
 // El informe en PDF como fichero (no es JSON: va aparte de req()).
-export async function descargarPdfEvaluacion(id) {
-  const res = await fetch(`${BASE}/evaluaciones/${id}/pdf/`, {
+// `idioma` (ES/EN) pide uno concreto; sin él, el que toca (el de la familia tras validar).
+export async function descargarPdfEvaluacion(id, idioma) {
+  const res = await fetch(`${BASE}/evaluaciones/${id}/pdf/${idioma ? `?idioma=${idioma}` : ""}`, {
     headers: { Authorization: `Token ${getToken()}` }, cache: "no-store",
   });
   if (!res.ok) throw new Error(`No se ha podido generar el PDF (${res.status}).`);

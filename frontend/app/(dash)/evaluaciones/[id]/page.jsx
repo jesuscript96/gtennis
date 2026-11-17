@@ -66,9 +66,9 @@ export default function EvaluacionPage() {
       .catch((e) => setError(e.message));
   }, [id]);
 
-  async function descargar() {
+  async function descargar(idioma) {
     try {
-      const f = await descargarPdfEvaluacion(id);
+      const f = await descargarPdfEvaluacion(id, idioma);
       const url = URL.createObjectURL(f.blob);
       const a = Object.assign(document.createElement("a"), { href: url, download: f.nombre });
       a.click();
@@ -125,7 +125,13 @@ export default function EvaluacionPage() {
             {ev.estado === "TERMINADA" && catalogo.drive && ev.puede_editar && !ev.drive_url && !ev.informe && (
               <button type="button" className="btn ghost" disabled={drive === "subiendo"} onClick={subirADrive}>Guardar en Drive</button>
             )}
-            {ev.estado === "TERMINADA" && <button type="button" className="btn ghost" onClick={descargar}>Descargar PDF</button>}
+            {/* 17/11/2026: si la familia lo recibe en inglés, quien lo hace lo tiene también en español. */}
+            {ev.estado === "TERMINADA" && (ev.idioma_familia === "EN" ? (
+              <>
+                <button type="button" className="btn ghost" onClick={() => descargar("ES")}>Descargar PDF en español</button>
+                <button type="button" className="btn ghost" onClick={() => descargar("EN")}>Descargar PDF en inglés</button>
+              </>
+            ) : <button type="button" className="btn ghost" onClick={() => descargar()}>Descargar PDF</button>)}
             {ev.estado === "TERMINADA" && !ev.de_tardes && (
               <label className="inf-asignado">PDF para la familia en
                 <select value={ev.idioma_familia} disabled={!ev.puede_editar}

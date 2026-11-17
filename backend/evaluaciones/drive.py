@@ -251,9 +251,11 @@ def _carpeta_ar(s, destino):
                          min(AR_TRAMOS_QUE_EXISTEN, len(_tramos(settings.DRIVE_AR_RUTA))))
 
 
-def subir_informe(inf, idioma="ES"):
+def subir_informe(inf, idioma="ES", copia_es=False):
     """Deja el PDF del informe en la carpeta que le toca por su estado y
     reescribe el mismo fichero: solo se guarda la última versión. Con
+    `copia_es` es la copia en español que se guarda junto al PDF de la familia
+    cuando ella lo recibe en otro idioma (17/11/2026), con su propio fichero. Con
     DRIVE_CT_USUARIO, en «Por validar» o «Validados» de su Drive, dentro de
     la ruta de su circuito (tardes o Alto rendimiento); si no, en la unidad
     compartida, Escuela › Jugador › «Pendientes de validar» o «Validados y
@@ -270,8 +272,9 @@ def subir_informe(inf, idioma="ES"):
         nombre, contenido = pdf.nombre_informe(inf, idioma), pdf.generar_informe(inf, idioma)
         params = {**COMUN, "uploadType": "multipart", "fields": "id,webViewLink,parents"}
         actual = None
-        if inf.drive_file_id and _sigue_ahi(s, inf.drive_file_id):
-            actual = _ok(s.get(f"{API}/{inf.drive_file_id}", params={**COMUN, "fields": "parents,driveId"}),
+        file_id = inf.drive_file_id_es if copia_es else inf.drive_file_id
+        if file_id and _sigue_ahi(s, file_id):
+            actual = _ok(s.get(f"{API}/{file_id}", params={**COMUN, "fields": "parents,driveId"}),
                          "leer el informe")
             # El de la unidad compartida de antes no se mueve a «Mi unidad»: se hace uno nuevo.
             if ct_configurado() and actual.get("driveId"):
@@ -282,12 +285,15 @@ def subir_informe(inf, idioma="ES"):
             antiguos = [p for p in actual.get("parents", []) if p != carpeta]
             if antiguos or carpeta not in actual.get("parents", []):
                 mover = {"addParents": carpeta, "removeParents": ",".join(antiguos)}
-            datos = _ok(s.patch(f"{SUBIDA}/{inf.drive_file_id}", params={**params, **mover}, data=cuerpo, headers=cab),
+            datos = _ok(s.patch(f"{SUBIDA}/{file_id}", params={**params, **mover}, data=cuerpo, headers=cab),
                         "actualizar el informe")
         else:
             cuerpo, cab = _multipart({"name": nombre, "parents": [carpeta], "mimeType": "application/pdf"}, contenido)
             datos = _ok(s.post(SUBIDA, params=params, data=cuerpo, headers=cab), "guardar el informe")
-        inf.drive_file_id, inf.drive_url, inf.drive_carpeta = datos["id"], datos.get("webViewLink", ""), destino
+        if copia_es:
+            inf.drive_file_id_es, inf.drive_url_es = datos["id"], datos.get("webViewLink", "")
+        else:
+            inf.drive_file_id, inf.drive_url, inf.drive_carpeta = datos["id"], datos.get("webViewLink", ""), destino
     except DriveNoDisponible:
         raise
     except Exception as e:  # noqa: BLE001

@@ -182,6 +182,17 @@ def guardar_en_drive(inf):
         inf.save(update_fields=["drive_file_id", "drive_url", "drive_carpeta", "actualizado"])
     except drive.DriveNoDisponible as e:
         return f"{e} El informe está en la app; se reintenta al validar."
+    # Si la familia lo recibe en otro idioma, en Drive queda también el de
+    # quien lo ha hecho, en español (17/11/2026); si ya no hace falta, se quita.
+    try:
+        if idioma != "ES":
+            drive.subir_informe(inf, "ES", copia_es=True)
+        elif inf.drive_file_id_es:
+            drive.a_la_papelera(inf.drive_file_id_es)
+            inf.drive_file_id_es, inf.drive_url_es = "", ""
+        inf.save(update_fields=["drive_file_id_es", "drive_url_es", "actualizado"])
+    except drive.DriveNoDisponible as e:
+        aviso = " ".join(filter(None, [aviso, f"{e} La copia en español no se ha guardado; pulsa «Guardar en Drive» para reintentarlo."]))
     return aviso
 
 

@@ -195,7 +195,7 @@ class InformeSerializer(serializers.ModelSerializer):
         fields = ["id", "jugador", "jugador_nombre", "edad", "estado", "estado_display", "version", "completo",
                   "circuito", "tenis", "fisica", "idioma", "devuelto_partes", "nota_devolucion", "devuelto_por_nombre",
                   "devuelto_en", "validado_por_nombre", "validado_en", "destinatarios", "email_familia",
-                  "destinatarios_propuestos", "drive_url", "drive_carpeta", "tiene_foto", "puede_validar",
+                  "destinatarios_propuestos", "drive_url", "drive_url_es", "drive_carpeta", "tiene_foto", "puede_validar",
                   "puede_enviar", "enviado_en", "enviado_por_nombre", "envio_error", "correo_activo",
                   "creado", "actualizado"]
 

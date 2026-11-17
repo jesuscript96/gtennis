@@ -232,7 +232,7 @@ export default function InformePage() {
         <FotoJugador jugadorId={inf.jugador} nombre={inf.jugador_nombre} />
         <div className="inf-resumen">
           <p><span className={`pill ${pill}`}>{estado}</span>
-            {inf.idioma === "EN" && <span className="eval-nota"> · a la familia se le envía en inglés</span>}
+            {inf.idioma === "EN" && <span className="eval-nota"> · a la familia se le envía en inglés; aquí y en Drive lo tienes también en español</span>}
           </p>
           {inf.estado === "EN_CURSO" && (
             <p className="eval-nota">{inf.circuito === "alto_rendimiento"
@@ -250,7 +250,7 @@ export default function InformePage() {
           <div className="eval-acciones">
             {inf.tenis && (
               <button type="button" className="btn ghost" disabled={cargandoPdf} onClick={() => verPdf("ES")}>
-                {cargandoPdf ? "Generando PDF…" : "Ver PDF"}
+                {cargandoPdf ? "Generando PDF…" : inf.idioma === "EN" ? "Ver PDF en español" : "Ver PDF"}
               </button>
             )}
             {inf.tenis && inf.idioma === "EN" && (
@@ -259,7 +259,9 @@ export default function InformePage() {
               </button>
             )}
             {pdf && <a className="btn ghost" href={pdf.url} download={pdf.nombre}>Descargar PDF</a>}
-            {inf.drive_url && <a className="btn ghost" href={inf.drive_url} target="_blank" rel="noreferrer">Abrir en Drive</a>}
+            {inf.drive_url && <a className="btn ghost" href={inf.drive_url} target="_blank" rel="noreferrer">
+              {inf.drive_url_es ? "Abrir en Drive (inglés)" : "Abrir en Drive"}</a>}
+            {inf.drive_url_es && <a className="btn ghost" href={inf.drive_url_es} target="_blank" rel="noreferrer">Abrir en Drive (español)</a>}
             {inf.completo && !inf.drive_url && inf.puede_validar && (
               <button type="button" className="btn ghost" onClick={reintentarDrive}>Guardar en Drive</button>
             )}
