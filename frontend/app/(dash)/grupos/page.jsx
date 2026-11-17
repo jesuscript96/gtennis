@@ -42,6 +42,10 @@ import DivisionesRanking from "../../../components/DivisionesRanking";
  *
  * 10/11/2026: mover a un alumno solo cambia quién le gestiona; sus porcentajes
  * se cambian en su ficha (si el nuevo no le entrena, se avisa).
+ *
+ * 17/11/2026: el head coach tiene siempre su columna (Santi no tenía dónde
+ * recibir a nadie) y dos entrenadores que llevan el mismo grupo salen como una
+ * sola columna, «Mario Muniesa / Jorge Ibáñez» (`entrenador.ids`).
  */
 const VISTAS = [["entrenador", "Por entrenador"], ["division", "Por división"]];
 
@@ -168,8 +172,10 @@ function PorEntrenador({ pestanas }) {
         "alumnos se quedan sin responsable hasta que los lleves a otro grupo. " +
         "Se puede volver a activar desde Entrenadores."
       )) return;
+      // Una columna de dos (Mario / Jorge) se quita entera.
       return accion(
-        () => resource("entrenadores").update(q.id, { activo: false }),
+        () => Promise.all((q.ids || [q.id]).map(
+          (id) => resource("entrenadores").update(id, { activo: false }))),
         `${q.nombre} fuera de la lista de grupos.`
       );
     }
@@ -371,7 +377,7 @@ function PorEntrenador({ pestanas }) {
     const propios = g.jugadores.filter(coincide);
     const clave = `col-${e.id}`;
     const payload = {
-      tipo: "entrenador", id: e.id, nombre: e.nombre, desde: coachId,
+      tipo: "entrenador", id: e.id, ids: e.ids, nombre: e.nombre, desde: coachId,
       ordena: puedeOrdenar(coachId), muda: columnasEditables,
     };
     const arrastrable = payload.ordena || payload.muda;
@@ -513,6 +519,9 @@ function PorEntrenador({ pestanas }) {
       {datos.bloques.map((b) => {
         const clave = b.coach ? `bloque-${b.coach.id}` : "bloque-sin";
         const alumnos = new Set(b.grupos.flatMap((g) => g.jugadores.map((j) => j.id))).size;
+        // Una columna de dos (Mario / Jorge) son dos entrenadores.
+        const entrenadores = b.grupos.reduce(
+          (n, g) => n + (g.entrenador.ids?.length || 1), 0);
         const color = b.coach?.color;
         return (
           <section key={clave}
@@ -532,7 +541,7 @@ function PorEntrenador({ pestanas }) {
               <h2>{b.coach ? b.coach.nombre : "Sin bloque"}</h2>
               {color && <span className="pill-color">Grupo {b.coach.color_nombre.toLowerCase()}</span>}
               <span className="cuenta">
-                {b.grupos.length} entrenador{b.grupos.length === 1 ? "" : "es"}
+                {entrenadores} entrenador{entrenadores === 1 ? "" : "es"}
                 {" · "}{alumnos} alumno{alumnos === 1 ? "" : "s"}
               </span>
               {color && (

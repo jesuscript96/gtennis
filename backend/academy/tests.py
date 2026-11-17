@@ -1177,8 +1177,9 @@ class FichaDeportivaCoachTests(TestCase):
 
 
 class GruposParaTodosTests(TestCase):
-    """14/10/2026: la página de Grupos se ve igual para todos; el head coach
-    no sale como columna vacía de su grupo, y las columnas se ordenan."""
+    """14/10/2026: la página de Grupos se ve igual para todos y las columnas se
+    ordenan. Desde el 17/11/2026 el head coach sale siempre en su bloque, aunque
+    no lleve a nadie (antes se ocultaba): Santi no tenía dónde recibir alumnos."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -1210,17 +1211,18 @@ class GruposParaTodosTests(TestCase):
         return {b["coach"]["nombre"]: [g["entrenador"]["nombre"] for g in b["grupos"]]
                 for b in r.json()["bloques"] if b["coach"] and b["coach"]["id"] in mios}
 
-    def test_el_entrenador_ve_todos_los_grupos_y_sin_el_head_coach(self):
+    def test_el_entrenador_ve_todos_los_grupos_con_el_head_coach_en_el_suyo(self):
         bloques = self._bloques(self.u_blas)
-        self.assertEqual(bloques, {"Dani": ["Blas", "Javi"], "Santi": ["Nacho"]})
+        self.assertEqual(bloques, {"Dani": ["Blas", "Dani", "Javi"], "Santi": ["Nacho"]})
         self.assertEqual(self._bloques(self.u_dani), bloques)
 
     def test_el_head_coach_ordena_su_grupo_y_no_otro(self):
         self.api.force_authenticate(self.u_dani)
         r = self.api.post("/api/grupos/ordenar/", {
-            "coach": self.amarillo.id, "orden": [self.javi.id, self.blas.id]}, format="json")
+            "coach": self.amarillo.id,
+            "orden": [self.javi.id, self.blas.id, self.dani_e.id]}, format="json")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(self._bloques(self.u_dani)["Dani"], ["Javi", "Blas"])
+        self.assertEqual(self._bloques(self.u_dani)["Dani"], ["Javi", "Blas", "Dani"])
         r = self.api.post("/api/grupos/ordenar/", {
             "coach": self.naranja.id, "orden": [self.nacho.id]}, format="json")
         self.assertEqual(r.status_code, 403)

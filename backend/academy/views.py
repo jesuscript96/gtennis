@@ -1804,6 +1804,11 @@ class GrupoViewSet(viewsets.ViewSet):
     alumnos de su color: los cambia de columna, los deja sin grupo y coloca a
     las altas nuevas. Cambiar a un entrenador de bloque sigue siendo cosa de
     dirección.
+
+    17/11/2026: el head coach tiene siempre su columna en su bloque, lleve o
+    no alumnos (sin ella, Santi no tenía dónde recibir a nadie); y dos
+    entrenadores que llevan el mismo grupo (`Entrenador.columna_con`: Mario
+    Muniesa y Jorge Ibáñez) salen como una sola columna, «Mario / Jorge».
     """
 
     # El organigrama lo ve todo el mundo igual (14/10/2026): dirección,
@@ -1860,6 +1865,25 @@ class GrupoViewSet(viewsets.ViewSet):
         )
         ids = {e.id for e in entrenadores}
         nombres = {e.id: e.nombre for e in entrenadores}
+        # Quién da la cara en cada columna: el que comparte columna con otro
+        # no tiene la suya, va en la del principal (una cadena o un ciclo, que
+        # solo salen de editar a mano, dejan a cada uno en la suya).
+        por_id = {e.id: e for e in entrenadores}
+
+        def principal_de(e):
+            visto = {e.id}
+            actual = e
+            while actual.columna_con_id in por_id and actual.columna_con_id != actual.id:
+                if actual.columna_con_id in visto:
+                    return e
+                actual = por_id[actual.columna_con_id]
+                visto.add(actual.id)
+            return actual
+
+        principal = {e.id: principal_de(e).id for e in entrenadores}
+        en_columna = defaultdict(list)  # principal -> [entrenadores de la columna]
+        for e in entrenadores:
+            en_columna[principal[e.id]].append(e)
         jugadores = {
             j.id: j
             for j in Jugador.objects.filter(activo=True).select_related(
@@ -1887,23 +1911,32 @@ class GrupoViewSet(viewsets.ViewSet):
 
         por_bloque = defaultdict(list)
         for e in entrenadores:
-            coach = bloque_de(e)
-            # El head coach no sale como columna de su propio grupo si no lleva
-            # a nadie: ya está en la cabecera (Dani Gimeno).
-            if (coach is not None and coach.color and coach.user_id
-                    and coach.user_id == e.user_id and not propios[e.id]):
+            # Quien comparte columna va en la del principal.
+            if principal[e.id] != e.id:
                 continue
+            coach = bloque_de(e)
+            # Una sola columna con los alumnos de todos los que la llevan,
+            # cada uno una vez.
+            miembros = [e] + [m for m in en_columna[e.id] if m.id != e.id]
+            unicos = {}
+            for m in miembros:
+                for f in propios[m.id]:
+                    unicos.setdefault(f["id"], f)
+            alumnos = sorted(unicos.values(), key=lambda f: f["nombre"])
             # Los niveles de sus alumnos, para situarse: la división ya no dice
             # a quién puede entrenar.
-            niveles = sorted({f["division"] for f in propios[e.id] if f["division"]})
+            niveles = sorted({f["division"] for f in alumnos if f["division"]})
             por_bloque[coach.id if coach else None].append({
                 "entrenador": {
                     "id": e.id,
-                    "nombre": e.nombre,
+                    # Todos los que la llevan, el principal primero: «Mario
+                    # Muniesa / Jorge Ibáñez».
+                    "ids": [m.id for m in miembros],
+                    "nombre": " / ".join(m.nombre for m in miembros),
                     "foto": e.foto_url or "",
                     "divisiones": " · ".join(f"D{n}" for n in niveles) or "—",
                 },
-                "jugadores": propios[e.id],
+                "jugadores": alumnos,
             })
 
         # Se devuelven TODOS los bloques, también los que se han quedado sin
@@ -2026,8 +2059,11 @@ class GrupoViewSet(viewsets.ViewSet):
         self._assert_gestiona(jugador, entrenador)
         if jugador.entrenador_responsable_id is None:
             raise ValidationError("Primero ponle en un grupo; luego se comparte.")
-        if jugador.entrenador_responsable_id != entrenador.id:
-            jugador.cogestores.add(entrenador)
+        # Si la columna la llevan dos (Mario y Jorge), la gestión pasa a los dos.
+        principal, companeros = grupos.columna(entrenador)
+        en_la_columna = [principal, *companeros]
+        if jugador.entrenador_responsable_id not in {e.id for e in en_la_columna}:
+            jugador.cogestores.add(*en_la_columna)
         return Response({"ok": True})
 
     @action(detail=False, methods=["post"])
@@ -2080,13 +2116,16 @@ class GrupoViewSet(viewsets.ViewSet):
             if coach is None:
                 raise NotFound("Ese coach no existe.")
         desde = request.data.get("desde")
-        salen = ent.coaches.all()
-        if desde not in (None, "", "null"):
-            salen = salen.filter(Q(pk=desde) | ~Q(color=""))
-        for c in salen:
-            c.entrenadores.remove(ent)
-        if coach is not None:
-            coach.entrenadores.add(ent)
+        # La columna se muda entera: con quien la comparte (Mario y Jorge).
+        principal, companeros = grupos.columna(ent)
+        for quien in [principal, *companeros]:
+            salen = quien.coaches.all()
+            if desde not in (None, "", "null"):
+                salen = salen.filter(Q(pk=desde) | ~Q(color=""))
+            for c in salen:
+                c.entrenadores.remove(quien)
+            if coach is not None:
+                coach.entrenadores.add(quien)
         return Response({"ok": True})
 
     @action(detail=False, methods=["post"])
@@ -2098,13 +2137,17 @@ class GrupoViewSet(viewsets.ViewSet):
         (10/11/2026): se cambian en la ficha."""
         jugador, entrenador = self._jugador(request), self._entrenador(request)
         self._assert_gestiona(jugador, entrenador)
+        # La columna de Mario y Jorge es de los dos: quitarle de ella es quitarle
+        # de los dos.
+        principal, companeros = grupos.columna(entrenador)
+        en_la_columna = {principal.pk, *(c.pk for c in companeros)}
         with transaction.atomic():
-            if jugador.entrenador_responsable_id == entrenador.id:
+            if jugador.entrenador_responsable_id in en_la_columna:
                 jugador.entrenador_responsable = None
                 jugador.save(update_fields=["entrenador_responsable"])
                 jugador.cogestores.clear()
-            elif jugador.cogestores.filter(pk=entrenador.pk).exists():
-                jugador.cogestores.remove(entrenador)
+            elif jugador.cogestores.filter(pk__in=en_la_columna).exists():
+                jugador.cogestores.remove(*en_la_columna)
             else:
                 raise ValidationError(
                     "Ese entrenador no gestiona a este jugador. Con quién entrena se cambia en su ficha.")

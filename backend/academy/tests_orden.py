@@ -316,6 +316,135 @@ class GruposTests(Base):
             "jugador": self.ana.id, "entrenador": self.javi.id}, format="json").status_code, 403)
 
 
+class ColumnasDeGruposTests(Base):
+    """17/11/2026: Santi tiene su columna aunque no lleve a nadie, y Mario y
+    Jorge, que llevan el mismo grupo, salen como una sola columna."""
+
+    def setUp(self):
+        super().setUp()
+        # Blas es el principal; Javi comparte columna con él.
+        self.javi.columna_con = self.blas
+        self.javi.save()
+        self.ana.cogestores.add(self.javi)
+        self.bea = Jugador.objects.create(nombre="Bea Orden", entrenador_responsable=self.blas)
+        self.bea.cogestores.add(self.javi)
+
+    def columnas(self, user=None):
+        r = self.api(user or self.dir).get("/api/grupos/")
+        self.assertEqual(r.status_code, 200, r.content)
+        bloque = next(b for b in r.json()["bloques"] if b["coach"] and b["coach"]["id"] == self.grupo.id)
+        return bloque["grupos"]
+
+    def test_el_head_coach_sale_en_su_bloque_aunque_no_lleve_a_nadie(self):
+        santi = Entrenador.objects.create(nombre="Pablo Head", user=self.pablo)
+        self.grupo.entrenadores.add(santi)
+        col = next(g for g in self.columnas() if g["entrenador"]["id"] == santi.id)
+        self.assertEqual(col["jugadores"], [])
+        # Y puede recibir a alguien: el head coach mueve dentro de su color.
+        r = self.api(self.pablo).post("/api/grupos/mover/", {"jugador": self.ana.id, "entrenador": santi.id},
+                                      format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        col = next(g for g in self.columnas() if g["entrenador"]["id"] == santi.id)
+        self.assertEqual([j["nombre"] for j in col["jugadores"]], ["Ana Orden"])
+
+    def test_dos_entrenadores_que_comparten_columna_salen_como_una(self):
+        cols = self.columnas()
+        self.assertEqual([g["entrenador"]["nombre"] for g in cols], ["Blas / Javi"])
+        col = cols[0]
+        self.assertEqual(col["entrenador"]["id"], self.blas.id)
+        self.assertEqual(col["entrenador"]["ids"], [self.blas.id, self.javi.id])
+        # Cada alumno una sola vez, aunque lo vean los dos.
+        self.assertEqual([j["nombre"] for j in col["jugadores"]], ["Ana Orden", "Bea Orden"])
+
+    def test_el_nombre_empieza_por_el_principal_aunque_vaya_detras_en_el_abecedario(self):
+        # Mario Muniesa (principal) / Jorge Ibáñez: Jorge sale antes por orden alfabético.
+        Entrenador.objects.filter(pk=self.javi.pk).update(columna_con=None)
+        Entrenador.objects.filter(pk=self.blas.pk).update(columna_con=self.javi)
+        self.assertEqual([g["entrenador"]["nombre"] for g in self.columnas()], ["Javi / Blas"])
+
+    def test_si_el_principal_esta_de_baja_el_otro_vuelve_a_tener_la_suya(self):
+        self.blas.activo = False
+        self.blas.save()
+        self.assertEqual([g["entrenador"]["nombre"] for g in self.columnas()], ["Javi"])
+
+    def test_meter_a_uno_en_la_columna_unida_lo_deja_con_los_dos(self):
+        carlos = Jugador.objects.create(nombre="Carlos Orden")
+        for entrenador in (self.blas, self.javi):  # da igual por cuál se entre
+            carlos.entrenador_responsable = None
+            carlos.save()
+            carlos.cogestores.clear()
+            r = self.api(self.pablo).post("/api/grupos/mover/", {
+                "jugador": carlos.id, "entrenador": entrenador.id}, format="json")
+            self.assertEqual(r.status_code, 200, r.content)
+            carlos.refresh_from_db()
+            self.assertEqual(carlos.entrenador_responsable, self.blas)
+            self.assertEqual(list(carlos.cogestores.all()), [self.javi])
+        self.assertEqual([j["nombre"] for j in self.columnas()[0]["jugadores"]],
+                         ["Ana Orden", "Bea Orden", "Carlos Orden"])
+
+    def test_desde_la_ficha_tambien(self):
+        carlos = Jugador.objects.create(nombre="Carlos Orden")
+        r = self.api(self.pablo).patch(f"/api/jugadores/{carlos.id}/", {
+            "entrenador_responsable": self.javi.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        carlos.refresh_from_db()
+        self.assertEqual((carlos.entrenador_responsable, list(carlos.cogestores.all())),
+                         (self.blas, [self.javi]))
+
+    def test_no_hay_que_revisar_porcentajes_si_le_entrena_el_otro_de_la_columna(self):
+        ResponsableJugador.objects.create(jugador=self.ajeno, entrenador=self.javi, prioridad=1,
+                                          porcentaje_objetivo=100)
+        r = self.api(self.dir).post("/api/grupos/mover/", {
+            "jugador": self.ajeno.id, "entrenador": self.blas.id}, format="json")
+        self.assertIs(r.json()["revisar_porcentajes"], False)
+
+    def test_quitar_de_la_columna_unida_lo_quita_de_los_dos(self):
+        r = self.api(self.pablo).post("/api/grupos/quitar/", {
+            "jugador": self.ana.id, "entrenador": self.blas.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.ana.refresh_from_db()
+        self.assertIsNone(self.ana.entrenador_responsable)
+        self.assertEqual(list(self.ana.cogestores.all()), [])
+        self.assertEqual([j["nombre"] for j in self.columnas()[0]["jugadores"]], ["Bea Orden"])
+
+    def test_compartir_con_la_columna_unida_los_pone_a_los_dos(self):
+        carlos = Jugador.objects.create(nombre="Carlos Orden", entrenador_responsable=self.otro)
+        self.grupo.entrenadores.add(self.otro)
+        r = self.api(self.pablo).post("/api/grupos/compartir/", {
+            "jugador": carlos.id, "entrenador": self.javi.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual({e.pk for e in carlos.cogestores.all()}, {self.blas.pk, self.javi.pk})
+
+    def test_mudar_la_columna_se_lleva_a_los_dos(self):
+        otro_bloque = Coach.objects.create(nombre="Santi", color="naranja")
+        r = self.api(self.dir).post("/api/grupos/mover_entrenador/", {
+            "entrenador": self.blas.id, "coach": otro_bloque.id, "desde": self.grupo.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual({e.pk for e in otro_bloque.entrenadores.all()}, {self.blas.pk, self.javi.pk})
+        self.assertEqual(list(self.grupo.entrenadores.all()), [])
+
+    def test_no_se_puede_compartir_columna_consigo_ni_en_cadena(self):
+        from django.core.exceptions import ValidationError
+
+        self.blas.columna_con = self.blas
+        with self.assertRaises(ValidationError):
+            self.blas.full_clean(exclude=["user"])
+        self.blas.columna_con = None
+        # Javi ya depende de Blas: nadie puede colgar de Javi.
+        self.otro.columna_con = self.javi
+        with self.assertRaises(ValidationError):
+            self.otro.full_clean(exclude=["user"])
+        # Y Blas, con gente colgando de él, no puede colgar de otro.
+        self.blas.columna_con = self.otro
+        with self.assertRaises(ValidationError):
+            self.blas.full_clean(exclude=["user"])
+
+    def test_un_ciclo_hecho_a_mano_no_hace_desaparecer_a_nadie(self):
+        Entrenador.objects.filter(pk=self.blas.pk).update(columna_con=self.javi)
+        nombres = [g["entrenador"]["nombre"] for g in self.columnas()]
+        self.assertCountEqual(nombres, ["Blas", "Javi"])
+
+
 class ReglasDelJugadorTests(Base):
     def url(self, jugador=None):
         return f"/api/jugadores/{(jugador or self.ana).id}/reglas/"

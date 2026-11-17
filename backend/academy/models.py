@@ -186,6 +186,18 @@ class Entrenador(models.Model):
     )
     # Su sitio, de izquierda a derecha, en su bloque de la página de Grupos.
     orden_grupo = models.PositiveSmallIntegerField(default=0)
+    # Dos entrenadores que llevan el mismo grupo (Mario Muniesa y Jorge
+    # Ibáñez, 17/11/2026) salen en Grupos como UNA columna, la del principal,
+    # que se llama «Mario Muniesa / Jorge Ibáñez». Aquí el segundo apunta al
+    # primero. La gestión sigue siendo la de siempre: responsable el principal
+    # y cogestor el otro (así lo ven los dos).
+    columna_con = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="en_su_columna", verbose_name="Comparte columna con",
+        help_text="En Grupos sale junto a este entrenador, en una sola columna. "
+                  "Vacío = columna propia.",
+    )
+
     # El grupo que entrena: de la división `desde` a la `hasta` (p. ej. Dani
     # Gimeno, de la 1 a la 2). Vacío = cualquiera. No es una regla dura: si no
     # queda nadie de ese grupo el motor le pone otro, pero cuesta, y cuanto más
@@ -237,6 +249,18 @@ class Entrenador(models.Model):
         verbose_name = "Entrenador"
         verbose_name_plural = "Entrenadores"
         ordering = ["nombre"]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.columna_con_id and self.pk and self.columna_con_id == self.pk:
+            raise ValidationError({"columna_con": "No puede compartir columna consigo mismo."})
+        if self.columna_con_id and self.columna_con.columna_con_id:
+            raise ValidationError({
+                "columna_con": "Esa persona ya comparte columna con otra: elige a la principal."})
+        if self.pk and self.columna_con_id and self.en_su_columna.exists():
+            raise ValidationError({
+                "columna_con": "Otros comparten columna con este entrenador: pasa a ser principal."})
 
     def __str__(self):
         return self.nombre
