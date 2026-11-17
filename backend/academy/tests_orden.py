@@ -445,6 +445,75 @@ class ColumnasDeGruposTests(Base):
         self.assertCountEqual(nombres, ["Blas", "Javi"])
 
 
+class GonzaloYaEsDeLaEscuelaTests(Base):
+    """17/11/2026: un invitado que pasa a la escuela (academy.0062)."""
+
+    def setUp(self):
+        super().setUp()
+        import importlib
+
+        from django.apps import apps
+
+        from academy.models import HorarioJugador, Invitado, VisitaInvitado
+
+        self.apps = apps
+        self.mig = importlib.import_module("academy.migrations.0062_gonzalo_chicote_ya_es_de_la_escuela")
+        self.gonzalo = Jugador.objects.create(
+            nombre="Gonzalo Chicote (invitado)", entrenador_responsable=self.blas,
+            notas="Invitado de Blas: viene los jueves", fecha_alta=date(2026, 10, 20),
+            fecha_baja=date(2026, 11, 12))
+        HorarioJugador.objects.create(jugador=self.gonzalo, dia=0, entrena_manana=False, entrena_tarde=False)
+        self.inv = Invitado.objects.create(
+            nombre="Gonzalo Chicote", entrenador_solicitante=self.blas, estado=Invitado.Estado.APROBADO,
+            jugador_creado=self.gonzalo)
+        for dia in (date(2026, 10, 20), date(2026, 10, 29)):
+            VisitaInvitado.objects.create(invitado=self.inv, fecha=dia, manana="M1",
+                                          estado=VisitaInvitado.Estado.APROBADA)
+
+    def test_pasa_a_ser_un_alumno_como_los_demas(self):
+        from academy.models import HorarioJugador, Invitado, VisitaInvitado
+
+        self.mig.pasar_a_la_escuela(self.apps, None)
+        self.gonzalo.refresh_from_db()
+        self.assertEqual(self.gonzalo.nombre, "Gonzalo Chicote")
+        self.assertEqual(self.gonzalo.notas, "")
+        self.assertIsNone(self.gonzalo.fecha_baja)
+        # Lo demás, intacto: responsable, fecha de alta y su semana habitual.
+        self.assertEqual(self.gonzalo.entrenador_responsable, self.blas)
+        self.assertEqual(self.gonzalo.fecha_alta, date(2026, 10, 20))
+        self.assertEqual(HorarioJugador.objects.filter(jugador=self.gonzalo).count(), 1)
+        self.assertFalse(Invitado.objects.exists())
+        self.assertFalse(VisitaInvitado.objects.exists())
+        # Y sale en Jugadores aunque se pida sin invitados.
+        r = self.api(self.dir).get("/api/jugadores/?sin_invitados=1")
+        nombres = [j["nombre"] for j in (r.json()["results"] if isinstance(r.json(), dict) else r.json())]
+        self.assertIn("Gonzalo Chicote", nombres)
+
+    def test_se_deshace_tal_como_estaba(self):
+        from academy.models import Invitado, VisitaInvitado
+
+        self.mig.pasar_a_la_escuela(self.apps, None)
+        self.mig.deshacer(self.apps, None)
+        self.gonzalo.refresh_from_db()
+        self.assertEqual(self.gonzalo.nombre, "Gonzalo Chicote (invitado)")
+        self.assertEqual(self.gonzalo.notas, "Invitado de Blas: viene los jueves")
+        self.assertEqual(self.gonzalo.fecha_baja, date(2026, 11, 12))
+        inv = Invitado.objects.get(pk=self.inv.pk)
+        self.assertEqual(inv.jugador_creado_id, self.gonzalo.pk)
+        self.assertEqual(sorted(inv.visitas.values_list("fecha", flat=True)),
+                         [date(2026, 10, 20), date(2026, 10, 29)])
+        self.assertEqual(VisitaInvitado.objects.count(), 2)
+
+    def test_sin_el_invitado_no_hace_nada(self):
+        from academy.models import Invitado
+
+        Invitado.objects.all().delete()
+        self.mig.pasar_a_la_escuela(self.apps, None)
+        self.gonzalo.refresh_from_db()
+        self.assertEqual(self.gonzalo.nombre, "Gonzalo Chicote (invitado)")
+        self.assertEqual(self.gonzalo.fecha_baja, date(2026, 11, 12))
+
+
 class ReglasDelJugadorTests(Base):
     def url(self, jugador=None):
         return f"/api/jugadores/{(jugador or self.ana).id}/reglas/"

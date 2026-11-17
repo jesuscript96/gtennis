@@ -16,8 +16,9 @@ import { getGruposDivisiones, getPermisosDivisiones, moverDeDivision, ordenarDiv
  * conserva, plegada, la tabla para crear o editar divisiones.
  *
  * Los alumnos salen de /grupos/divisiones/: todos los que entrenan (sin bajas
- * ya pasadas), también los de bloques que alguien no ve, con su responsable y
- * su edad debajo, como en la antigua vista «Por división» (11/11/2026).
+ * ya pasadas), también los de bloques que alguien no ve, con su edad al lado
+ * (11/11/2026). El entrenador responsable ya no sale (17/11/2026): le quitaba
+ * sitio al nombre y no se podía leer.
  *
  * Ranking (27/10/2026): dentro de cada columna, arrastrar a un alumno encima o
  * debajo de otro cambia su puesto en la división (1 = el mejor); soltarlo
@@ -294,10 +295,7 @@ export default function DivisionesRanking({ pestanas }) {
                             }}>
                             {conRanking && <span className="puesto">{puesto ? `${puesto}º` : "—"}</span>}
                             <span className="txt">{j.nombre}</span>
-                            <span className="resp">
-                              {[j.responsable || "Sin grupo", j.edad ? `${j.edad} año${j.edad === 1 ? "" : "s"}` : null]
-                                .filter(Boolean).join(" · ")}
-                            </span>
+                            {j.edad ? <span className="resp">{j.edad} año{j.edad === 1 ? "" : "s"}</span> : null}
                           </button>
                         </li>
                       );

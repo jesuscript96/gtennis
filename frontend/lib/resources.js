@@ -48,7 +48,6 @@ const FEEDBACK_ESTADO_OPTS = [
 const turnoLabel = (t) => `${t.codigo} · ${String(t.hora_inicio).slice(0, 5)}`;
 const esManana = (t) => ["M1", "M2"].includes(t.codigo);
 const esTarde = (t) => ["T1", "T2"].includes(t.codigo);
-const AYUDA_TURNO = "Vacío = cualquiera de las dos (el motor elige, y solo una al día).";
 
 const fmtFecha = (v) => {
   if (!v) return "—";
@@ -105,8 +104,8 @@ export const RESOURCES = {
         optionLabel: (o) => (o.activo ? o.nombre : `${o.nombre} (de baja)`), ve: (u) => u?.perfil === "direccion",
         help: "Le mete en el grupo de ese entrenador: es lo mismo que moverle en Grupos. Los porcentajes no cambian; revísalos en «Porcentajes»." },
       { name: "division", label: "División", type: "fk", endpoint: "divisiones", optionLabel: divLabel, soloCrear: true, ve: (u) => u?.mueve_divisiones, help: "Después se cambia en Grupos." },
-      { name: "turno_manana", label: "Entrena por la mañana en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esManana, help: AYUDA_TURNO, ve: noAdministracion },
-      { name: "turno_tarde", label: "Entrena por la tarde en", type: "fk", endpoint: "turnos", optionLabel: turnoLabel, filtra: esTarde, help: AYUDA_TURNO, ve: noAdministracion },
+      // «Entrena por la mañana/tarde en» ya no están aquí (17/11/2026): los
+      // turnos del jugador se dan en Horario habitual.
       { name: "vecindad", ve: noAdministracion, label: "Con qué divisiones entrena", type: "select", options: [
         { value: "CLUB", label: "La del club (la horquilla general)" },
         { value: "SOLO", label: "Solo su división" },
