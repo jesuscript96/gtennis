@@ -319,6 +319,8 @@ table.grid th { text-align: left; color: var(--muted); font-weight: 500; font-si
   color: var(--muted); margin-bottom: 8px;
 }
 .bench-faltas .bench-chip em { font-style: normal; color: var(--muted); font-size: 12px; }
+/* El nombre, del color de su falta (naranja torneo, rojo ausencia…), como en el Excel. */
+.bench-faltas .falta-nombre { font-weight: 600; }
 /* Selector multi-fk (divisiones que puede entrenar, etc.) */
 .mfk { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 4px; }
 .mfk-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; }

@@ -267,7 +267,7 @@ export default function CuadranteSemana({ semanaId, editable, onAbrirDia, onCamb
                       title={`${p.nombre} · ${ESTADO_LABEL[p.estado] || p.estado} (arrastra para forzar pista)`}>
                       <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
                       <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
-                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                      <span><span className="falta-nombre" style={{ color: ESTADO_COLOR[p.estado] || "inherit" }}>{p.nombre}</span> · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
                     </div>
                   ))}
                 </div>

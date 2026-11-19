@@ -535,7 +535,7 @@ function Inner() {
                       onClick={(e) => { e.stopPropagation(); pick({ k: "bj", jugador: p.id, label: p.nombre }); }}>
                       <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
                       <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
-                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                      <span><span className="falta-nombre" style={{ color: ESTADO_COLOR[p.estado] || "inherit" }}>{p.nombre}</span> · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
                     </div>
                   );
                 })}
@@ -788,7 +788,7 @@ function Inner() {
                       title={`${p.nombre}${p.coach ? " · " + p.coach : ""} · ${ESTADO_LABEL[p.estado] || p.estado} (arrastra para forzar pista)`}>
                       <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
                       <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
-                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                      <span><span className="falta-nombre" style={{ color: ESTADO_COLOR[p.estado] || "inherit" }}>{p.nombre}</span> · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
                     </div>
                   ))}
                 </div>
