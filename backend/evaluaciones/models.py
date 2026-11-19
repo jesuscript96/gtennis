@@ -216,6 +216,11 @@ class Informe(models.Model):
                                     blank=True, related_name="informes_enviados")
     # db_default: la versión anterior crea informes sin esta columna (despliegue).
     envio_error = models.CharField(max_length=300, blank=True, default="", db_default="")
+    # Envío programado (19/11/2026): sale solo a esta hora (la mañana siguiente
+    # a las 8:30), lo manda el programador en nombre de quien lo programó.
+    envio_programado = models.DateTimeField(null=True, blank=True)
+    envio_programado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                             blank=True, related_name="+")
     # Textos de la parte física pasados al idioma del informe si no es español.
     # Sin uso desde el 02/11/2026: la traducción va en `EvaluacionFisica.traduccion`.
     textos_fisico_traducidos = models.JSONField(default=dict, blank=True)

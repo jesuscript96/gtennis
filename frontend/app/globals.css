@@ -1748,6 +1748,7 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .inf-fila-pie { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 10px; }
 .inf-fila-pie .eval-nota { margin: 0; }
 .inf-ultimo { margin-left: auto; font-size: 13px; color: var(--muted); }
+.correo-persona { min-width: 200px; font-size: 14px; padding: 4px 8px; }
 /* Reparto de la parte física (19/11/2026) */
 .reparto-escuela { margin-top: 20px; }
 .reparto-titulo { font-size: 16px; font-weight: 600; margin: 0; }

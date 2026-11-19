@@ -289,6 +289,8 @@ def reabrir(inf, usuario):
     inf.version += 1
     inf.validado_por = None
     inf.validado_en = None
+    inf.envio_programado = None
+    inf.envio_programado_por = None
     inf.save()
     return inf
 
@@ -296,7 +298,54 @@ def reabrir(inf, usuario):
 def correo_configurado():
     from django.conf import settings
 
-    return bool(getattr(settings, "EMAIL_HOST", "")) or settings.EMAIL_BACKEND.endswith("console.EmailBackend")
+    from . import gmail
+
+    return (gmail.configurado() or bool(getattr(settings, "EMAIL_HOST", ""))
+            or settings.EMAIL_BACKEND.endswith("console.EmailBackend"))
+
+
+def _correo_de_la_cuenta():
+    """La dirección que envía (gestion@), sin el nombre que la acompaña."""
+    from email.utils import parseaddr
+
+    from django.conf import settings
+
+    return getattr(settings, "CORREO_GMAIL", "") or parseaddr(settings.DEFAULT_FROM_EMAIL)[1]
+
+
+def head_coaches(inf):
+    """Quién atiende a la familia si responde (19/11/2026): en tardes, quien
+    coordina Competición de tardes; en Alto rendimiento, el head coach del
+    color de su entrenador responsable."""
+    from academy.scope import coaches_del_entrenador
+
+    if inf.circuito == "alto_rendimiento":
+        return [u for u in coaches_del_entrenador(inf.jugador.entrenador_responsable) if u.is_active]
+    return coordinadores()
+
+
+def responder_a(inf):
+    """Las respuestas de la familia, a gestion@ y a su head coach (lo pidió
+    Sergio el 20/10; 19/11/2026). Solo los que tienen correo en Club ›
+    Personas y funciones."""
+    lista = [_correo_de_la_cuenta()] + [u.email for u in head_coaches(inf) if u.email]
+    vistos, out = set(), []
+    for e in lista:
+        if e and e.lower() not in vistos:
+            vistos.add(e.lower())
+            out.append(e)
+    return out
+
+
+def _listo_para_enviar(inf):
+    if inf.estado != Informe.Estado.VALIDADO:
+        raise InformeError("Solo se envían informes aprobados.")
+    para = [d["email"] for d in inf.destinatarios or [] if d.get("email")]
+    if not para:
+        raise InformeError("Este informe no tiene a quién enviarse: añade el correo de la familia.")
+    if not correo_configurado():
+        raise InformeError("El envío por correo aún no está configurado en el servidor.")
+    return para
 
 
 def enviar(inf, usuario):
@@ -307,18 +356,13 @@ def enviar(inf, usuario):
 
     from .correo import correo
 
-    if inf.estado != Informe.Estado.VALIDADO:
-        raise InformeError("Solo se envían informes aprobados.")
-    para = [d["email"] for d in inf.destinatarios or [] if d.get("email")]
-    if not para:
-        raise InformeError("Este informe no tiene a quién enviarse: añade el correo de la familia.")
-    if not correo_configurado():
-        raise InformeError("El envío por correo aún no está configurado en el servidor.")
+    para = _listo_para_enviar(inf)
     idioma = idioma_pdf(inf)
+    con_fisica = bool(inf.fisica_id and inf.fisica.estado == EvaluacionFisica.Estado.TERMINADA)
     try:
         nombre_pdf, contenido = pdf_de(inf, idioma)
-        asunto, texto = correo(inf.jugador.nombre, idioma)
-        mensaje = EmailMessage(asunto, texto, settings.DEFAULT_FROM_EMAIL, para)
+        asunto, texto = correo(inf.jugador.nombre, idioma, inf.circuito, con_fisica)
+        mensaje = EmailMessage(asunto, texto, settings.DEFAULT_FROM_EMAIL, para, reply_to=responder_a(inf))
         mensaje.attach(nombre_pdf, contenido, "application/pdf")
         mensaje.send(fail_silently=False)
     except Exception as e:  # noqa: BLE001 — se guarda el motivo y se dice
@@ -328,8 +372,60 @@ def enviar(inf, usuario):
     inf.enviado_en = timezone.now()
     inf.enviado_por = usuario
     inf.envio_error = ""
-    inf.save(update_fields=["enviado_en", "enviado_por", "envio_error", "actualizado"])
+    inf.envio_programado = None
+    inf.envio_programado_por = None
+    inf.save(update_fields=["enviado_en", "enviado_por", "envio_error", "envio_programado",
+                            "envio_programado_por", "actualizado"])
     return inf
+
+
+HORA_ENVIO = (8, 30)  # 19/11/2026: lo programado sale a las 8:30 de la mañana siguiente
+
+
+def proxima_salida(ahora=None):
+    from datetime import datetime, time
+
+    ahora = timezone.localtime(ahora or timezone.now())
+    dia = ahora.date() + timedelta(days=1)
+    return timezone.make_aware(datetime.combine(dia, time(*HORA_ENVIO)))
+
+
+def programar(inf, usuario, cuando=None):
+    """Deja el informe para que salga solo a las 8:30 de mañana (o a `cuando`)."""
+    _listo_para_enviar(inf)
+    inf.envio_programado = cuando or proxima_salida()
+    inf.envio_programado_por = usuario
+    inf.envio_error = ""
+    inf.save(update_fields=["envio_programado", "envio_programado_por", "envio_error", "actualizado"])
+    return inf
+
+
+def cancelar_envio(inf):
+    inf.envio_programado = None
+    inf.envio_programado_por = None
+    inf.save(update_fields=["envio_programado", "envio_programado_por", "actualizado"])
+    return inf
+
+
+def enviar_programados(ahora=None):
+    """Lo llama el programador cada minuto: manda los que ya tocan. Si uno
+    falla, no se reintenta solo: queda el motivo y se avisa a quien lo programó."""
+    ahora = ahora or timezone.now()
+    enviados = 0
+    for inf in (Informe.objects.filter(estado=Informe.Estado.VALIDADO, envio_programado__lte=ahora)
+                .select_related("jugador", "envio_programado_por")):
+        quien = inf.envio_programado_por
+        try:
+            enviar(inf, quien)
+            enviados += 1
+        except InformeError as e:
+            inf.envio_programado = None
+            inf.envio_programado_por = None
+            inf.save(update_fields=["envio_programado", "envio_programado_por", "actualizado"])
+            if quien is not None:
+                _avisar([quien], f"No se ha enviado el informe de {inf.jugador.nombre}",
+                        f"{e} Puedes volver a enviarlo desde Informes.")
+    return enviados
 
 
 def devolver(inf, usuario, partes, nota):

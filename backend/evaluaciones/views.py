@@ -562,25 +562,118 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         except informes.InformeError as e:
             raise ValidationError({"detail": str(e)})
         # «Aprobar y enviar» (decisión 13): si quien aprueba también envía.
-        if request.data.get("enviar") and envia_informes(request.user):
+        # `enviar`: «ahora» (o true) o «manana» = mañana a las 8:30 (19/11/2026).
+        cuando = request.data.get("enviar")
+        if cuando and envia_informes(request.user):
             try:
-                informes.enviar(inf, request.user)
+                if cuando == "manana":
+                    informes.programar(inf, request.user)
+                else:
+                    informes.enviar(inf, request.user)
             except informes.InformeError as e:
                 aviso = " ".join(filter(None, [aviso, f"Aprobado, pero no enviado: {e}"]))
         return Response({**self.get_serializer(inf).data, "aviso": aviso})
 
+    def _remitente(self):
+        if not envia_informes(self.request.user):
+            raise PermissionDenied("Envían los informes dirección, Administración y quien tenga la función.")
+        return self.get_object()
+
     @action(detail=True, methods=["post"])
     def enviar(self, request, pk=None):
         """Envía a la familia un informe aprobado (dirección, Administración y
-        quien tenga la función)."""
-        if not envia_informes(request.user):
-            raise PermissionDenied("Envían los informes dirección, Administración y quien tenga la función.")
-        inf = self.get_object()
+        quien tenga la función). `{cuando: "manana"}` lo deja para mañana a
+        las 8:30 (19/11/2026); sin él, sale ya."""
+        inf = self._remitente()
         try:
-            informes.enviar(inf, request.user)
+            if request.data.get("cuando") == "manana":
+                informes.programar(inf, request.user)
+            else:
+                informes.enviar(inf, request.user)
         except informes.InformeError as e:
             raise ValidationError({"detail": str(e)})
         return Response(self.get_serializer(inf).data)
+
+    @action(detail=True, methods=["post"])
+    def cancelar_envio(self, request, pk=None):
+        """Quita el envío programado: no sale."""
+        inf = informes.cancelar_envio(self._remitente())
+        return Response(self.get_serializer(inf).data)
+
+    @action(detail=False, methods=["get", "post"], url_path="datos-familias")
+    def datos_familias(self, request):
+        """Dirección (19/11/2026): los correos e idioma de las familias de todos
+        los que llevan informe (tardes y Alto rendimiento), para sacarlos a un
+        Excel y volver a cargarlos. POST `{filas: [{jugador, email, quien_1,
+        email_2, quien_2, idioma}]}`: cada campo que venga se guarda tal cual
+        («» lo vacía); los que no vienen no se tocan."""
+        if not es_direccion(request.user):
+            raise PermissionDenied("Solo dirección.")
+        jugadores = {j.id: j for j in jugadores_con_fisico().select_related(
+            "datos_informe", "entrenador_responsable")}
+        if request.method == "POST":
+            return Response(self._guardar_familias(jugadores, request.data.get("filas") or []))
+        out = []
+        for j in jugadores.values():
+            d = getattr(j, "datos_informe", None)
+            out.append({
+                "jugador": j.id, "nombre": j.nombre, "edad": j.edad, "circuito": informes.circuito_de(j),
+                "entrenador": j.entrenador_responsable.nombre if j.entrenador_responsable_id else "",
+                "email": j.email or "", "quien_1": d.quien_1 if d else "", "email_2": d.email_2 if d else "",
+                "quien_2": d.quien_2 if d else "", "idioma": d.idioma if d else "ES",
+            })
+        return Response(out)
+
+    def _guardar_familias(self, jugadores, filas):
+        from django.core.exceptions import ValidationError as ErrorDjango
+        from django.core.validators import validate_email
+
+        errores, cambiados = [], 0
+        for fila in filas:
+            j = jugadores.get(fila.get("jugador")) if isinstance(fila, dict) else None
+            if j is None:
+                errores.append({"jugador": fila.get("jugador") if isinstance(fila, dict) else None,
+                                "error": "No es de Competición de tardes ni de Alto rendimiento."})
+                continue
+            datos = {k: str(fila[k]).strip() for k in ("email", "quien_1", "email_2", "quien_2", "idioma") if k in fila}
+            malos = []
+            for k in ("email", "email_2"):
+                if datos.get(k):
+                    try:
+                        validate_email(datos[k])
+                    except ErrorDjango:
+                        malos.append(datos[k])
+            if "idioma" in datos and datos["idioma"] not in DatosInforme.Idioma.values:
+                malos.append(f"idioma {datos['idioma'] or 'vacío'}")
+            if malos:
+                errores.append({"jugador": j.id, "nombre": j.nombre, "error": f"No válido: {', '.join(malos)}."})
+                continue
+            if "email" in datos and datos["email"] != (j.email or ""):
+                j.email = datos["email"]
+                j.save(update_fields=["email"])
+            resto = {k: v for k, v in datos.items() if k != "email"}
+            if resto:
+                DatosInforme.objects.update_or_create(jugador=j, defaults=resto)
+            cambiados += 1
+        return {"guardados": cambiados, "errores": errores}
+
+    @action(detail=False)
+    def correo(self, request):
+        """Dirección: ¿está conectado el correo? Pide permiso a Google sin
+        enviar nada (19/11/2026)."""
+        if not es_direccion(request.user):
+            raise PermissionDenied("Solo dirección.")
+        from django.conf import settings
+
+        from . import gmail
+
+        if gmail.configurado():
+            ok, detalle = gmail.comprobar()
+            via = "gmail"
+        else:
+            ok, detalle = informes.correo_configurado(), ""
+            via = "smtp" if getattr(settings, "EMAIL_HOST", "") else "ninguno"
+        return Response({"via": via, "ok": ok, "detalle": detalle, "remitente": settings.DEFAULT_FROM_EMAIL})
 
     @action(detail=True, methods=["post"])
     def reabrir(self, request, pk=None):

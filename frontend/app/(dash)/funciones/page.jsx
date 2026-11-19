@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getPersonal, guardarFuncion, guardarPerfil } from "../../../lib/api";
+import { getPersonal, guardarCorreoPersona, guardarFuncion, guardarPerfil } from "../../../lib/api";
 
 // Club → Personas y funciones (10/11/2026). Dirección asigna a cada persona su
 // perfil y las funciones que le tocan, sin tocar el programa. Dirección tiene
@@ -39,6 +39,15 @@ export default function FuncionesPage() {
     finally { setGuardando(null); }
   }
 
+  // 19/11/2026: su correo, para que le lleguen las respuestas de las familias a los informes.
+  async function cambiaCorreo(persona, email) {
+    if ((persona.email || "") === email.trim()) return;
+    setGuardando(`${persona.id}-email`);
+    try { reemplaza(await guardarCorreoPersona(persona.id, email.trim())); }
+    catch (e) { alert(String(e.message || e)); }
+    finally { setGuardando(null); }
+  }
+
   async function cambiaPerfil(persona, role) {
     if (!confirm(`¿Cambiar el perfil de ${persona.nombre}?`)) return;
     try { reemplaza(await guardarPerfil(persona.id, role)); }
@@ -60,7 +69,8 @@ export default function FuncionesPage() {
       <p className="help">
         El perfil decide lo que cada uno ve. Las funciones añaden tareas concretas a una persona.
         Dirección las tiene todas, menos las de pertenecer a un equipo (evaluar tenis o física), que se
-        marcan. Los cambios se notan en la siguiente pantalla que abra esa persona.
+        marcan. El correo sirve para que a cada head coach (y a quien coordina tardes) le lleguen las
+        respuestas de las familias a los informes. Los cambios se notan en la siguiente pantalla que abra esa persona.
       </p>
       <details className="help" style={{ marginBottom: 16 }}>
         <summary>Qué hace cada función</summary>
@@ -76,6 +86,7 @@ export default function FuncionesPage() {
             <tr>
               <th>Persona</th>
               <th>Perfil</th>
+              <th title="Le llegan las respuestas de las familias a los informes de sus jugadores">Correo</th>
               {datos.funciones.map((f) => <th key={f.codigo} title={AYUDA[f.codigo]}>{f.nombre}</th>)}
             </tr>
           </thead>
@@ -87,6 +98,13 @@ export default function FuncionesPage() {
                   <select value={p.role} onChange={(e) => cambiaPerfil(p, e.target.value)}>
                     {datos.perfiles.map((r) => <option key={r.role} value={r.role}>{r.nombre}</option>)}
                   </select>
+                </td>
+                <td data-label="Correo">
+                  <input type="email" className="correo-persona" placeholder="correo@gtennis.com"
+                         defaultValue={p.email || ""} key={`${p.id}-${p.email || ""}`}
+                         aria-label={`Correo · ${p.nombre}`} disabled={guardando === `${p.id}-email`}
+                         onBlur={(e) => cambiaCorreo(p, e.target.value)}
+                         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
                 </td>
                 {datos.funciones.map((f) => (
                   <td key={f.codigo} data-label={f.nombre} style={{ textAlign: "center" }}>

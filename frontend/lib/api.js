@@ -438,7 +438,13 @@ export const getInformes = async (params = {}) => {
 export const getInforme = (id) => req(`/informes/${id}/`);
 export const aprobarInforme = (id, destinatarios, enviar = false) =>
   req(`/informes/${id}/aprobar/`, { method: "POST", body: JSON.stringify({ destinatarios, enviar }) });
-export const enviarInforme = (id) => req(`/informes/${id}/enviar/`, { method: "POST", body: "{}" });
+// `cuando`: "ahora" o "manana" (sale a las 8:30 del día siguiente, 19/11/2026).
+export const enviarInforme = (id, cuando = "ahora") =>
+  req(`/informes/${id}/enviar/`, { method: "POST", body: JSON.stringify({ cuando }) });
+export const cancelarEnvioInforme = (id) => req(`/informes/${id}/cancelar_envio/`, { method: "POST", body: "{}" });
+export const comprobarCorreo = () => req("/informes/correo/");
+export const guardarCorreoPersona = (id, email) =>
+  req(`/auth/personal/${id}/`, { method: "PATCH", body: JSON.stringify({ email }) });
 export const reabrirInforme = (id) => req(`/informes/${id}/reabrir/`, { method: "POST", body: "{}" });
 export const devolverInforme = (id, partes, nota) =>
   req(`/informes/${id}/devolver/`, { method: "POST", body: JSON.stringify({ partes, nota }) });

@@ -183,7 +183,14 @@ EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "gestion@gtennis.com")
-if EMAIL_HOST:
+# 19/11/2026: o por Gmail con la cuenta de servicio de Drive, escribiendo en
+# nombre de esta cuenta del club (delegación en todo el dominio con el permiso
+# gmail.send). Sin contraseña: es lo que se usa en producción.
+CORREO_GMAIL = os.environ.get("CORREO_GMAIL", "")
+if CORREO_GMAIL and GOOGLE_SERVICE_ACCOUNT_JSON:
+    EMAIL_BACKEND = "evaluaciones.gmail.GmailBackend"
+    DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", f"G Tenis <{CORREO_GMAIL}>")
+elif EMAIL_HOST:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 elif DEBUG:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"

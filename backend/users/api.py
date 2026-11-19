@@ -159,6 +159,8 @@ def _persona(u):
         "role": u.role,
         "perfil": u.perfil,
         "activo": u.is_active,
+        # 19/11/2026: para que las respuestas de las familias a los informes le lleguen.
+        "email": u.email,
         "funciones": sorted(u.codigos_funcion()),
         "tardes": sorted(tardes),
     }
@@ -188,7 +190,7 @@ class PersonalView(APIView):
 
 class PersonaFuncionView(APIView):
     """POST {codigo, activa}: marca o quita una función. PATCH {role}: cambia
-    el perfil. Solo dirección."""
+    el perfil; PATCH {email}: su correo. Solo dirección."""
 
     permission_classes = [IsAuthenticated]
 
@@ -227,6 +229,19 @@ class PersonaFuncionView(APIView):
     @transaction.atomic
     def patch(self, request, pk):
         u = self._objetivo(request, pk)
+        if "email" in request.data and "role" not in request.data:
+            from django.core.validators import validate_email
+            from django.core.exceptions import ValidationError as ErrorDjango
+
+            email = str(request.data.get("email") or "").strip()
+            if email:
+                try:
+                    validate_email(email)
+                except ErrorDjango:
+                    raise ValidationError("Ese correo no es válido.")
+            u.email = email
+            u.save(update_fields=["email"])
+            return Response(_persona(u))
         role = (request.data.get("role") or "").upper()
         if role not in User.Role.values:
             raise ValidationError("Perfil inválido.")

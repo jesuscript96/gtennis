@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  aprobarInforme, descargarPdfInforme, devolverInforme, enviarInforme, getInforme, getUser,
+  aprobarInforme, cancelarEnvioInforme, descargarPdfInforme, devolverInforme, enviarInforme, getInforme, getUser,
   guardarInformeEnDrive, reabrirInforme,
 } from "../../../../lib/api";
 import FotoJugador from "../../../../components/FotoJugador";
@@ -12,6 +12,20 @@ import { ESTADO_INFORME, abrirParte, textoParte } from "../../../../lib/informes
 import { fmtLarga } from "../../../../lib/torneos";
 
 const fecha = (iso) => (iso ? fmtLarga(iso.slice(0, 10)) : "");
+
+/** Adónde llegan las respuestas de la familia (19/11/2026): gestion@ y su head coach. */
+function Respuestas({ inf }) {
+  if (!inf.correo_activo) return null;
+  return (
+    <p className="eval-nota">
+      Si la familia responde, le llega a {inf.responder_a.join(" y ")}.
+      {inf.sin_correo_head_coach.length > 0 && (
+        <> {inf.sin_correo_head_coach.join(" y ")} no {inf.sin_correo_head_coach.length > 1 ? "tienen" : "tiene"} correo
+          en Club › Personas y funciones: no le llegará.</>
+      )}
+    </p>
+  );
+}
 
 function Partes({ inf, user }) {
   const router = useRouter();
@@ -109,21 +123,28 @@ function Validar({ inf, onCambio }) {
           </button>
           <p className="eval-nota">
             {inf.correo_activo
-              ? "Con «Aprobar y enviar» le llega a la familia por correo, con el PDF en su idioma."
+              ? "Le llega a la familia por correo, con el PDF en su idioma: mañana a las 8:30 o ahora mismo."
               : "El correo aún no está configurado en el servidor: al aprobar no se envía; se podrá enviar después."}
             {" "}Al aprobar, el PDF pasa a la carpeta de validados en Drive.
           </p>
+          <Respuestas inf={inf} />
           <div className="eval-pie">
             <button type="button" className="btn ghost" onClick={() => setModo(null)}>Cancelar</button>
             <button type="button" className={inf.puede_enviar && inf.correo_activo ? "btn ghost" : "btn"} disabled={enviando}
               onClick={() => hacer(() => aprobarInforme(inf.id, dest.filter((d) => d.email.trim())))}>
-              {enviando ? "Aprobando…" : "Aprobar"}
+              {enviando ? "Aprobando…" : "Solo aprobar"}
             </button>
             {inf.puede_enviar && inf.correo_activo && (
-              <button type="button" className="btn" disabled={enviando || !dest.some((d) => d.email.trim())}
-                onClick={() => hacer(() => aprobarInforme(inf.id, dest.filter((d) => d.email.trim()), true))}>
-                {enviando ? "Enviando…" : "Aprobar y enviar"}
-              </button>
+              <>
+                <button type="button" className="btn ghost" disabled={enviando || !dest.some((d) => d.email.trim())}
+                  onClick={() => hacer(() => aprobarInforme(inf.id, dest.filter((d) => d.email.trim()), "ahora"))}>
+                  Aprobar y enviar ahora
+                </button>
+                <button type="button" className="btn" disabled={enviando || !dest.some((d) => d.email.trim())}
+                  onClick={() => hacer(() => aprobarInforme(inf.id, dest.filter((d) => d.email.trim()), "manana"))}>
+                  {enviando ? "Aprobando…" : "Aprobar y enviar mañana a las 8:30"}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -164,6 +185,7 @@ function Enviado({ inf, onCambio }) {
     setOcupado(false);
   }
   const para = inf.destinatarios.map((d) => d.email).join(", ");
+  const puede = inf.puede_enviar && inf.correo_activo && para;
   return (
     <>
       <p className="eval-nota">
@@ -171,12 +193,27 @@ function Enviado({ inf, onCambio }) {
         {inf.enviado_en
           ? <> Enviado a la familia ({para}) el {fecha(inf.enviado_en)} por {inf.enviado_por_nombre}.</>
           : para ? <> Aún no se ha enviado a {para}.</> : <> Falta el correo de la familia.</>}
+        {inf.envio_programado && (
+          <> <b>Saldrá por correo el {fecha(inf.envio_programado)} a las 8:30</b>
+            {inf.envio_programado_por_nombre ? ` (lo programó ${inf.envio_programado_por_nombre})` : ""}.</>
+        )}
       </p>
       {inf.envio_error && !inf.enviado_en && <p className="err">Último intento de envío: {inf.envio_error}</p>}
+      {puede && <Respuestas inf={inf} />}
       <div className="eval-acciones">
-        {inf.puede_enviar && inf.correo_activo && para && (
-          <button type="button" className="btn" disabled={ocupado} onClick={() => hacer(() => enviarInforme(inf.id))}>
-            {inf.enviado_en ? "Volver a enviar" : "Enviar a la familia"}
+        {puede && inf.envio_programado && (
+          <button type="button" className="btn ghost" disabled={ocupado} onClick={() => hacer(() => cancelarEnvioInforme(inf.id))}>
+            Cancelar el envío de mañana
+          </button>
+        )}
+        {puede && !inf.envio_programado && (
+          <button type="button" className="btn" disabled={ocupado} onClick={() => hacer(() => enviarInforme(inf.id, "manana"))}>
+            {inf.enviado_en ? "Volver a enviar mañana a las 8:30" : "Enviar mañana a las 8:30"}
+          </button>
+        )}
+        {puede && (
+          <button type="button" className="btn ghost" disabled={ocupado} onClick={() => hacer(() => enviarInforme(inf.id, "ahora"))}>
+            {inf.enviado_en ? "Volver a enviar ahora" : "Enviar ahora"}
           </button>
         )}
         {inf.puede_validar && (

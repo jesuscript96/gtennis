@@ -189,6 +189,9 @@ class InformeSerializer(serializers.ModelSerializer):
     enviado_por_nombre = serializers.SerializerMethodField()
     circuito = serializers.CharField(read_only=True)
     correo_activo = serializers.SerializerMethodField()
+    responder_a = serializers.SerializerMethodField()
+    sin_correo_head_coach = serializers.SerializerMethodField()
+    envio_programado_por_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = Informe
@@ -197,6 +200,7 @@ class InformeSerializer(serializers.ModelSerializer):
                   "devuelto_en", "validado_por_nombre", "validado_en", "destinatarios", "email_familia",
                   "destinatarios_propuestos", "drive_url", "drive_url_es", "drive_carpeta", "tiene_foto", "puede_validar",
                   "puede_enviar", "enviado_en", "enviado_por_nombre", "envio_error", "correo_activo",
+                  "responder_a", "sin_correo_head_coach", "envio_programado", "envio_programado_por_nombre",
                   "creado", "actualizado"]
 
     def get_puede_enviar(self, inf):
@@ -206,6 +210,19 @@ class InformeSerializer(serializers.ModelSerializer):
 
     def get_enviado_por_nombre(self, inf):
         return self._nombre(inf.enviado_por)
+
+    def get_responder_a(self, inf):
+        """Adónde llegan las respuestas de la familia (gestion@ y su head coach)."""
+        from . import informes
+        return informes.responder_a(inf)
+
+    def get_sin_correo_head_coach(self, inf):
+        """Head coaches sin correo en Personas y funciones: no recibirán las respuestas."""
+        from . import informes
+        return [self._nombre(u) for u in informes.head_coaches(inf) if not u.email]
+
+    def get_envio_programado_por_nombre(self, inf):
+        return self._nombre(inf.envio_programado_por)
 
     def get_correo_activo(self, inf):
         from . import informes

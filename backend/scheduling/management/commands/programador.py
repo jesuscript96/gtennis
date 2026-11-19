@@ -110,6 +110,14 @@ class Command(BaseCommand):
                         self.stdout.write(f"{ahora:%Y-%m-%d %H:%M} recordatorios de informes: {n} jugadores")
                 except Exception:  # noqa: BLE001 — que un fallo aquí no pare la generación
                     self.stdout.write(traceback.format_exc()[-2000:])
+            # Informes programados para salir por correo (19/11/2026, 8:30).
+            try:
+                from evaluaciones.informes import enviar_programados
+                n = enviar_programados()
+                if n:
+                    self.stdout.write(f"{ahora:%Y-%m-%d %H:%M} informes enviados por correo: {n}")
+            except Exception:  # noqa: BLE001
+                self.stdout.write(traceback.format_exc()[-2000:])
             fecha = dia_a_generar()
             if fecha is not None:
                 fila = generar_dia(fecha)
