@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { guardarEvaluacion, pulirComentario, terminarEvaluacion } from "../lib/api";
+import { getEvaluacionAnterior, guardarEvaluacion, pulirComentario, terminarEvaluacion } from "../lib/api";
 import { fmtLarga } from "../lib/torneos";
 
 const COMPETICION = "competicion";
@@ -22,13 +22,19 @@ export function pasoInicial(ev, bloques) {
 }
 
 // Del 1 al 10 en Alto rendimiento (12/11/2026); del 1 al 5 en tardes y en las de antes.
-function Notas({ bloque, notas, onNota, escala = 5 }) {
+function Notas({ bloque, notas, onNota, escala = 5, antes }) {
   const valores = Array.from({ length: escala }, (_, i) => i + 1);
   return (
     <div className="eval-criterios">
       {bloque.criterios.map((c) => (
         <div key={c.clave} className="eval-criterio">
-          <span className="eval-criterio-nombre" id={`lbl-${c.clave}`}>{c.etiqueta}</span>
+          <span className="eval-criterio-nombre" id={`lbl-${c.clave}`}>{c.etiqueta}
+            {antes?.puntuaciones?.[c.clave] ? (
+              <span className="eval-antes-nota" title={`Nota de la evaluación anterior (${fmtLarga(antes.fecha)})`}>
+                antes: {antes.puntuaciones[c.clave]}/{antes.escala}
+              </span>
+            ) : null}
+          </span>
           <div className={`eval-notas${escala > 5 ? " diez" : ""}`} role="radiogroup" aria-labelledby={`lbl-${c.clave}`}>
             {valores.map((n) => (
               <button key={n} type="button" role="radio" aria-checked={notas[c.clave] === n}
@@ -65,6 +71,11 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
   const [error, setError] = useState("");
   const [avisos, setAvisos] = useState([]);
   const [hecho, setHecho] = useState("");
+  // Lo evaluado antes de «empezar de cero» (19/11/2026): se enseña para consultarlo, nunca se aplica solo.
+  const [antes, setAntes] = useState(null);
+  useEffect(() => {
+    getEvaluacionAnterior(evaluacion.jugador).then((r) => setAntes(r.anterior)).catch(() => {});
+  }, [evaluacion.jugador]);
 
   const bloque = paso >= 1 && paso <= bloques.length ? bloques[paso - 1] : null;
   const clave = bloque ? bloque.clave : paso === PASO_COMPETICION ? COMPETICION : null;
@@ -177,8 +188,29 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
     });
   }
 
+  const textoAntes = (c) => (c?.original || c?.pulido || "").trim();
+  const copiarComentario = (t) => {
+    setAbierto(true); setRevisando(false);
+    setTexto((actual) => (actual.trim() ? `${actual.trim()}\n${t}` : t));
+  };
+  const comentarioAntes = () => {
+    const c = antes?.comentarios?.[clave];
+    const t = textoAntes(c);
+    if (!t) return null;
+    return (
+      <div className="eval-antes">
+        <span className="eval-antes-cab">Lo que se escribió antes ({fmtLarga(antes.fecha)} · {antes.evaluador})</span>
+        <p>{c.pulido || c.original}</p>
+        <button type="button" className="btn ghost sm" onClick={() => copiarComentario(c.original || c.pulido)}>
+          Copiar a mi comentario
+        </button>
+      </div>
+    );
+  };
+
   const comentario = (habilidad) => (
     <div className="eval-comentario">
+      {comentarioAntes()}
       {!abierto ? (
         <button type="button" className="btn ghost sm" onClick={() => setAbierto(true)}>
           + Añadir un comentario sobre {habilidad}
@@ -246,7 +278,7 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
         <div className="card eval-paso">
           <h2>{bloque.titulo}</h2>
           <p className="eval-nota">Puntúa del 1 al {ev.escala || 5}.</p>
-          <Notas bloque={bloque} notas={notas} escala={ev.escala || 5}
+          <Notas bloque={bloque} notas={notas} escala={ev.escala || 5} antes={antes}
             onNota={(k, n) => setNotas((prev) => ({ ...prev, [k]: n }))} />
           {comentario(bloque.habilidad)}
           {mensajes}
@@ -278,9 +310,21 @@ export default function AsistenteEvaluacion({ evaluacion, bloques, ia, pasoInici
             Escribe hasta tres de cada (al menos una). Puedes dictarlas con el micrófono del teclado.
             {ia && " Al generar el informe, Claude las pasa a limpio sin cambiar lo que dices."}
           </p>
-          {[["Fortalezas", misFortalezas, setMisFortalezas], ["Áreas de mejora", misMejoras, setMisMejoras]].map(([titulo, lista, set]) => (
+          {[["Fortalezas", misFortalezas, setMisFortalezas, antes?.fortalezas_original?.length ? antes.fortalezas_original : antes?.fortalezas],
+            ["Áreas de mejora", misMejoras, setMisMejoras, antes?.mejoras_original?.length ? antes.mejoras_original : antes?.mejoras]].map(([titulo, lista, set, previas]) => (
             <fieldset key={titulo} className="eval-frases">
               <legend>{titulo}</legend>
+              {previas?.length > 0 && (
+                <div className="eval-antes">
+                  <span className="eval-antes-cab">Lo que se escribió antes ({fmtLarga(antes.fecha)} · {antes.evaluador})</span>
+                  <ul className="eval-antes-lista">{previas.map((f, i) => <li key={i}>{f}</li>)}</ul>
+                  <button type="button" className="btn ghost sm" disabled={lista.some((x) => x.trim())}
+                    title={lista.some((x) => x.trim()) ? "Ya has escrito algo: bórralo para copiar las de antes" : ""}
+                    onClick={() => set([0, 1, 2].map((i) => previas[i] || ""))}>
+                    Copiar a mis frases
+                  </button>
+                </div>
+              )}
               {lista.map((f, i) => (
                 <input key={i} type="text" value={f} aria-label={`${titulo} ${i + 1}`}
                   onChange={(e) => set(lista.map((x, j) => (j === i ? e.target.value : x)))} />

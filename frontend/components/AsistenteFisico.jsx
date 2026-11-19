@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { guardarEvaluacionFisica, terminarEvaluacionFisica } from "../lib/api";
+import { getEvaluacionFisicaAnterior, guardarEvaluacionFisica, terminarEvaluacionFisica } from "../lib/api";
 import { fmtLarga } from "../lib/torneos";
 
 /**
@@ -20,6 +20,11 @@ export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCa
   const [ocupado, setOcupado] = useState("");
   const [error, setError] = useState("");
   const [hecho, setHecho] = useState("");
+  // Lo evaluado antes de «empezar de cero» (19/11/2026): se enseña para consultarlo, nunca se aplica solo.
+  const [antes, setAntes] = useState(null);
+  useEffect(() => {
+    getEvaluacionFisicaAnterior(evaluacion.jugador).then((r) => setAntes(r.anterior)).catch(() => {});
+  }, [evaluacion.jugador]);
 
   const etiqueta = (n) => escala.find((e) => e.valor === n)?.etiqueta || "";
   const actualizar = (nuevo) => { setEv(nuevo); onCambio?.(nuevo); };
@@ -84,7 +89,13 @@ export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCa
             {bloques[paso].criterios.map((c) => (
               <div key={c.clave} className="eval-criterio fis-criterio">
                 <div className="fis-texto">
-                  <span className="eval-criterio-nombre" id={`lbl-${c.clave}`}>{c.etiqueta}</span>
+                  <span className="eval-criterio-nombre" id={`lbl-${c.clave}`}>{c.etiqueta}
+                    {antes?.puntuaciones?.[c.clave] ? (
+                      <span className="eval-antes-nota" title={`Nota de la evaluación anterior (${fmtLarga(antes.fecha)})`}>
+                        antes: {antes.puntuaciones[c.clave]} · {etiqueta(antes.puntuaciones[c.clave])}
+                      </span>
+                    ) : null}
+                  </span>
                   <span className="fis-pregunta">{c.pregunta}</span>
                 </div>
                 <div className="fis-respuesta">
@@ -114,6 +125,16 @@ export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCa
           <p className="eval-nota">Escríbelas o díctalas con el micrófono del teclado. Puedes dejar alguna en blanco.</p>
           {textos.map((t) => (
             <div key={t.clave} className="eval-comentario">
+              {antes?.textos?.[t.clave]?.trim() && (
+                <div className="eval-antes">
+                  <span className="eval-antes-cab">Lo que se escribió antes ({fmtLarga(antes.fecha)} · {antes.evaluador})</span>
+                  <p>{antes.textos[t.clave]}</p>
+                  <button type="button" className="btn ghost sm"
+                    onClick={() => setObs((o) => ({ ...o, [t.clave]: o[t.clave].trim() ? `${o[t.clave].trim()}\n${antes.textos[t.clave]}` : antes.textos[t.clave] }))}>
+                    Copiar a mis observaciones
+                  </button>
+                </div>
+              )}
               <label htmlFor={`fis-${t.clave}`}>{t.etiqueta}</label>
               <textarea id={`fis-${t.clave}`} rows={3} value={obs[t.clave]}
                 onChange={(e) => setObs({ ...obs, [t.clave]: e.target.value })} />

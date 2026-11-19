@@ -16,7 +16,7 @@ from academy.permissions import (
 )
 from academy.scope import jugadores_alto_rendimiento, jugadores_que_evalua
 
-from . import catalogo, drive, fichero, ia, informes, pdf, traduccion
+from . import anteriores, catalogo, drive, fichero, ia, informes, pdf, traduccion
 from .models import (
     AsignacionFisica, AsignacionInforme, DatosInforme, Evaluacion, EvaluacionFisica, FotoJugador, Informe,
     MiembroTardes,
@@ -107,6 +107,19 @@ class EvaluacionViewSet(viewsets.ModelViewSet):
             "solo_informes": bool(j.escuela_id and j.escuela.solo_informes),
             "ultima": str(ultimas[j.id]) if j.id in ultimas else None,
         } for j in self._jugadores().select_related("escuela").order_by("nombre")])
+
+    @action(detail=False)
+    def anterior(self, request):
+        """`?jugador=`: lo que se evaluó de tenis de ese jugador antes de «empezar
+        de cero» (19/11/2026), para consultarlo al rehacer: notas, comentarios,
+        fortalezas y mejoras. Solo lo ve quien puede evaluarlo ahora."""
+        try:
+            jugador_id = int(request.query_params.get("jugador"))
+        except (TypeError, ValueError):
+            raise ValidationError({"jugador": "Falta el jugador."})
+        if not self._jugadores().filter(pk=jugador_id).exists():
+            raise PermissionDenied("Ese jugador no está entre los tuyos.")
+        return Response({"anterior": anteriores.tenis(jugador_id)})
 
     def _editable(self, ev):
         if not ev.puede_editar(self.request.user):
@@ -332,6 +345,18 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
         inf = getattr(instance, "informe", None)
         instance.delete()
         informes.tras_borrar_parte(inf)
+
+    @action(detail=False)
+    def anterior(self, request):
+        """`?jugador=`: la evaluación física de ese jugador de antes de «empezar
+        de cero» (19/11/2026), para consultarla al rehacer."""
+        try:
+            jugador_id = int(request.query_params.get("jugador"))
+        except (TypeError, ValueError):
+            raise ValidationError({"jugador": "Falta el jugador."})
+        if not jugadores_con_fisico().filter(pk=jugador_id).exists():
+            raise PermissionDenied("A ese jugador no se le hace la parte física.")
+        return Response({"anterior": anteriores.fisica(jugador_id)})
 
     @action(detail=False)
     def catalogo(self, request):

@@ -479,6 +479,9 @@ export async function subirFotoJugador(jugadorId, file) {
 // --- Evaluaciones físicas (preparador físico y gestión deportiva) ----------
 export const getCatalogoFisico = () => req("/evaluaciones-fisicas/catalogo/");
 export const getJugadoresFisico = () => req("/evaluaciones-fisicas/jugadores/");
+// Lo evaluado antes de «empezar de cero» (19/11/2026), para consultarlo al rehacer ({anterior} o {anterior: null}).
+export const getEvaluacionAnterior = (jugadorId) => req(`/evaluaciones/anterior/?jugador=${jugadorId}`);
+export const getEvaluacionFisicaAnterior = (jugadorId) => req(`/evaluaciones-fisicas/anterior/?jugador=${jugadorId}`);
 // Quién hace la física de cada jugador (19/11/2026): lo reparte quien coordina la preparación física.
 export const getRepartoFisico = () => req("/evaluaciones-fisicas/reparto/");
 export const asignarFisico = (jugadores, evaluador) =>

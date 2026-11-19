@@ -1686,6 +1686,14 @@ td.cell.forzada { background: #fffaf0; }
 .eval-pulido { margin-top: 12px; padding: 12px; border-radius: var(--r); background: var(--surface-2); border: 1px dashed var(--border-strong); }
 .eval-pulido textarea { background: var(--surface); }
 .eval-nota { color: var(--muted); font-size: 13px; margin: 8px 0; }
+/* Lo evaluado antes de «empezar de cero» (19/11/2026), para consultarlo al rehacer. */
+.eval-antes { margin: 10px 0; padding: 10px 12px; border-radius: var(--r); background: var(--surface-2);
+  border-left: 3px solid var(--border-strong); font-size: 14px; display: grid; gap: 6px; }
+.eval-antes .eval-antes-cab { color: var(--muted); font-size: 12.5px; }
+.eval-antes p { margin: 0; }
+.eval-antes .btn { justify-self: start; }
+.eval-antes-nota { color: var(--muted); font-size: 12.5px; margin-left: 8px; white-space: nowrap; }
+.eval-antes-lista { margin: 0; padding-left: 18px; }
 .eval-pie { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 18px; }
 .eval-frases { border: 0; padding: 0; margin: 14px 0 0; display: grid; gap: 8px; }
 .eval-frases legend { font-weight: 500; margin-bottom: 6px; padding: 0; }
