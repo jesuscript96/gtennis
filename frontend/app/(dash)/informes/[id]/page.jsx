@@ -134,7 +134,7 @@ function Validar({ inf, onCambio }) {
             <button type="button" className="btn ghost" onClick={() => setModo(null)}>Cancelar</button>
             <button type="button" className={inf.puede_enviar && inf.correo_activo ? "btn ghost" : "btn"} disabled={enviando}
               onClick={() => hacer(() => aprobarInforme(inf.id, dest.filter((d) => d.email.trim())))}>
-              {enviando ? "Aprobando…" : "Solo aprobar"}
+              {enviando ? "Aprobando…" : inf.puede_enviar && inf.correo_activo ? "Solo aprobar" : "Aprobar"}
             </button>
             {inf.puede_enviar && inf.correo_activo && (
               <>
