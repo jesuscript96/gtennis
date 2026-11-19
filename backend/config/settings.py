@@ -164,14 +164,16 @@ DRIVE_INFORMES_ID = os.environ.get("DRIVE_INFORMES_ID", "")
 # del club, en dos carpetas dentro de DRIVE_CT_RUTA (tramos separados por « › »).
 # La cuenta de servicio entra en su nombre (delegación en todo el dominio).
 DRIVE_CT_USUARIO = os.environ.get("DRIVE_CT_USUARIO", "")
+# 19/11/2026: el club movió «26/27» dentro de «Seguimiento y evaluaciones»
+# (antes era al revés); «Por validar» y «Validados» son las mismas carpetas.
 DRIVE_CT_RUTA = os.environ.get(
     "DRIVE_CT_RUTA",
-    "GTENNIS 2.0 - OPERACIONES › Gestion deportiva › Competicion tardes › 26/27 › Seguimiento y evaluaciones")
+    "GTENNIS 2.0 - OPERACIONES › Gestion deportiva › Competicion tardes › Seguimiento y evaluaciones › 26/27")
 # Informes de Alto rendimiento (12/11/2026): igual, en su carpeta. Hasta
 # «Alto rendimiento» ya existe; lo de después lo crea la app.
 DRIVE_AR_RUTA = os.environ.get(
     "DRIVE_AR_RUTA",
-    "GTENNIS 2.0 - OPERACIONES › Gestion deportiva › Alto rendimiento › 26/27 › Seguimiento y evaluaciones")
+    "GTENNIS 2.0 - OPERACIONES › Gestion deportiva › Alto rendimiento › Seguimiento y evaluaciones › 26/27")
 
 # --- Correo a las familias (10/11/2026, decisión 13) -------------------------
 # Con EMAIL_HOST se envía por SMTP (p. ej. la cuenta gestion@ del club). Sin él,

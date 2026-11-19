@@ -241,8 +241,9 @@ def _carpeta_ct(s, destino):
 
 # Alto rendimiento (12/11/2026): como tardes, dentro de su carpeta de «Gestion
 # deportiva». Hasta «Alto rendimiento» ya existe en el Drive del club (junto a
-# «Jugadores activos», «Metodologia»…); «26/27 › Seguimiento y evaluaciones» y
-# las dos carpetas de dentro se crean con el primer informe.
+# «Jugadores activos», «Metodologia»…); lo de después («Seguimiento y
+# evaluaciones › 26/27» desde el 19/11/2026) y las dos carpetas de dentro se
+# crean si faltan.
 AR_TRAMOS_QUE_EXISTEN = 3
 
 
@@ -299,3 +300,26 @@ def subir_informe(inf, idioma="ES", copia_es=False):
     except Exception as e:  # noqa: BLE001
         log.exception("Fallo al subir el informe a Drive")
         raise DriveNoDisponible("No se ha podido guardar en Drive.") from e
+
+
+def comprobar_rutas():
+    """Para dirección (19/11/2026): sigue la ruta configurada de cada escuela
+    en el Drive del club y dice qué carpetas «Por validar» y «Validados»
+    encuentra, sin crear ni mover nada. Sirve para comprobar que la app apunta
+    bien después de que el club reorganice las carpetas."""
+    if not ct_configurado():
+        return {"error": "Drive del club no conectado."}
+    s = _sesion(settings.DRIVE_CT_USUARIO)
+    out = {}
+    for escuela, ruta in (("tardes", settings.DRIVE_CT_RUTA), ("alto_rendimiento", settings.DRIVE_AR_RUTA)):
+        fila = {"ruta": ruta}
+        try:
+            padre = "root"
+            for nombre in _tramos(ruta):
+                padre = _hija(s, padre, nombre)
+            for destino, nombre in CARPETA_CT.items():
+                fila[destino] = _hija(s, padre, nombre)
+        except DriveNoDisponible as e:
+            fila["error"] = str(e)
+        out[escuela] = fila
+    return out

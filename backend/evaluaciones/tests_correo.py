@@ -247,3 +247,33 @@ class DatosFamiliasTests(TestCase):
         self.assertEqual((self.nino.email, self.nino.datos_informe.email_2), ("a@b.es", "padre@nino.es"))
         self.assertEqual(informes.destinatarios_propuestos(self.nino),
                          [{"email": "a@b.es", "quien": "Familia"}, {"email": "padre@nino.es", "quien": "Padre"}])
+
+
+class RutasDriveTests(TestCase):
+    """Comprobar las carpetas de Drive sin tocar nada (19/11/2026)."""
+
+    def test_sigue_la_ruta_sin_crear(self):
+        from . import drive
+
+        arbol = {("root", "A"): "a", ("a", "B"): "b", ("b", "Por validar"): "pv", ("b", "Validados"): "v"}
+
+        def hija(s, padre, nombre, crear=False):
+            self.assertFalse(crear)
+            if (padre, nombre) not in arbol:
+                raise drive.DriveNoDisponible(f"No encuentro la carpeta «{nombre}»")
+            return arbol[(padre, nombre)]
+
+        with override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="{}", DRIVE_CT_USUARIO="gestion@gtennis.com",
+                               DRIVE_CT_RUTA="A › B", DRIVE_AR_RUTA="A › C"), \
+                mock.patch.object(drive, "_sesion"), mock.patch.object(drive, "_hija", side_effect=hija):
+            r = drive.comprobar_rutas()
+        self.assertEqual((r["tardes"]["pendientes"], r["tardes"]["validados"]), ("pv", "v"))
+        self.assertIn("«C»", r["alto_rendimiento"]["error"])
+        dir_ = User.objects.create_user(username="d", password="x", role=User.Role.SUPERADMIN)
+        ent = User.objects.create_user(username="e", password="x", role=User.Role.ENTRENADOR)
+        c = APIClient()
+        c.force_authenticate(ent)
+        self.assertEqual(c.get("/api/informes/drive/").status_code, 403)
+        c.force_authenticate(dir_)
+        with override_settings(GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_CT_USUARIO=""):
+            self.assertEqual(c.get("/api/informes/drive/").data, {"error": "Drive del club no conectado."})

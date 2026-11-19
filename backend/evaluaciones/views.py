@@ -657,6 +657,17 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             cambiados += 1
         return {"guardados": cambiados, "errores": errores}
 
+    @action(detail=False, url_path="drive")
+    def rutas_drive(self, request):
+        """Dirección: dónde encuentra la app las carpetas de informes en Drive
+        (solo lectura, 19/11/2026)."""
+        if not es_direccion(request.user):
+            raise PermissionDenied("Solo dirección.")
+        try:
+            return Response(drive.comprobar_rutas())
+        except drive.DriveNoDisponible as e:
+            return Response({"error": str(e)})
+
     @action(detail=False)
     def correo(self, request):
         """Dirección: ¿está conectado el correo? Pide permiso a Google sin
