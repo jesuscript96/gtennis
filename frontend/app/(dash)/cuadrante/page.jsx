@@ -530,12 +530,12 @@ function Inner() {
                 {benchFaltas.map((p) => {
                   const selected = sel && sel.k === "bj" && sel.jugador === p.id;
                   return (
-                    <div key={p.id} className={`bench-chip nd${selected ? " sel" : ""}`}
+                    <div key={p.id} className={`bench-chip nd${selected ? " sel" : ""}`} style={{ "--falta": ESTADO_COLOR[p.estado] || "var(--border-strong)" }}
                       title={`${ESTADO_LABEL[p.estado] || p.estado} · toca para forzarle pista`}
                       onClick={(e) => { e.stopPropagation(); pick({ k: "bj", jugador: p.id, label: p.nombre }); }}>
                       <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
                       <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
-                      <span><span className="falta-nombre" style={{ color: ESTADO_COLOR[p.estado] || "inherit" }}>{p.nombre}</span> · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
                     </div>
                   );
                 })}
@@ -783,12 +783,12 @@ function Inner() {
                 <summary>No vienen hoy · {benchFaltas.length}</summary>
                 <div className="bench-col-items">
                   {benchFaltas.map((p) => (
-                    <div key={p.id} className="bench-chip dnd nd" draggable={editable}
+                    <div key={p.id} className="bench-chip dnd nd" draggable={editable} style={{ "--falta": ESTADO_COLOR[p.estado] || "var(--border-strong)" }}
                       onDragStart={(e) => setDrag(e, { k: "bj", jugador: p.id })}
                       title={`${p.nombre}${p.coach ? " · " + p.coach : ""} · ${ESTADO_LABEL[p.estado] || p.estado} (arrastra para forzar pista)`}>
                       <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
                       <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
-                      <span><span className="falta-nombre" style={{ color: ESTADO_COLOR[p.estado] || "inherit" }}>{p.nombre}</span> · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
                     </div>
                   ))}
                 </div>
