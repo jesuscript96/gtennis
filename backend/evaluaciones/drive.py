@@ -143,6 +143,21 @@ def a_la_papelera(file_id):
         return False
 
 
+def sacar_de_papelera(file_id):
+    """Lo contrario de `a_la_papelera` (para deshacer un borrado, 19/11/2026)."""
+    if not file_id or not (configurado() or ct_configurado()):
+        return False
+    try:
+        s = _sesion(settings.DRIVE_CT_USUARIO if ct_configurado() else None)
+        r = s.patch(f"{API}/{file_id}", params=COMUN, json={"trashed": False})
+        if not r.ok:
+            log.warning("Drive: no se ha podido sacar %s de la papelera (%s)", file_id, r.status_code)
+        return r.ok
+    except Exception:  # noqa: BLE001
+        log.warning("Drive: fallo al sacar %s de la papelera", file_id, exc_info=True)
+        return False
+
+
 # --- Informes de Competición de tardes (27/10/2026) -------------------------
 # Unidad › Escuela › Jugador › «Pendientes de validar» | «Validados y enviados».
 SUBCARPETA = {"pendientes": "Pendientes de validar", "validados": "Validados y enviados"}
