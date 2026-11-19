@@ -985,6 +985,13 @@ ul.miembros.sueltos {
 .nombre-alumno .resp { flex: none; font-size: .68rem; color: var(--muted); white-space: nowrap; }
 /* Altas que aún no han empezado (19/11/2026): cuándo llegan. */
 .nombre-alumno .llega { flex: none; font-size: .68rem; color: var(--accent); white-space: nowrap; }
+/* En «Sin grupo» el nombre va entero (en dos líneas si hace falta) y con la
+   edad: son pocos y hay que saber quién es cada uno (19/11/2026). */
+ul.miembros.sueltos { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+ul.miembros.sueltos .nombre-alumno .txt {
+  white-space: normal; overflow: visible; flex: 1 1 8rem; min-width: 8rem;
+}
+.nombre-alumno .edad { flex: none; font-size: .72rem; color: var(--muted); white-space: nowrap; }
 /* Entrenadores sin grupo de color: una línea al final, solo dirección. No es
    un bloque más: solo el sitio desde el que se les da grupo. */
 .grupos .sin-grupo-ent {

@@ -1015,7 +1015,7 @@ class GruposSoloColorTests(Base):
                                 estado="APROBADO",
                                 jugador_creado=Jugador.objects.get(nombre="Invitada de hoy"))
         Jugador.objects.create(nombre="Ya se fue", fecha_baja=hoy - timedelta(days=1))
-        Jugador.objects.create(nombre="Llega pronto", fecha_alta=hoy + timedelta(days=3))
+        Jugador.objects.create(nombre="Llega pronto", fecha_alta=hoy + timedelta(days=3), edad=16)
         datos = self.grupos()
         sin = {j["nombre"]: j for j in datos["sin_grupo"]}
         en_columnas = {j["nombre"] for b in datos["bloques"] for g in b["grupos"]
@@ -1024,6 +1024,7 @@ class GruposSoloColorTests(Base):
             self.assertNotIn(nombre, sin)
             self.assertNotIn(nombre, en_columnas)
         self.assertEqual(sin["Llega pronto"]["fecha_alta"], (hoy + timedelta(days=3)).isoformat())
+        self.assertEqual(sin["Llega pronto"]["edad"], 16)
 
     def test_dar_grupo_desde_la_linea_no_le_saca_del_bloque_de_todos(self):
         todos = Coach.objects.create(nombre="Sergio")

@@ -1835,6 +1835,8 @@ class GrupoViewSet(viewsets.ViewSet):
             # desde cuándo vienen, que si no nadie sabe quiénes son.
             "fecha_alta": j.fecha_alta.isoformat() if j.fecha_alta else None,
             "fecha_baja": j.fecha_baja.isoformat() if j.fecha_baja else None,
+            # En «Sin grupo» se enseña la edad, para saber dónde encaja.
+            "edad": j.edad,
         }
 
     def _assert_direccion(self):

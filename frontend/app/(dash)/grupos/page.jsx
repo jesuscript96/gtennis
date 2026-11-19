@@ -383,6 +383,7 @@ function PorEntrenador({ pestanas }) {
           onClick={() => setCogido(payload)}>
           <span className="div-badge">{j.division ? `D${j.division}` : "—"}</span>
           <span className="txt">{j.nombre}</span>
+          {!entrenador && j.edad != null && <span className="edad">{j.edad} años</span>}
           {!entrenador && cuandoLlega(j) && <span className="llega">{cuandoLlega(j)}</span>}
         </button>
         {editable && entrenador && (
