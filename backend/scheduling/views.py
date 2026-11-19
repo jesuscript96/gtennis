@@ -379,6 +379,9 @@ class SemanaViewSet(viewsets.ModelViewSet):
         """Panel lateral para la vista de semana: jugadores agrupados por
         entrenador para un día dado (?dia=0).
 
+        Solo quien ese día debería entrenar (`engine.service.quien_viene`) o
+        ya tiene pista; los que tienen falta llevan `falta: true`.
+
         Devuelve dos secciones:
         - por_entrenador: entrenadores disponibles con sus jugadores
         - sin_entrenador: entrenadores no disponibles cuyos jugadores sí lo están
@@ -424,20 +427,30 @@ class SemanaViewSet(viewsets.ModelViewSet):
             semana=semana, dia=dia).values_list("jugador_id", "motivo"):
             avisos_banquillo[jid] = (avisos_banquillo.get(jid, "") + " " + motivo).strip()
 
+        # Quién debería entrenar hoy (19/11/2026), con la regla del motor. El
+        # banquillo era todo el que no tenía pista: también invitados de otro
+        # día, altas que aún no han empezado y quien no entrena ese día.
+        from engine.service import quien_viene
+
+        viene = quien_viene(semana, dia)
+
         # Agrupar jugadores por entrenador_responsable
         by_coach = {}
         no_coach = []
         for j in players:
-            state = _effective_state(overrides, j.id, dia_state)
-            # No se excluye ningún estado: los "no disponibles" (climatología,
-            # ausencia, torneo…) deben aparecer en el banquillo para poder
-            # forzar su asignación manualmente si se desea.
+            if j.id not in viene and j.id not in assigned_ids:
+                continue
+            # Los que tienen falta siguen saliendo, aparte («No vienen hoy»),
+            # para poder forzarles pista a mano si se quiere.
+            state, falta = viene.get(
+                j.id, (_effective_state(overrides, j.id, dia_state), False))
             entry = {
                 "id": j.id,
                 "nombre": j.nombre,
                 "foto_url": j.foto_url or "",
                 "division_nivel": j.division.nivel if j.division else None,
                 "estado": state,
+                "falta": falta,
                 "tiene_asignacion": j.id in assigned_ids,
                 "aviso": avisos_banquillo.get(j.id, ""),
             }
@@ -478,8 +491,9 @@ class SemanaViewSet(viewsets.ModelViewSet):
             })
 
         # Entrenadores franja a franja: dónde está cada uno y quién queda
-        # libre. Se enseñan TODOS, también los que ya tienen pista a otra hora,
-        # porque desde el cuadrante se puede forzar a cualquiera.
+        # libre. Se enseñan todos los que trabajan ese día, también los que ya
+        # tienen pista a otra hora, porque desde el cuadrante se puede forzar a
+        # cualquiera.
         from academy.models import HorarioEntrenador, VacacionesEntrenador
         from engine.service import motivo_no_disponible
 
@@ -516,6 +530,14 @@ class SemanaViewSet(viewsets.ModelViewSet):
                     "libre": not pistas and motivo is None,
                     "motivo": motivo or "",
                 }
+            # Quien por su jornada no trabaja ese día y no tiene pista no sale
+            # (19/11/2026): Jorge Milla y Salva solo aparecen los sábados. Los
+            # de vacaciones o torneo siguen saliendo, con su motivo.
+            if franjas and all(
+                not f["pistas"] and f["motivo"].startswith("ese día no trabaja")
+                for f in franjas.values()
+            ):
+                continue
             entrenadores.append({
                 "id": c.id, "nombre": c.nombre, "foto_url": c.foto_url or "",
                 "reserva": c.reserva or c.solo_manual, "franjas": franjas,

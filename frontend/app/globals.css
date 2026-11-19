@@ -311,6 +311,14 @@ table.grid th { text-align: left; color: var(--muted); font-weight: 500; font-si
   box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
 }
 .bench-empty { color: var(--muted); font-size: 13px; }
+/* «No vienen hoy» (19/11/2026): los que tenían que entrenar y tienen falta.
+   Plegado bajo el banquillo; se despliega para forzarles pista. */
+.bench-faltas { margin: 12px 0 4px; }
+.bench-faltas > summary {
+  cursor: pointer; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); margin-bottom: 8px;
+}
+.bench-faltas .bench-chip em { font-style: normal; color: var(--muted); font-size: 12px; }
 /* Selector multi-fk (divisiones que puede entrenar, etc.) */
 .mfk { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 4px; }
 .mfk-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; }
@@ -975,6 +983,27 @@ ul.miembros.sueltos {
 .nombre-alumno:disabled { cursor: default; }
 .nombre-alumno .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .nombre-alumno .resp { flex: none; font-size: .68rem; color: var(--muted); white-space: nowrap; }
+/* Altas que aún no han empezado (19/11/2026): cuándo llegan. */
+.nombre-alumno .llega { flex: none; font-size: .68rem; color: var(--accent); white-space: nowrap; }
+/* Entrenadores sin grupo de color: una línea al final, solo dirección. No es
+   un bloque más: solo el sitio desde el que se les da grupo. */
+.grupos .sin-grupo-ent {
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  border: 1px dashed var(--border); border-radius: 10px;
+  padding: .45rem .7rem; margin-bottom: 1rem; font-size: .8rem;
+}
+.grupos .sin-grupo-ent .titulo { color: var(--muted); margin-right: .3rem; }
+.grupos .sin-grupo-ent .msg { margin: 0; padding: 0; font-size: .78rem; color: var(--muted); }
+.grupos .sin-grupo-ent.esperando { border-color: var(--border-strong); }
+.grupos .sin-grupo-ent.encima { border: 2px dashed var(--accent); background: #f8efe9; }
+.grupos .sin-grupo-ent .traer { margin-left: auto; width: auto; margin-bottom: 0; }
+.ent-suelto {
+  font: inherit; font-size: .78rem; color: var(--text); cursor: grab;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: .15rem .6rem; user-select: none;
+}
+.ent-suelto:hover { border-color: var(--accent); }
+.ent-suelto.cogido { opacity: .45; }
 .div-badge {
   flex: none; font-size: .64rem; font-weight: 700; color: var(--muted);
   background: var(--surface-2); border: 1px solid var(--border);

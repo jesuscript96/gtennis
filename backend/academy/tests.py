@@ -1028,8 +1028,9 @@ class GruposPorColoresTests(TestCase):
                          ("Pablo", "turquesa"))
         columnas = {g["entrenador"]["nombre"]: g["jugadores"] for g in bloques[0]["grupos"]}
         self.assertEqual(set(columnas), {"Mario", "Jorge I", "Salva"})
-        ivan = next(b for b in bloques if b["coach"]["nombre"] == "Ivan")
-        self.assertEqual(ivan["grupos"], [])
+        # 19/11/2026: los bloques sin color (Iván, el de todos…) ya no salen.
+        self.assertTrue(all(b["coach"]["color"] for b in bloques))
+        self.assertNotIn("Ivan", [b["coach"]["nombre"] for b in bloques])
         self.assertEqual([(j["nombre"], j["con"]) for j in columnas["Jorge I"]],
                          [("Marcos", ["Mario"])])
         self.assertEqual([(j["nombre"], j["con"]) for j in columnas["Mario"]],

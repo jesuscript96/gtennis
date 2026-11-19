@@ -1810,6 +1810,10 @@ class GrupoViewSet(viewsets.ViewSet):
     no alumnos (sin ella, Santi no tenía dónde recibir a nadie); y dos
     entrenadores que llevan el mismo grupo (`Entrenador.columna_con`: Mario
     Muniesa y Jorge Ibáñez) salen como una sola columna, «Mario / Jorge».
+
+    19/11/2026: solo salen los grupos de color. Fuera los invitados (no son
+    de ningún grupo) y quien ya se ha ido; los entrenadores sin grupo de color
+    van en una línea aparte para dirección, desde donde se les da grupo.
     """
 
     # El organigrama lo ve todo el mundo igual (14/10/2026): dirección,
@@ -1827,6 +1831,10 @@ class GrupoViewSet(viewsets.ViewSet):
             "foto": j.foto_url or "",
             # Gestión compartida: con quién lleva esta columna al alumno.
             "con": con or [],
+            # Altas que aún no han empezado (19/11/2026): en «Sin grupo» se dice
+            # desde cuándo vienen, que si no nadie sabe quiénes son.
+            "fecha_alta": j.fecha_alta.isoformat() if j.fecha_alta else None,
+            "fecha_baja": j.fecha_baja.isoformat() if j.fecha_baja else None,
         }
 
     def _assert_direccion(self):
@@ -1885,11 +1893,16 @@ class GrupoViewSet(viewsets.ViewSet):
         en_columna = defaultdict(list)  # principal -> [entrenadores de la columna]
         for e in entrenadores:
             en_columna[principal[e.id]].append(e)
+        # 19/11/2026: los invitados no son de ningún grupo (se llevan en
+        # Invitados) y quien ya se ha ido (baja pasada) tampoco sale. Las altas
+        # que empiezan más adelante sí: hay que darles grupo antes de que lleguen.
+        hoy = date.today()
         jugadores = {
             j.id: j
-            for j in Jugador.objects.filter(activo=True).select_related(
-                "division", "escuela", "entrenador_responsable"
-            ).prefetch_related("cogestores")
+            for j in Jugador.objects.filter(activo=True, invitaciones__isnull=True)
+            .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy))
+            .select_related("division", "escuela", "entrenador_responsable")
+            .prefetch_related("cogestores")
         }
 
         propios = defaultdict(list)
@@ -1940,40 +1953,48 @@ class GrupoViewSet(viewsets.ViewSet):
                 "jugadores": alumnos,
             })
 
-        # Se devuelven TODOS los bloques, también los que se han quedado sin
-        # entrenadores: si no, no habría dónde soltar al que se arrastra.
+        # Solo los grupos de color (19/11/2026): los bloques grises del final
+        # (el «ALVARO MANTOAN» suelto y «Sin bloque», con Iván, Sergio…) no son
+        # grupos y el club no sabía a qué venían. Se devuelven todos los de
+        # color, también los vacíos: si no, no habría dónde soltar una columna.
         orden = {v: i for i, v in enumerate(Coach.Color.values)}
-        # Los bloques sin color (Sergio, Iván, Álvaro…) solo le sirven a
-        # dirección, que es quien coloca ahí columnas: los demás ven los grupos.
         direccion = bool(request.user.is_superadmin)
-        visibles = Coach.objects.filter(activo=True)
-        if not direccion:
-            visibles = visibles.exclude(color="")
-        coaches = sorted(visibles,
+        coaches = sorted(Coach.objects.filter(activo=True).exclude(color=""),
                          key=lambda c: (orden.get(c.color, len(orden)), c.nombre))
         bloques = [
             {
                 "coach": {"id": c.id, "nombre": c.nombre, "color": c.color,
-                          "color_nombre": c.get_color_display() if c.color else ""},
+                          "color_nombre": c.get_color_display()},
                 "grupos": por_bloque.get(c.id, []),
             }
             for c in coaches
         ]
-        if direccion:
-            bloques.append({"coach": None, "grupos": por_bloque.get(None, [])})
+        con_color = {c.id for c in coaches}
+        # Los entrenadores que no están en ningún grupo de color: una línea
+        # para dirección, desde la que se arrastran a un grupo (Marc Giner,
+        # recién llegado, o quien salga de uno). No se pintan como columnas.
+        sin_grupo_entrenadores = [
+            {"id": g["entrenador"]["id"], "ids": g["entrenador"]["ids"],
+             "nombre": g["entrenador"]["nombre"]}
+            for clave, columnas in por_bloque.items() if clave not in con_color
+            for g in columnas
+        ] if direccion else []
+        sin_grupo_entrenadores.sort(key=lambda e: e["nombre"])
 
-        # Sin grupo es quien no tiene responsable (o lo tiene de baja). El
-        # coach ve además a alumnos que gestiona otro color porque los
-        # entrenan los suyos: esos tienen grupo, no van aquí.
+        # Sin grupo es quien no sale en ninguna columna de color: no tiene
+        # responsable, lo tiene de baja o le lleva alguien sin grupo de color.
+        en_columnas = {
+            f["id"] for c in coaches for g in por_bloque.get(c.id, [])
+            for f in g["jugadores"]
+        }
         sin_grupo = [
             self._ficha(j) for j in sorted(jugadores.values(), key=lambda x: x.nombre)
-            if j.entrenador_responsable_id not in ids and (
-                j.entrenador_responsable is None
-                or not j.entrenador_responsable.activo)
+            if j.id not in en_columnas
         ]
         return Response({
             "bloques": bloques,
             "sin_grupo": sin_grupo,
+            "sin_grupo_entrenadores": sin_grupo_entrenadores,
             "entrenadores": [{"id": e.id, "nombre": e.nombre} for e in entrenadores],
             # Alumnos: dirección y el head coach de un color. Columnas
             # (entrenadores de un bloque a otro): solo dirección.

@@ -976,3 +976,144 @@ class TorneosTests(Base):
         self.assertEqual(c.delete(f"/api/torneos/{self.suyo.id}/").status_code, 204)
         # Dirección, siempre.
         self.assertEqual(self.api(self.dir).delete(f"/api/torneos/{self.mixto.id}/").status_code, 204)
+
+
+class GruposSoloColorTests(Base):
+    """19/11/2026: en Grupos solo salen los grupos de color; sin invitados ni
+    bajas; los entrenadores sin grupo, en una línea para dirección."""
+
+    def grupos(self, user=None):
+        r = self.api(user or self.dir).get("/api/grupos/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()
+
+    def test_sin_bloques_grises(self):
+        Coach.objects.create(nombre="ALVARO MANTOAN").entrenadores.add(self.otro)
+        datos = self.grupos()
+        self.assertTrue(all(b["coach"] and b["coach"]["color"] for b in datos["bloques"]))
+        columnas = [g["entrenador"]["nombre"] for b in datos["bloques"] for g in b["grupos"]]
+        self.assertNotIn("Otro", columnas)
+        self.assertIn("Otro", [e["nombre"] for e in datos["sin_grupo_entrenadores"]])
+        # Esa línea es solo para dirección.
+        self.assertEqual(self.grupos(self.pablo)["sin_grupo_entrenadores"], [])
+
+    def test_quien_no_sale_en_ninguna_columna_va_a_sin_grupo(self):
+        self.assertIn("Ajeno Orden", [j["nombre"] for j in self.grupos()["sin_grupo"]])
+
+    def test_invitados_y_bajas_fuera_y_altas_futuras_con_su_fecha(self):
+        from datetime import timedelta
+
+        from academy.models import Invitado
+
+        hoy = date.today()
+        inv = Jugador.objects.create(nombre="Elina (invitado)", fecha_alta=hoy - timedelta(days=20),
+                                     fecha_baja=hoy - timedelta(days=20))
+        Invitado.objects.create(nombre="Elina", entrenador_solicitante=self.javi,
+                                estado="APROBADO", jugador_creado=inv)
+        Jugador.objects.create(nombre="Invitada de hoy", entrenador_responsable=self.blas)
+        Invitado.objects.create(nombre="Invitada de hoy", entrenador_solicitante=self.javi,
+                                estado="APROBADO",
+                                jugador_creado=Jugador.objects.get(nombre="Invitada de hoy"))
+        Jugador.objects.create(nombre="Ya se fue", fecha_baja=hoy - timedelta(days=1))
+        Jugador.objects.create(nombre="Llega pronto", fecha_alta=hoy + timedelta(days=3))
+        datos = self.grupos()
+        sin = {j["nombre"]: j for j in datos["sin_grupo"]}
+        en_columnas = {j["nombre"] for b in datos["bloques"] for g in b["grupos"]
+                       for j in g["jugadores"]}
+        for nombre in ("Elina (invitado)", "Invitada de hoy", "Ya se fue"):
+            self.assertNotIn(nombre, sin)
+            self.assertNotIn(nombre, en_columnas)
+        self.assertEqual(sin["Llega pronto"]["fecha_alta"], (hoy + timedelta(days=3)).isoformat())
+
+    def test_dar_grupo_desde_la_linea_no_le_saca_del_bloque_de_todos(self):
+        todos = Coach.objects.create(nombre="Sergio")
+        todos.entrenadores.add(self.otro)
+        r = self.api(self.dir).post("/api/grupos/mover_entrenador/", {
+            "entrenador": self.otro.id, "coach": self.grupo.id, "desde": 0,
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(set(self.otro.coaches.all()), {self.grupo, todos})
+        self.assertIn("Otro", [g["entrenador"]["nombre"] for b in self.grupos()["bloques"]
+                               for g in b["grupos"]])
+
+
+class EntrenadoresYGonzaloTests(Base):
+    """19/11/2026 (academy.0065): Alberto fuera del cuadrante con su usuario
+    activo, Jorge Milla y Salva solo los sábados, el Gonzalo duplicado inactivo
+    y Marc Giner dado de alta sin contraseña."""
+
+    def setUp(self):
+        super().setUp()
+        import importlib
+
+        from django.apps import apps
+
+        self.apps = apps
+        self.mig = importlib.import_module("academy.migrations.0065_entrenadores_y_gonzalo")
+        # La base de pruebas ya pasó por 0065 (y trae entrenadores sembrados):
+        # se parte de cero.
+        from users.models import ArchivoMigracion
+
+        ArchivoMigracion.objects.filter(migracion=self.mig.NOMBRE).delete()
+        User.objects.filter(username="marc.giner").delete()
+        Entrenador.objects.filter(nombre="Marc Giner").delete()
+        Entrenador.objects.update(activo=False)
+        Entrenador.objects.filter(pk__in=[self.blas.pk, self.javi.pk, self.otro.pk]).update(activo=True)
+        self.u_alberto = User.objects.create_user(username="alberto.sanz", password="x",
+                                                  role=User.Role.ENTRENADOR)
+        self.alberto = Entrenador.objects.create(nombre="Alberto Sanz", user=self.u_alberto,
+                                                 solo_manual=True)
+        self.milla = Entrenador.objects.create(nombre="Jorge Milla", solo_manual=True)
+        self.salva = Entrenador.objects.create(nombre="Salva Barcala", solo_manual=True)
+        from academy.models import HorarioEntrenador
+
+        self.HorarioEntrenador = HorarioEntrenador
+        # Salva tenía ya una fila (los lunes solo mañana): se cambia y vuelve.
+        HorarioEntrenador.objects.create(entrenador=self.salva, dia=0, manana=True, tarde=False)
+        self.gonzalo = Jugador.objects.create(nombre="Gonzalo Chicote")
+        self.revert = Jugador.objects.create(nombre="Gonzalo Chicote Revert", codigo_cliente=8800)
+
+    def jornada(self, ent):
+        return {h.dia: (h.manana, h.tarde) for h in self.HorarioEntrenador.objects.filter(entrenador=ent)}
+
+    def test_aplica(self):
+        self.mig.aplicar(self.apps, None)
+        for o in (self.alberto, self.u_alberto, self.milla, self.salva, self.gonzalo, self.revert):
+            o.refresh_from_db()
+        self.assertFalse(self.alberto.activo)
+        self.assertTrue(self.u_alberto.is_active)  # sigue con Competición de tardes
+        self.assertTrue(self.milla.activo and self.salva.activo)
+        solo_sabado = {d: (d == 5, False) for d in range(6)}
+        self.assertEqual(self.jornada(self.milla), solo_sabado)
+        self.assertEqual(self.jornada(self.salva), solo_sabado)
+        self.assertFalse(self.gonzalo.activo)
+        self.assertTrue(self.revert.activo)
+        marc = User.objects.get(username="marc.giner")
+        self.assertEqual(marc.role, User.Role.ENTRENADOR)
+        self.assertFalse(marc.has_usable_password())
+        self.assertEqual(marc.get_full_name(), "Marc Giner")
+        ficha = Entrenador.objects.get(user=marc)
+        self.assertEqual(ficha.nombre, "Marc Giner")
+        self.assertTrue(ficha.activo and ficha.solo_manual)
+        self.assertFalse(ficha.coaches.exists())
+
+    def test_se_deshace_como_estaba(self):
+        self.mig.aplicar(self.apps, None)
+        self.mig.deshacer(self.apps, None)
+        for o in (self.alberto, self.gonzalo):
+            o.refresh_from_db()
+        self.assertTrue(self.alberto.activo)
+        self.assertTrue(self.gonzalo.activo)
+        self.assertEqual(self.jornada(self.milla), {})
+        self.assertEqual(self.jornada(self.salva), {0: (True, False)})
+        self.assertFalse(User.objects.filter(username="marc.giner").exists())
+        self.assertFalse(Entrenador.objects.filter(nombre="Marc Giner").exists())
+
+    def test_sin_el_gonzalo_bueno_no_toca_al_otro_y_no_duplica_a_marc(self):
+        self.revert.delete()
+        User.objects.create_user(username="marc.giner", password="x", role=User.Role.ENTRENADOR)
+        self.mig.aplicar(self.apps, None)
+        self.gonzalo.refresh_from_db()
+        self.assertTrue(self.gonzalo.activo)
+        self.assertEqual(User.objects.filter(username="marc.giner").count(), 1)
+        self.assertFalse(Entrenador.objects.filter(nombre="Marc Giner").exists())

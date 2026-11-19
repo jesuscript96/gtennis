@@ -46,8 +46,31 @@ import DivisionesRanking from "../../../components/DivisionesRanking";
  * 17/11/2026: el head coach tiene siempre su columna (Santi no tenía dónde
  * recibir a nadie) y dos entrenadores que llevan el mismo grupo salen como una
  * sola columna, «Mario Muniesa / Jorge Ibáñez» (`entrenador.ids`).
+ *
+ * 19/11/2026: solo los grupos de color. Los bloques grises del final («ALVARO
+ * MANTOAN», «Sin bloque») ya no salen; los entrenadores sin grupo de color van
+ * en una línea para dirección, desde la que se arrastran a un grupo. En «Sin
+ * grupo» no salen invitados ni quien ya se fue, y las altas que aún no han
+ * empezado llevan la fecha en que llegan.
  */
 const VISTAS = [["entrenador", "Por entrenador"], ["division", "Por división"]];
+
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const fechaCorta = (iso) => {
+  const [, m, d] = String(iso).split("-").map(Number);
+  return `${d} ${MESES[m - 1]}`;
+};
+const hoyIso = () => {
+  const h = new Date();
+  return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`;
+};
+// «llega el 20 nov» / «del 30 nov al 12 dic»: solo para quien aún no ha empezado.
+function cuandoLlega(j) {
+  if (!j.fecha_alta || j.fecha_alta <= hoyIso()) return "";
+  return j.fecha_baja
+    ? `del ${fechaCorta(j.fecha_alta)} al ${fechaCorta(j.fecha_baja)}`
+    : `llega el ${fechaCorta(j.fecha_alta)}`;
+}
 
 export default function Page() {
   const [vista, setVista] = useState("entrenador");
@@ -203,7 +226,7 @@ function PorEntrenador({ pestanas }) {
       () => grupoMoverEntrenador(q.id, zona.coach, q.desde),
       zona.coach
         ? `${q.nombre} y sus alumnos pasan al bloque de ${zona.nombre}.`
-        : `${q.nombre} se queda fuera de los bloques.`
+        : `${q.nombre} se queda sin grupo.`
     );
   }, [accion, limpiar, datos]);
 
@@ -235,9 +258,12 @@ function PorEntrenador({ pestanas }) {
       const bloque = el.closest('[data-zona="entrenador"]');
       if (!bloque) return null;
       const coach = bloque.dataset.coach ? Number(bloque.dataset.coach) : null;
-      const mismo = coach === payload.desde;
+      // Los de la línea «sin grupo» llevan `desde: 0` (no están en ningún
+      // grupo de color, pero sí en los bloques generales de Sergio e Iván, que
+      // no hay que tocar al darles grupo).
+      const mismo = coach === payload.desde || (coach == null && payload.desde === 0);
       if (coach == null) {
-        // «Sin bloque»: ahí no hay orden, solo se deja fuera (dirección).
+        // «Sin grupo»: ahí no hay orden, solo se saca del grupo (dirección).
         return payload.muda && !mismo
           ? { clave: "bloque-sin", coach: null, nombre: bloque.dataset.nombre }
           : null;
@@ -357,6 +383,7 @@ function PorEntrenador({ pestanas }) {
           onClick={() => setCogido(payload)}>
           <span className="div-badge">{j.division ? `D${j.division}` : "—"}</span>
           <span className="txt">{j.nombre}</span>
+          {!entrenador && cuandoLlega(j) && <span className="llega">{cuandoLlega(j)}</span>}
         </button>
         {editable && entrenador && (
           <button type="button" className="quitar" disabled={ocupado}
@@ -437,6 +464,7 @@ function PorEntrenador({ pestanas }) {
   };
 
   const sinGrupo = datos.sin_grupo.filter(coincide);
+  const sinGrupoEnt = datos.sin_grupo_entrenadores || [];
 
   return (
     <div className="page grupos">
@@ -501,7 +529,7 @@ function PorEntrenador({ pestanas }) {
           <header className="bloque-head">
             <h2>Sin grupo</h2>
             <span className="cuenta">
-              {datos.sin_grupo.length} alumnos · nadie responde por ellos
+              {datos.sin_grupo.length} alumno{datos.sin_grupo.length === 1 ? "" : "s"} · todavía en ninguna columna
             </span>
             {moviendoJugador && conBotones && editable && cogido.desde && (
               <button className="btn sm traer" disabled={ocupado}
@@ -573,6 +601,41 @@ function PorEntrenador({ pestanas }) {
           </section>
         );
       })}
+
+      {columnasEditables && (sinGrupoEnt.length > 0 || moviendoEntrenador) && (
+        <section data-zona="entrenador" data-clave="bloque-sin" data-coach=""
+          data-nombre="sin grupo"
+          className={[
+            "sin-grupo-ent",
+            encima === "bloque-sin" ? "encima" : "",
+            moviendoEntrenador && cogido.desde !== 0 ? "esperando" : "",
+          ].filter(Boolean).join(" ")}>
+          <span className="titulo">Entrenadores sin grupo</span>
+          {sinGrupoEnt.length === 0
+            ? <span className="msg">Suelta aquí una columna para sacarla de su grupo.</span>
+            : sinGrupoEnt.map((e) => {
+              const payload = {
+                tipo: "entrenador", id: e.id, ids: e.ids, nombre: e.nombre,
+                desde: 0, ordena: false, muda: true,
+              };
+              return (
+                <button key={e.id} type="button"
+                  className={`ent-suelto${moviendoEntrenador && cogido.id === e.id ? " cogido" : ""}`}
+                  title="Arrástralo a un grupo de color, o tócalo y elige «Traer aquí»"
+                  onPointerDown={(ev) => empezarArrastre(ev, payload)}
+                  onClick={() => setCogido(payload)}>
+                  {e.nombre}
+                </button>
+              );
+            })}
+          {moviendoEntrenador && conBotones && cogido.desde !== 0 && (
+            <button className="btn sm traer" disabled={ocupado}
+              onClick={() => soltarEn({ coach: null, nombre: "sin grupo" }, cogido)}>
+              Traer aquí
+            </button>
+          )}
+        </section>
+      )}
 
       {fantasma && (
         <div className="fantasma" style={{ left: fantasma.x, top: fantasma.y }}>

@@ -1785,6 +1785,71 @@ def _horario_del_dia(horario, invitados, fecha, dia, turno_por_codigo):
     return hoy
 
 
+def quien_viene(semana, dia):
+    """Quién debería entrenar ese día, para el banquillo del cuadrante
+    (19/11/2026): {jugador_id: (estado, falta)}.
+
+    Es la misma regla con la que el motor decide a quién coloca
+    (`_entra_en_franja`): de alta ese día, con el día en su horario habitual
+    —o en una visita aprobada, si es invitado— o apuntado como «viene
+    además», y en una franja que el club abra ese día. `falta` es True cuando
+    le tocaba pero no viene a ninguna de sus franjas por una falta (ausencia,
+    torneo, climatología…); `estado` dice cuál.
+
+    Quien no sale aquí no viene ese día: invitados de otros días, altas que
+    aún no han empezado, bajas pasadas o un día que no le toca entrenar. Antes
+    el banquillo los enseñaba a todos.
+    """
+    from academy.models import Escuela, HorarioJugador, Jugador
+
+    fecha = semana.fecha_inicio + timedelta(days=dia)
+    turnos = sorted(
+        (t for t in Turno.objects.filter(activo=True)
+         if hay_entrenamiento(dia, t.bloque) and (dia, t.codigo) not in FRANJA_CERRADA),
+        key=lambda t: t.hora_inicio,
+    )
+    if not turnos:
+        return {}
+    escuela_cfg = {e.id: (e.turno_unico_id, e.solo_central) for e in Escuela.objects.all()}
+    # Como en `generate`: la franja exclusiva de una escuela, salvo por la tarde.
+    de_tarde = set(Turno.objects.filter(bloque=Turno.Bloque.TARDE).values_list("id", flat=True))
+    exclusivos = {}
+    for escuela_id, (turno_unico_id, _solo_central) in escuela_cfg.items():
+        if turno_unico_id and turno_unico_id not in exclusivos and turno_unico_id not in de_tarde:
+            exclusivos[turno_unico_id] = escuela_id
+    tarde = [t for t in turnos if t.bloque == Turno.Bloque.TARDE]
+    desborde = {t.id: {d.id for d in tarde[i + 1:]} for i, t in enumerate(tarde)}
+    horario = _horario_del_dia(
+        {(h.jugador_id, h.dia): (h.turno_manana_id, h.turno_tarde_id,
+                                 h.entrena_manana, h.entrena_tarde)
+         for h in HorarioJugador.objects.filter(dia=dia)},
+        _dias_de_invitados(), fecha, dia,
+        dict(Turno.objects.values_list("codigo", "id")),
+    )
+    overrides = _overrides(semana, dia)
+    cfg = ConfiguracionMotor.get_solo()
+
+    def entra(j, t, faltas):
+        return _entra_en_franja(j, dia, t, fecha, faltas, escuela_cfg,
+                                exclusivos.get(t.id), horario, {}, {}, cfg, desborde)
+
+    out = {}
+    for j in Jugador.objects.filter(activo=True):
+        viene = falta = None
+        for t in turnos:
+            estado = entra(j, t, overrides)
+            if estado is not None:
+                viene = viene or estado
+            elif falta is None and entra(j, t, {}) is not None:
+                # Le tocaba esta franja y no entra: es por una falta.
+                falta = _effective_state(overrides, j.id, t, fecha)
+        if viene is not None:
+            out[j.id] = (viene, False)
+        elif falta is not None:
+            out[j.id] = (falta, True)
+    return out
+
+
 def _con_la_de_menos(entrenador_de, pistas, vigilancia, courts_by_id, atados,
                      vetos, solo_atado):
     """El entrenador que cuida dos pistas —la suya y la que vigila al lado—

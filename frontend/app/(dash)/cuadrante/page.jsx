@@ -47,7 +47,8 @@ const ESTADO_LABEL = {
   CLIMATOLOGIA: "Climatología",
   AUSENCIA_COACH: "Ausencia coach",
 };
-const noDisponible = (estado) => estado && estado !== "DISPONIBLE";
+// «Viene además» viene: no se pinta como no disponible.
+const noDisponible = (estado) => estado && estado !== "DISPONIBLE" && estado !== "EXTRA";
 
 function setDrag(e, payload) {
   e.dataTransfer.setData("application/json", JSON.stringify(payload));
@@ -60,12 +61,16 @@ function readDrag(e) {
 }
 
 // Extrae el banquillo (jugadores sin pista) de la respuesta de /panel.
-function benchPlayers(panel) {
+// Desde el 19/11/2026 el panel solo trae a quien ese día debería entrenar:
+// `faltas = false` da los que vienen y no tienen pista (el banquillo de
+// verdad); `faltas = true`, los que les tocaba pero tienen falta («No vienen
+// hoy», plegado, para forzarles pista si hace falta).
+function benchPlayers(panel, faltas = false) {
   if (!panel) return [];
   const out = [];
   for (const g of [...(panel.por_entrenador || []), ...(panel.sin_entrenador || [])]) {
     for (const j of g.jugadores || []) {
-      if (!j.tiene_asignacion) {
+      if (!j.tiene_asignacion && !!j.falta === faltas) {
         out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, coach: g.entrenador?.nombre, estado: j.estado, aviso: j.aviso });
       }
     }
@@ -299,6 +304,7 @@ function Inner() {
     </div>
   );
   const bench = benchPlayers(panel);
+  const benchFaltas = benchPlayers(panel, true);
   const benchCoaches = panel?.entrenadores_libres || [];
   // Todos los entrenadores con su estado franja a franja: los de la tabla de
   // la derecha, de donde se arrastra para forzar a quien haga falta.
@@ -517,6 +523,25 @@ function Inner() {
                 );
               })}
           </div>
+          {benchFaltas.length > 0 && (
+            <details className="bench-faltas" onClick={(e) => e.stopPropagation()}>
+              <summary>No vienen hoy · {benchFaltas.length}</summary>
+              <div className="bench-items">
+                {benchFaltas.map((p) => {
+                  const selected = sel && sel.k === "bj" && sel.jugador === p.id;
+                  return (
+                    <div key={p.id} className={`bench-chip nd${selected ? " sel" : ""}`}
+                      title={`${ESTADO_LABEL[p.estado] || p.estado} · toca para forzarle pista`}
+                      onClick={(e) => { e.stopPropagation(); pick({ k: "bj", jugador: p.id, label: p.nombre }); }}>
+                      <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
+                      <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
+                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
           {coaches.length > 0 && (
             <>
               <div className="bench-title sm">Entrenadores · {turnos[tIdx]?.codigo}</div>
@@ -753,6 +778,22 @@ function Inner() {
                   </div>
                 ))}
             </div>
+            {benchFaltas.length > 0 && (
+              <details className="bench-faltas">
+                <summary>No vienen hoy · {benchFaltas.length}</summary>
+                <div className="bench-col-items">
+                  {benchFaltas.map((p) => (
+                    <div key={p.id} className="bench-chip dnd nd" draggable={editable}
+                      onDragStart={(e) => setDrag(e, { k: "bj", jugador: p.id })}
+                      title={`${p.nombre}${p.coach ? " · " + p.coach : ""} · ${ESTADO_LABEL[p.estado] || p.estado} (arrastra para forzar pista)`}>
+                      <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
+                      <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
+                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             {coaches.length > 0 && (
               <>
                 <div className="bench-title sm">Entrenadores por franja</div>

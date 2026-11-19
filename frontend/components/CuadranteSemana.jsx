@@ -36,7 +36,7 @@ const ESTADO_LABEL = {
   CLIMATOLOGIA: "Climatología",
   AUSENCIA_COACH: "Ausencia coach",
 };
-const noDisponible = (estado) => estado && estado !== "DISPONIBLE";
+const noDisponible = (estado) => estado && estado !== "DISPONIBLE" && estado !== "EXTRA";
 const first = (n) => (n || "").split(" ")[0];
 
 function buildSessions(asignaciones) {
@@ -62,12 +62,14 @@ function buildSessions(asignaciones) {
   return byDia;
 }
 
-function benchPlayers(panel) {
+// Solo quien ese día debería entrenar (19/11/2026); con `faltas`, los que
+// les tocaba pero tienen falta («No vienen», plegado).
+function benchPlayers(panel, faltas = false) {
   if (!panel) return [];
   const out = [];
   for (const g of [...(panel.por_entrenador || []), ...(panel.sin_entrenador || [])]) {
     for (const j of g.jugadores || []) {
-      if (!j.tiene_asignacion) out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, estado: j.estado, aviso: j.aviso });
+      if (!j.tiene_asignacion && !!j.falta === faltas) out.push({ id: j.id, nombre: j.nombre, foto: j.foto_url, division: j.division_nivel, estado: j.estado, aviso: j.aviso });
     }
   }
   out.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
@@ -165,6 +167,7 @@ export default function CuadranteSemana({ semanaId, editable, onAbrirDia, onCamb
   const dropBench = (e) => { e.preventDefault(); overOff(e); const d = readDrag(e); if (d && d.k === "cj") op(() => removeAsignacion(d.asignacion)); };
 
   const bench = benchPlayers(panel);
+  const benchFaltas = benchPlayers(panel, true);
   const benchCoaches = panel?.entrenadores_libres || [];
 
   return (
@@ -254,6 +257,22 @@ export default function CuadranteSemana({ semanaId, editable, onAbrirDia, onCamb
                   </div>
                 ))}
             </div>
+            {benchFaltas.length > 0 && (
+              <details className="bench-faltas">
+                <summary>No vienen · {benchFaltas.length}</summary>
+                <div className="bench-col-items">
+                  {benchFaltas.map((p) => (
+                    <div key={p.id} className="bench-chip dnd nd" draggable
+                      onDragStart={(e) => setDrag(e, { k: "bj", jugador: p.id })}
+                      title={`${p.nombre} · ${ESTADO_LABEL[p.estado] || p.estado} (arrastra para forzar pista)`}>
+                      <span className="bench-state-dot" style={{ background: ESTADO_COLOR[p.estado] || "var(--border-strong)" }} />
+                      <Avatar nombre={p.nombre} fotoUrl={p.foto} kind="player" />
+                      <span>{p.nombre} · <em>{ESTADO_LABEL[p.estado] || p.estado}</em></span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             {benchCoaches.length > 0 && (
               <>
                 <div className="bench-title sm">Entrenadores libres</div>
