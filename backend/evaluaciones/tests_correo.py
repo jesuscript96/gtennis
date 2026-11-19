@@ -200,8 +200,19 @@ class GmailTests(TestCase):
         self.assertFalse(ok)
         self.assertIn("gmail.send", detalle)
         cred.refresh.side_effect = None
-        with mock.patch.object(gmail, "_credenciales", return_value=cred):
+        sesion = mock.MagicMock()
+        # Gmail rechaza el mensaje sin destinatario (400): API activa y permiso bueno.
+        sesion.post.return_value = mock.MagicMock(status_code=400, ok=False, text="Recipient address required")
+        with mock.patch.object(gmail, "_credenciales", return_value=cred), \
+                mock.patch("google.auth.transport.requests.AuthorizedSession", return_value=sesion):
             self.assertEqual(gmail.comprobar(), (True, "Envía como gestion@gtennis.com."))
+            crudo = base64.urlsafe_b64decode(sesion.post.call_args.kwargs["json"]["raw"]).decode()
+            self.assertNotIn("To:", crudo)
+            sesion.post.return_value = mock.MagicMock(status_code=403, ok=False,
+                                                      text='{"reason": "SERVICE_DISABLED"}')
+            ok, detalle = gmail.comprobar()
+            self.assertFalse(ok)
+            self.assertIn("API de Gmail no está activada", detalle)
         self.assertTrue(informes.correo_configurado())
 
     @override_settings(CORREO_GMAIL="", GOOGLE_SERVICE_ACCOUNT_JSON="{}", EMAIL_HOST="")

@@ -38,12 +38,18 @@ def _credenciales():
         datos(), scopes=[ALCANCE]).with_subject(settings.CORREO_GMAIL)
 
 
+# Un mensaje sin destinatario: Gmail lo rechaza siempre (400) sin enviar nada,
+# pero solo después de comprobar que la API está activada y el permiso vale.
+PRUEBA = base64.urlsafe_b64encode(b"Subject: comprobacion G Tenis\r\n\r\nNo se envia.").decode()
+
+
 def comprobar():
-    """¿Deja Google escribir en nombre de la cuenta del club? Pide un permiso
-    de acceso sin enviar nada. Devuelve (ok, detalle)."""
+    """¿Deja Google enviar en nombre de la cuenta del club? Pide el permiso de
+    acceso y prueba la API con un mensaje sin destinatario, que Gmail rechaza
+    sin enviar nada. Devuelve (ok, detalle)."""
     if not configurado():
         return False, "Falta CORREO_GMAIL o la cuenta de servicio."
-    from google.auth.transport.requests import Request
+    from google.auth.transport.requests import AuthorizedSession, Request
 
     try:
         cred = _credenciales()
@@ -54,7 +60,18 @@ def comprobar():
             texto = ("Google no deja enviar todavía: falta autorizar el permiso gmail.send para la "
                      "cuenta de servicio en la consola de administración (delegación en todo el dominio).")
         return False, texto[:300]
-    return True, f"Envía como {settings.CORREO_GMAIL}."
+    try:
+        r = AuthorizedSession(cred).post(ENVIAR, json={"raw": PRUEBA}, timeout=30)
+    except Exception as e:  # noqa: BLE001
+        return False, f"No se ha podido llegar a Gmail: {e}"[:300]
+    if r.status_code == 400:
+        return True, f"Envía como {settings.CORREO_GMAIL}."
+    if r.ok:  # no debería: un mensaje sin destinatario no sale
+        return True, f"Envía como {settings.CORREO_GMAIL}."
+    texto = r.text
+    if "SERVICE_DISABLED" in texto or "accessNotConfigured" in texto or "has not been used" in texto:
+        return False, "La API de Gmail no está activada en el proyecto de Google Cloud (InformesJugadores)."
+    return False, f"Gmail responde {r.status_code}: {texto[:250]}"
 
 
 class GmailBackend(BaseEmailBackend):
