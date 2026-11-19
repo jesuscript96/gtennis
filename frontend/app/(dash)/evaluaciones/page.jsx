@@ -8,6 +8,7 @@ import {
   getJugadoresTenis, getUser, refrescarUsuario,
 } from "../../../lib/api";
 import { fmtLarga } from "../../../lib/torneos";
+import RepartoFisico from "../../../components/RepartoFisico";
 
 // En qué punto está el informe de una evaluación terminada (10/11/2026).
 const ESTADO_INFORME = {
@@ -122,7 +123,29 @@ function Tenis({ pestanas }) {
 /** La parte física (21/10/2026): la hace el preparador físico y también
  *  gestión deportiva, para los jugadores de Competición de tardes y (desde el
  *  17/11/2026) de Alto rendimiento. */
+const VISTAS_FISICO = [["jugadores", "Jugadores"], ["hechas", "Evaluaciones hechas"]];
+
+/** Dos vistas (19/11/2026): los jugadores con quién les evalúa (el reparto) y
+ *  las evaluaciones físicas ya hechas. */
 function Fisico({ pestanas, soloFisico }) {
+  const params = useSearchParams();
+  const [vista, setVista] = useState(params.get("vista") === "hechas" ? "hechas" : "jugadores");
+  return (
+    <div>
+      <div className="page-head"><h1>{soloFisico ? "Evaluaciones físicas" : "Evaluaciones"}</h1></div>
+      {pestanas}
+      <div className="tabs-inv eval-pestanas" role="tablist">
+        {VISTAS_FISICO.map(([k, t]) => (
+          <button key={k} type="button" role="tab" aria-selected={vista === k}
+            className={`chip${vista === k ? " on" : ""}`} onClick={() => setVista(k)}>{t}</button>
+        ))}
+      </div>
+      {vista === "jugadores" ? <RepartoFisico /> : <FisicoHechas />}
+    </div>
+  );
+}
+
+function FisicoHechas() {
   const router = useRouter();
   const [evaluaciones, setEvaluaciones] = useState(null);
   const [jugadores, setJugadores] = useState([]);
@@ -161,9 +184,7 @@ function Fisico({ pestanas, soloFisico }) {
   );
 
   return (
-    <div>
-      <div className="page-head"><h1>{soloFisico ? "Evaluaciones físicas" : "Evaluaciones"}</h1></div>
-      {pestanas}
+    <>
       <p className="help">
         La parte de <b>preparación física</b> del informe trimestral de cada jugador de Competición de
         tardes y de Alto rendimiento: 11 aspectos del 1 al 5 en tres bloques y tus observaciones. Se
@@ -219,7 +240,7 @@ function Fisico({ pestanas, soloFisico }) {
           )}
         </>
       )}
-    </div>
+    </>
   );
 }
 

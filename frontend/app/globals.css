@@ -1727,6 +1727,13 @@ label.field.check-campo { display: flex; align-items: center; gap: 8px; align-se
 .inf-fila-pie { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 10px; }
 .inf-fila-pie .eval-nota { margin: 0; }
 .inf-ultimo { margin-left: auto; font-size: 13px; color: var(--muted); }
+/* Reparto de la parte física (19/11/2026) */
+.reparto-escuela { margin-top: 20px; }
+.reparto-titulo { font-size: 16px; font-weight: 600; margin: 0; }
+.reparto-masivo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.reparto-masivo select { font-size: 14px; padding: 4px 8px; width: auto; min-width: 160px; }
+.reparto-escuela .inf-asignado { white-space: nowrap; }
+.reparto-escuela .inf-asignado select { width: auto; }
 .tabs-inv .chip .nav-badge { margin-left: 6px; }
 .inf-cabecera { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 16px; }
 .inf-foto { display: grid; gap: 8px; justify-items: center; width: 140px; }

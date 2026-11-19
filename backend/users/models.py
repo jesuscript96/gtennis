@@ -78,7 +78,9 @@ class Funcion(models.Model):
     código. Dirección las tiene todas sin necesidad de marcarlas.
 
     «Evalúa tenis o física de tardes» no está aquí: es el equipo de
-    Competición de tardes (`evaluaciones.MiembroTardes`)."""
+    Competición de tardes (`evaluaciones.MiembroTardes`). «Evalúa física de
+    Alto rendimiento» sí, y como aquel es pertenecer a un equipo, no un
+    permiso: dirección no la tiene sin marcarla (`EQUIPOS`)."""
 
     class Codigo(models.TextChoices):
         TOCA_CUADRANTE = "TOCA_CUADRANTE", "Toca el cuadrante"
@@ -86,6 +88,11 @@ class Funcion(models.Model):
         COORDINA_TARDES = "COORDINA_TARDES", "Coordina Competición de tardes"
         VALIDA_INFORMES = "VALIDA_INFORMES", "Valida informes"
         ENVIA_INFORMES = "ENVIA_INFORMES", "Envía informes a las familias"
+        # 19/11/2026: Josep Mari reparte quién hace la parte física de cada
+        # jugador, y quién puede hacer la de Alto rendimiento (Josep y Alex
+        # Ante). La de tardes es el equipo de tardes (`MiembroTardes`).
+        COORDINA_FISICO = "COORDINA_FISICO", "Coordina preparación física"
+        FISICO_AR = "FISICO_AR", "Evalúa física de Alto rendimiento"
 
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name="funciones")
@@ -93,6 +100,10 @@ class Funcion(models.Model):
     asignada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
                                      null=True, blank=True, related_name="+")
     creada = models.DateTimeField(auto_now_add=True)
+
+    # Las que dicen a qué equipo pertenece alguien (de quién se puede elegir al
+    # repartir), no qué puede hacer: dirección no las tiene por serlo.
+    EQUIPOS = {Codigo.FISICO_AR}
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["usuario", "codigo"], name="funcion_unica")]

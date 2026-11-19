@@ -3,17 +3,19 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { asignarInforme, getInformes, getPanelInformes } from "../../../lib/api";
+import { asignarFisico, asignarInforme, getInformes, getPanelInformes } from "../../../lib/api";
 import { ESTADO_INFORME, abrirParte, textoCiclo, textoParte } from "../../../lib/informes";
 import { fmtLarga } from "../../../lib/torneos";
 
-/** Filtros del panel: «Asignados a mí» para quien evalúa tenis y «Sin entrenador» para el coordinador.
- * («Mis jugadores» quedó solo para la columna de Grupos, 10/11/2026.) */
+/** Filtros del panel: «Asignados a mí» para quien evalúa (tenis o física) y «Sin entrenador» /
+ * «Sin preparador» para quien reparte cada parte. («Mis jugadores» quedó solo para la columna de
+ * Grupos, 10/11/2026.) */
 function filtros(panel) {
   return [
-    ...(panel.evalua_tenis ? [["mios", "Asignados a mí"]] : []),
+    ...(panel.evalua_tenis || panel.evalua_fisico ? [["mios", "Asignados a mí"]] : []),
     ["todos", "Todos"],
     ...(panel.puede_asignar ? [["sin", "Sin entrenador"]] : []),
+    ...(panel.puede_asignar_fisico ? [["sinfis", "Sin preparador"]] : []),
     ["toca", "Les toca"],
     ["marcha", "En marcha"],
     ["devueltos", "Devueltos"],
@@ -21,8 +23,9 @@ function filtros(panel) {
 }
 
 function pasa(j, filtro, yo) {
-  if (filtro === "mios") return j.evaluador?.id === yo;
+  if (filtro === "mios") return j.evaluador?.id === yo || j.preparador?.id === yo;
   if (filtro === "sin") return !j.evaluador;
+  if (filtro === "sinfis") return !j.preparador;
   if (filtro === "toca") return !j.informe && ["primera", "pronto", "vencido"].includes(j.ciclo.estado);
   if (filtro === "marcha") return !!j.informe;
   if (filtro === "devueltos") return j.informe?.estado === "DEVUELTO";
@@ -50,23 +53,25 @@ function Parte({ j, parte, titulo, puede }) {
   );
 }
 
-/** El entrenador que hace el informe de tenis: el coordinador lo elige; los demás lo ven. */
-function Evaluador({ j, panel, onPanel }) {
+/** Quién hace cada parte: el entrenador del tenis (lo elige quien coordina tardes) y, desde el
+ * 19/11/2026, el preparador de la física (lo elige quien coordina la preparación física). */
+function Evaluador({ etiqueta, actual, opciones, puede, onCambiar }) {
   const [error, setError] = useState("");
-  if (!panel.puede_asignar) {
-    return <span className="inf-asignado">Entrenador: <b>{j.evaluador?.nombre || "sin asignar"}</b></span>;
+  if (!puede) {
+    return <span className="inf-asignado">{etiqueta}: <b>{actual?.nombre || "sin asignar"}</b></span>;
   }
   async function cambiar(e) {
     setError("");
-    try { onPanel(await asignarInforme([j.id], e.target.value || null)); }
+    try { await onCambiar(e.target.value ? Number(e.target.value) : null); }
     catch (err) { setError(err.message); }
   }
+  const lista = actual && !opciones.some((u) => u.id === actual.id) ? [...opciones, actual] : opciones;
   return (
     <label className="inf-asignado">
-      Entrenador:
-      <select value={j.evaluador?.id || ""} onChange={cambiar}>
+      {etiqueta}:
+      <select value={actual?.id || ""} onChange={cambiar}>
         <option value="">Sin asignar</option>
-        {panel.evaluadores.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+        {lista.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
       </select>
       {error && <span className="err">{error}</span>}
     </label>
@@ -77,8 +82,8 @@ function Jugadores({ panel, onPanel }) {
   const opciones = filtros(panel);
   const cuenta = Object.fromEntries(opciones.map(([k]) => [k, panel.jugadores.filter((j) => pasa(j, k, panel.yo)).length]));
   const [busca, setBusca] = useState("");
-  // Se abre en «Mis jugadores» si tiene; el coordinador, en los que faltan por repartir.
-  const [filtro, setFiltro] = useState(() => (cuenta.mios ? "mios" : cuenta.sin ? "sin" : "todos"));
+  // Se abre en «Asignados a mí» si tiene; quien reparte, en los que faltan por repartir.
+  const [filtro, setFiltro] = useState(() => (cuenta.mios ? "mios" : cuenta.sin ? "sin" : cuenta.sinfis ? "sinfis" : "todos"));
   const q = busca.trim().toLowerCase();
   const lista = panel.jugadores.filter((j) => pasa(j, filtro, panel.yo) && (!q || j.nombre.toLowerCase().includes(q)));
 
@@ -109,7 +114,15 @@ function Jugadores({ panel, onPanel }) {
                   <span className={`pill ${pillCiclo}`}>{ciclo}</span>
                 </div>
                 <div className="inf-fila-partes">
-                  <Evaluador j={j} panel={panel} onPanel={onPanel} />
+                  <Evaluador etiqueta="Entrenador" actual={j.evaluador} opciones={panel.evaluadores}
+                    puede={panel.puede_asignar} onCambiar={async (id) => onPanel(await asignarInforme([j.id], id))} />
+                  <Evaluador etiqueta="Preparador" actual={j.preparador} opciones={panel.preparadores || []}
+                    puede={panel.puede_asignar_fisico} onCambiar={async (id) => {
+                      await asignarFisico([j.id], id);
+                      onPanel(await getPanelInformes());
+                    }} />
+                </div>
+                <div className="inf-fila-partes">
                   <Parte j={j} parte="tenis" titulo="Tenis" puede={panel.evalua_tenis} />
                   <Parte j={j} parte="fisico" titulo="Físico" puede={panel.evalua_fisico} />
                 </div>
@@ -196,7 +209,8 @@ function Informes() {
       <p className="help">
         El informe trimestral de cada jugador de <b>Competición de tardes</b>: la evaluación de tenis y la
         de preparación física van en un solo PDF. Quien coordina asigna a cada jugador el entrenador que
-        hace su parte de tenis. Cuando las dos partes están terminadas, se avisa a quien coordina y pasa
+        hace su parte de tenis, y quien coordina la preparación física, el preparador de la parte física
+        (también en Evaluaciones físicas). Cuando las dos partes están terminadas, se avisa a quien coordina y pasa
         a validar: quien tiene la función «Valida informes» lo aprueba (y lo envía a la familia) o lo
         devuelve con una nota. Los de <b>Alto rendimiento</b> (el tenis lo hace el entrenador de su
         grupo; la preparación física se suma si el preparador la hace) los validan <b>dirección</b> y el <b>head coach</b> de su color, también

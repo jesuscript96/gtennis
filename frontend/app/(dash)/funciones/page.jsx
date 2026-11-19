@@ -12,6 +12,8 @@ const AYUDA = {
   COORDINA_TARDES: "Reparte los jugadores de Competición de tardes, da altas y bajas del equipo y recibe el aviso de validar.",
   VALIDA_INFORMES: "Aprueba, corrige o devuelve informes. Abre y corrige las dos partes.",
   ENVIA_INFORMES: "Envía a las familias los informes aprobados.",
+  COORDINA_FISICO: "Reparte quién hace la parte física de cada jugador de Alto rendimiento y de Competición de tardes.",
+  FISICO_AR: "Hace la parte física de los informes de Alto rendimiento: sale para elegir al repartirla.",
   TARDES_TENIS: "Hace la parte de tenis de los informes de tardes que le reparten.",
   TARDES_FISICO: "Hace la parte física de los informes de tardes.",
 };
@@ -57,7 +59,8 @@ export default function FuncionesPage() {
       <div className="page-head"><h1>Personas y funciones</h1></div>
       <p className="help">
         El perfil decide lo que cada uno ve. Las funciones añaden tareas concretas a una persona.
-        Dirección las tiene todas. Los cambios se notan en la siguiente pantalla que abra esa persona.
+        Dirección las tiene todas, menos las de pertenecer a un equipo (evaluar tenis o física), que se
+        marcan. Los cambios se notan en la siguiente pantalla que abra esa persona.
       </p>
       <details className="help" style={{ marginBottom: 16 }}>
         <summary>Qué hace cada función</summary>
@@ -87,7 +90,7 @@ export default function FuncionesPage() {
                 </td>
                 {datos.funciones.map((f) => (
                   <td key={f.codigo} data-label={f.nombre} style={{ textAlign: "center" }}>
-                    {p.perfil === "direccion" && !f.codigo.startsWith("TARDES_")
+                    {p.perfil === "direccion" && !f.equipo
                       ? <span className="muted" title="Dirección las tiene todas">✓</span>
                       : <input type="checkbox" aria-label={`${f.nombre} · ${p.nombre}`}
                                checked={marcada(p, f.codigo)}

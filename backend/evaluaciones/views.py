@@ -11,14 +11,15 @@ from rest_framework.response import Response
 
 from academy.models import Jugador
 from academy.permissions import (
-    coordina_informes, envia_informes, es_coach, es_direccion, evalua_fisico, evalua_tenis_solo_informes,
-    valida_alto_rendimiento, valida_informes, ve_informes, ve_tardes,
+    coordina_fisico, coordina_informes, envia_informes, es_coach, es_direccion, evalua_fisico,
+    evalua_tenis_solo_informes, valida_alto_rendimiento, valida_informes, ve_informes, ve_tardes,
 )
 from academy.scope import jugadores_alto_rendimiento, jugadores_que_evalua
 
 from . import catalogo, drive, fichero, ia, informes, pdf, traduccion
 from .models import (
-    AsignacionInforme, DatosInforme, Evaluacion, EvaluacionFisica, FotoJugador, Informe, MiembroTardes,
+    AsignacionFisica, AsignacionInforme, DatosInforme, Evaluacion, EvaluacionFisica, FotoJugador, Informe,
+    MiembroTardes,
 )
 from .serializers import EvaluacionFisicaSerializer, EvaluacionSerializer, InformeSerializer, JugadorTardesSerializer
 
@@ -350,6 +351,59 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
             "ultima": str(ultimas[j.id]["fecha"]) if j.id in ultimas else None,
         } for j in jugadores_con_fisico()])
 
+    @action(detail=False)
+    def reparto(self, request):
+        """Quién hace la parte física de cada jugador (19/11/2026): los de
+        Competición de tardes y Alto rendimiento, cada uno con su preparador
+        asignado y su última evaluación física, y entre quiénes se puede elegir
+        en cada escuela. Lo ve todo quien hace física; reparte quien coordina."""
+        asignados = {a.jugador_id: a.evaluador
+                     for a in AsignacionFisica.objects.select_related("evaluador__entrenador")}
+        ultimas = {}
+        for ev in EvaluacionFisica.objects.order_by("fecha", "id").values("id", "jugador_id", "fecha", "estado"):
+            ultimas[ev["jugador_id"]] = ev
+        persona = lambda u: {"id": u.id, "nombre": _nombre_evaluador(u)}  # noqa: E731
+        return Response({
+            "jugadores": [{
+                "id": j.id, "nombre": j.nombre, "edad": j.edad,
+                "circuito": informes.circuito_de(j),
+                "evaluador": persona(asignados[j.id]) if j.id in asignados else None,
+                "ultima": None if j.id not in ultimas else {
+                    "id": ultimas[j.id]["id"], "fecha": str(ultimas[j.id]["fecha"]),
+                    "estado": ultimas[j.id]["estado"]},
+            } for j in jugadores_con_fisico()],
+            "evaluadores": {c: [persona(u) for u in informes.evaluadores_fisico(c)]
+                            for c in ("tardes", "alto_rendimiento")},
+            "puede_asignar": coordina_fisico(request.user),
+            "yo": request.user.id,
+        })
+
+    @action(detail=False, methods=["post"])
+    def asignar(self, request):
+        """`{jugadores: [ids], evaluador: id | null}`: quien coordina la
+        preparación física reparte. Cada jugador, a alguien del equipo de
+        física de su escuela. Devuelve el reparto actualizado."""
+        if not coordina_fisico(request.user):
+            raise PermissionDenied("Reparte la parte física quien coordina la preparación física.")
+        try:
+            ids = [int(x) for x in request.data.get("jugadores") or []]
+            ev_id = request.data.get("evaluador")
+            ev_id = int(ev_id) if ev_id not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValidationError({"detail": "Datos no válidos."})
+        jugadores = list(jugadores_con_fisico().filter(pk__in=ids))
+        if not jugadores:
+            raise ValidationError({"detail": "Elige algún jugador de Competición de tardes o de Alto rendimiento."})
+        evaluador = None
+        if ev_id is not None:
+            for c in {informes.circuito_de(j) for j in jugadores}:
+                evaluador = next((u for u in informes.evaluadores_fisico(c) if u.pk == ev_id), None)
+                if evaluador is None:
+                    escuela = "Competición de tardes" if c == "tardes" else "Alto rendimiento"
+                    raise ValidationError({"detail": f"Esa persona no hace la física de {escuela}."})
+        informes.asignar_fisico(jugadores, evaluador, request.user)
+        return self.reparto(request)
+
     @action(detail=True, methods=["post"])
     def terminar(self, request, pk=None):
         ev = self._editable(self.get_object())
@@ -422,6 +476,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             abiertos[inf.jugador_id] = inf
         fotos = set(FotoJugador.objects.values_list("jugador_id", flat=True))
         asignados = {a.jugador_id: a.evaluador for a in AsignacionInforme.objects.select_related("evaluador__entrenador")}
+        fisicos = {a.jugador_id: a.evaluador for a in AsignacionFisica.objects.select_related("evaluador__entrenador")}
         out = []
         # El head coach solo entra aquí a validar los de Alto rendimiento de su color.
         ve_ct = ve_tardes(request.user)
@@ -433,6 +488,8 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
                 "id": j.id, "nombre": j.nombre, "edad": j.edad, "foto": j.id in fotos,
                 "evaluador": None if j.id not in asignados else {
                     "id": asignados[j.id].id, "nombre": _nombre_evaluador(asignados[j.id])},
+                "preparador": None if j.id not in fisicos else {
+                    "id": fisicos[j.id].id, "nombre": _nombre_evaluador(fisicos[j.id])},
                 "ciclo": {"estado": c["estado"], "proxima": str(c["proxima"]) if c["proxima"] else None},
                 "informe": None if inf is None else {
                     "id": inf.id, "estado": inf.estado,
@@ -448,7 +505,11 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
                          "evalua_fisico": evalua_fisico(request.user),
                          "puede_asignar": coordina_informes(request.user), "yo": request.user.id,
                          "evaluadores": [{"id": u.id, "nombre": _nombre_evaluador(u)}
-                                         for u in informes.evaluadores_tenis_por_defecto()]})
+                                         for u in informes.evaluadores_tenis_por_defecto()],
+                         # La física la reparte quien coordina la preparación física (19/11/2026).
+                         "puede_asignar_fisico": coordina_fisico(request.user),
+                         "preparadores": [{"id": u.id, "nombre": _nombre_evaluador(u)}
+                                          for u in informes.evaluadores_fisico("tardes")]})
 
     @action(detail=False, methods=["post"])
     def asignar(self, request):

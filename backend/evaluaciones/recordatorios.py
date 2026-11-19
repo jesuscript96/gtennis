@@ -18,7 +18,7 @@ from academy.models import Aviso, Jugador
 from academy.permissions import usuarios_direccion, usuarios_valida_informes, ve_informes
 
 from . import informes
-from .models import AsignacionInforme, Informe, RecordatorioInforme
+from .models import AsignacionFisica, AsignacionInforme, Informe, RecordatorioInforme
 
 SIN_ALTA = date(2000, 1, 1)
 ETAPA = {"primera": RecordatorioInforme.Etapa.PRIMERA, "pronto": RecordatorioInforme.Etapa.D75,
@@ -51,7 +51,11 @@ def revisar(hoy=None):
     sin_asignar = informes.coordinadores() or informes.evaluadores_tenis_por_defecto()
     asignados = dict(AsignacionInforme.objects.filter(evaluador__is_active=True)
                      .values_list("jugador_id", "evaluador_id"))
+    # La física, al preparador asignado (19/11/2026); sin asignar, a todo el
+    # equipo de física de tardes, como antes del reparto.
     fisicos = informes.preparadores()
+    fisico_de = dict(AsignacionFisica.objects.filter(evaluador__is_active=True)
+                     .values_list("jugador_id", "evaluador_id"))
     for j in _jugadores():
         c = informes.ciclo(j, hoy)
         if c["estado"] not in ETAPA:
@@ -69,7 +73,10 @@ def revisar(hoy=None):
         except IntegrityError:
             continue  # ya recordado
         nuevos += 1
-        destinatarios = [(u, c["estado"]) for u in fisicos]
+        if j.id in fisico_de:
+            destinatarios = [(fisico_de[j.id], c["estado"])]
+        else:
+            destinatarios = [(u, c["estado"]) for u in fisicos]
         if j.id in asignados:
             destinatarios.append((asignados[j.id], c["estado"]))
         else:
@@ -111,7 +118,12 @@ def revisar(hoy=None):
         destinatarios = [(u, c["estado"]) for u in gestores]
         if c["estado"] == "vencido" or not gestores:
             destinatarios += [(u, c["estado"]) for u in direccion]
+        # Y a quien tenga asignada su física (19/11/2026), aunque sea opcional.
+        if j.id in fisico_de:
+            destinatarios.append((fisico_de[j.id], c["estado"]))
         for u, etapa in destinatarios:
+            if isinstance(u, int):
+                u = usuarios.get(u) or get_user_model().objects.get(pk=u)
             usuarios[u.pk] = u
             if j.nombre not in por_usuario[u.pk][etapa]:
                 por_usuario[u.pk][etapa].append(j.nombre)
@@ -128,7 +140,11 @@ def revisar(hoy=None):
             lista = ", ".join(nombres[:12]) + (f" y {len(nombres) - 12} más" if len(nombres) > 12 else "")
             # Cada uno, a la pantalla que puede abrir: el entrenador de Alto
             # rendimiento no entra en Informes; su parte se hace en Evaluaciones.
-            donde = "Rendimiento → Informes" if ve_informes(usuarios[uid]) else "Rendimiento → Evaluaciones"
+            # El preparador físico, a su lista de jugadores (19/11/2026).
+            if getattr(usuarios[uid], "is_preparador", False):
+                donde = "Evaluaciones físicas › Jugadores"
+            else:
+                donde = "Rendimiento → Informes" if ve_informes(usuarios[uid]) else "Rendimiento → Evaluaciones"
             Aviso.objects.create(usuario=usuarios[uid], tipo=Aviso.Tipo.GENERAL,
                                  titulo=f"{titulo}: {len(nombres)} jugador{'es' if len(nombres) != 1 else ''}",
                                  mensaje=f"{explica}: {lista}. Lo tienes en {donde}.")

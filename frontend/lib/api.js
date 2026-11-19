@@ -473,6 +473,10 @@ export async function subirFotoJugador(jugadorId, file) {
 // --- Evaluaciones físicas (preparador físico y gestión deportiva) ----------
 export const getCatalogoFisico = () => req("/evaluaciones-fisicas/catalogo/");
 export const getJugadoresFisico = () => req("/evaluaciones-fisicas/jugadores/");
+// Quién hace la física de cada jugador (19/11/2026): lo reparte quien coordina la preparación física.
+export const getRepartoFisico = () => req("/evaluaciones-fisicas/reparto/");
+export const asignarFisico = (jugadores, evaluador) =>
+  req("/evaluaciones-fisicas/asignar/", { method: "POST", body: JSON.stringify({ jugadores, evaluador }) });
 export const getEvaluacionesFisicas = async () => rows(await req(entera("/evaluaciones-fisicas/")));
 export const getEvaluacionFisica = (id) => req(`/evaluaciones-fisicas/${id}/`);
 export const crearEvaluacionFisica = (body) =>

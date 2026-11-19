@@ -12,8 +12,10 @@ Cuatro perfiles más Administración (`users.User.Role`):
 Lo demás son funciones que dirección marca a cada persona desde Club
 (`users.Funcion`), en lugar de nombres escritos en el código:
 Toca el cuadrante, Aprueba invitados, Coordina Competición de tardes, Valida
-informes y Envía informes. Evaluar tenis o física de tardes es el equipo de
-tardes (`evaluaciones.MiembroTardes`). Dirección las tiene todas.
+informes, Envía informes y Coordina preparación física. Evaluar tenis o física
+de tardes es el equipo de tardes (`evaluaciones.MiembroTardes`); la física de
+Alto rendimiento, la función «Evalúa física de Alto rendimiento». Dirección
+tiene todas menos esas dos de equipo.
 
 Una sola regla por permiso, se entre por donde se entre: las vistas preguntan
 aquí y el usuario lleva estas mismas respuestas a la interfaz (/auth/me/), que
@@ -29,6 +31,8 @@ APRUEBA_INVITADOS = "APRUEBA_INVITADOS"
 COORDINA_TARDES = "COORDINA_TARDES"
 VALIDA_INFORMES = "VALIDA_INFORMES"
 ENVIA_INFORMES = "ENVIA_INFORMES"
+COORDINA_FISICO = "COORDINA_FISICO"
+FISICO_AR = "FISICO_AR"
 
 
 def _autenticado(user):
@@ -60,6 +64,13 @@ def tiene_funcion(user, codigo):
     if es_direccion(user):
         return True
     return codigo in user.codigos_funcion()
+
+
+def marcada(user, codigo):
+    """La tiene marcada en Club, sin contar que dirección las tiene todas (para
+    las que son pertenecer a un equipo, como «Evalúa física de Alto
+    rendimiento»)."""
+    return bool(_autenticado(user) and codigo in user.codigos_funcion())
 
 
 def toca_cuadrante(user):
@@ -132,10 +143,18 @@ def evalua_tenis_solo_informes(user):
     return coordina_informes(user) or _en_tardes(user, "TENIS") or valida_informes(user)
 
 
+def coordina_fisico(user):
+    """Reparte quién hace la parte física de cada jugador de Competición de
+    tardes y de Alto rendimiento (Josep Mari, 19/11/2026) y dirección."""
+    return tiene_funcion(user, COORDINA_FISICO)
+
+
 def evalua_fisico(user):
     """Ve y hace evaluaciones físicas: el preparador físico, quien esté de
-    físico en el equipo de tardes y quien valida (abre las dos partes)."""
-    return es_preparador(user) or _en_tardes(user, "FISICO") or valida_informes(user)
+    físico en el equipo de tardes o en el de Alto rendimiento, quien reparte
+    la física y quien valida (abre las dos partes)."""
+    return (es_preparador(user) or _en_tardes(user, "FISICO") or marcada(user, FISICO_AR)
+            or coordina_fisico(user) or valida_informes(user))
 
 
 def ve_tardes(user):
@@ -194,7 +213,7 @@ def resumen(user):
     return {
         "perfil": user.perfil,
         "funciones": sorted(user.codigos_funcion()) if not es_direccion(user) else [
-            TOCA_CUADRANTE, APRUEBA_INVITADOS, COORDINA_TARDES, VALIDA_INFORMES, ENVIA_INFORMES],
+            TOCA_CUADRANTE, APRUEBA_INVITADOS, COORDINA_TARDES, VALIDA_INFORMES, ENVIA_INFORMES, COORDINA_FISICO],
         "toca_cuadrante": toca_cuadrante(user),
         "aprueba_invitados": aprueba_invitados(user),
         "mueve_divisiones": mueve_divisiones(user),
@@ -204,6 +223,7 @@ def resumen(user):
         "valida_informes": valida_informes(user),
         "envia_informes": envia_informes(user),
         "evalua_fisico": evalua_fisico(user),
+        "coordina_fisico": coordina_fisico(user),
         "evalua_tenis_informes": evalua_tenis_solo_informes(user),
         "ve_informes": ve_informes(user),
         "ve_tardes": ve_tardes(user),

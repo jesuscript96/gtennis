@@ -315,6 +315,25 @@ class AsignacionInforme(models.Model):
         return f"{self.jugador} → {self.evaluador}"
 
 
+class AsignacionFisica(models.Model):
+    """Quién hace la parte física de un jugador (19/11/2026): lo reparte quien
+    coordina la preparación física (Josep Mari) entre el equipo de física de
+    su escuela — tardes: el equipo de tardes; Alto rendimiento: quien tenga
+    «Evalúa física de Alto rendimiento». Como en el tenis de tardes, al
+    asignado le llegan los recordatorios y lo ve en «Asignados a mí»; los demás
+    preparadores pueden evaluarle igual."""
+
+    jugador = models.OneToOneField("academy.Jugador", on_delete=models.CASCADE, related_name="asignacion_fisica")
+    evaluador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="fisicas_asignadas")
+    asignado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name="+")
+    actualizado = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.jugador} → {self.evaluador} (física)"
+
+
 class MiembroTardes(models.Model):
     """Quién hace los informes de Competición de tardes, y de qué parte. Lo da
     de alta y de baja el coordinador desde la app (02/11/2026); antes era una

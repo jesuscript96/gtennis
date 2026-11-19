@@ -176,9 +176,12 @@ class PersonalView(APIView):
             "first_name", "username")
         return Response({
             "personas": [_persona(u) for u in usuarios],
-            "funciones": [{"codigo": c, "nombre": n} for c, n in Funcion.Codigo.choices]
-                + [{"codigo": "TARDES_TENIS", "nombre": "Evalúa tenis de tardes"},
-                   {"codigo": "TARDES_FISICO", "nombre": "Evalúa física de tardes"}],
+            # `equipo`: dice a qué equipo pertenece (de quién se elige al
+            # repartir), no qué puede hacer; dirección no lo tiene sin marcarlo.
+            "funciones": [{"codigo": c, "nombre": n, "equipo": c in Funcion.EQUIPOS}
+                          for c, n in Funcion.Codigo.choices]
+                + [{"codigo": "TARDES_TENIS", "nombre": "Evalúa tenis de tardes", "equipo": True},
+                   {"codigo": "TARDES_FISICO", "nombre": "Evalúa física de tardes", "equipo": True}],
             "perfiles": [{"role": r, "nombre": n} for r, n in User.Role.choices],
         })
 

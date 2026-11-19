@@ -20,10 +20,11 @@ from django.utils import timezone
 
 from academy.models import Aviso
 from academy.permissions import (
-    COORDINA_TARDES, es_coach, es_direccion, usuarios_avisar_validar, usuarios_direccion, valida_informes,
+    COORDINA_TARDES, FISICO_AR, es_coach, es_direccion, usuarios_avisar_validar, usuarios_direccion,
+    valida_informes,
 )
 
-from .models import AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, MiembroTardes
+from .models import AsignacionFisica, AsignacionInforme, Evaluacion, EvaluacionFisica, Informe, MiembroTardes
 
 log = logging.getLogger(__name__)
 
@@ -399,25 +400,61 @@ def preparadores():
     return _usuarios(tardes__funcion=MiembroTardes.Funcion.FISICO) or _usuarios(role="PREPARADOR")
 
 
-def asignar(jugadores, evaluador, por):
-    """El coordinador da (o quita, con `evaluador=None`) los informes de tenis
-    de esos jugadores a un entrenador, que recibe un aviso con los nuevos."""
+def circuito_de(jugador):
+    """«tardes» (escuela solo informes) o «alto_rendimiento»."""
+    return "tardes" if jugador.escuela_id and jugador.escuela.solo_informes else "alto_rendimiento"
+
+
+def evaluadores_fisico(circuito):
+    """Entre quiénes se reparte la parte física (19/11/2026): en tardes, el
+    equipo de física de tardes; en Alto rendimiento, quien tenga marcada
+    «Evalúa física de Alto rendimiento». Sin nadie marcado, los preparadores."""
+    if circuito == "tardes":
+        return preparadores()
+    return _usuarios(funciones__codigo=FISICO_AR) or _usuarios(role="PREPARADOR")
+
+
+def _asignar(Modelo, jugadores, evaluador, por):
+    """Da (o quita, con `evaluador=None`) esos jugadores a `evaluador`.
+    Devuelve los nombres de los que le llegan nuevos."""
     nuevos = []
     for j in jugadores:
         if evaluador is None:
-            AsignacionInforme.objects.filter(jugador=j).delete()
+            Modelo.objects.filter(jugador=j).delete()
             continue
-        a, creada = AsignacionInforme.objects.get_or_create(
-            jugador=j, defaults={"evaluador": evaluador, "asignado_por": por})
+        a, creada = Modelo.objects.get_or_create(jugador=j, defaults={"evaluador": evaluador, "asignado_por": por})
         if not creada and a.evaluador_id != evaluador.pk:
             a.evaluador, a.asignado_por = evaluador, por
             a.save()
             creada = True
         if creada:
             nuevos.append(j.nombre)
+    return nuevos
+
+
+def _lista(nombres, maximo=40):
+    return ", ".join(nombres[:maximo]) + (f" y {len(nombres) - maximo} más" if len(nombres) > maximo else "")
+
+
+def asignar(jugadores, evaluador, por):
+    """El coordinador da (o quita, con `evaluador=None`) los informes de tenis
+    de esos jugadores a un entrenador, que recibe un aviso con los nuevos."""
+    nuevos = _asignar(AsignacionInforme, jugadores, evaluador, por)
     if nuevos and evaluador.pk != por.pk:
         n = len(nuevos)
         _avisar([evaluador], f"Te han asignado {n} jugador{'es' if n != 1 else ''} para los informes",
                 f"Te toca hacer el informe de tenis de: {', '.join(nuevos)}. Los tienes en Informes, "
                 f"en «Asignados a mí».")
+    return nuevos
+
+
+def asignar_fisico(jugadores, evaluador, por):
+    """Quien coordina la preparación física da (o quita) la parte física de
+    esos jugadores a un preparador, que recibe un aviso con los nuevos."""
+    nuevos = _asignar(AsignacionFisica, jugadores, evaluador, por)
+    if nuevos and evaluador.pk != por.pk:
+        n = len(nuevos)
+        _avisar([evaluador], f"Te han asignado {n} jugador{'es' if n != 1 else ''} para la evaluación física",
+                f"Te toca la parte física del informe de: {_lista(nuevos)}. Los tienes en Evaluaciones "
+                f"físicas › Jugadores, en «Asignados a mí».")
     return nuevos

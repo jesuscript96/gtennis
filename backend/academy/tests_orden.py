@@ -48,9 +48,10 @@ class FuncionesTests(Base):
     def test_direccion_las_tiene_todas(self):
         me = self.me(self.dir)
         for clave in ("toca_cuadrante", "aprueba_invitados", "coordina_informes",
-                      "valida_informes", "envia_informes", "mueve_divisiones"):
+                      "valida_informes", "envia_informes", "mueve_divisiones", "coordina_fisico"):
             self.assertIs(me[clave], True, clave)
-        self.assertEqual(set(me["funciones"]), set(Funcion.Codigo.values))
+        # Las de equipo (19/11/2026: «Evalúa física de Alto rendimiento») se marcan también a dirección.
+        self.assertEqual(set(me["funciones"]), set(Funcion.Codigo.values) - Funcion.EQUIPOS)
 
     def test_un_nombre_de_usuario_ya_no_da_nada(self):
         for nombre in ("daniel.gimeno", "ivan.gallego", "alberto.sanz"):
