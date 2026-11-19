@@ -1215,7 +1215,47 @@ class GruposParaTodosTests(TestCase):
     def test_el_entrenador_ve_todos_los_grupos_con_el_head_coach_en_el_suyo(self):
         bloques = self._bloques(self.u_blas)
         self.assertEqual(bloques, {"Dani": ["Blas", "Dani", "Javi"], "Santi": ["Nacho"]})
-        self.assertEqual(self._bloques(self.u_dani), bloques)
+
+    def test_el_head_coach_ve_solo_su_grupo(self):
+        """19/11/2026: Dani Gimeno veía también a los alumnos de Santi."""
+        self.assertEqual(self._bloques(self.u_dani), {"Dani": ["Blas", "Dani", "Javi"]})
+        self.api.force_authenticate(self.u_dani)
+        r = self.api.get("/api/grupos/").json()
+        nombres = {f["nombre"] for b in r["bloques"] for g in b["grupos"]
+                   for f in g["jugadores"]}
+        self.assertEqual(nombres, {"De Blas"})
+        self.assertEqual(r["puede_ordenar"], [self.amarillo.id])
+
+    def test_el_head_coach_ve_sin_grupo_para_colocar_altas(self):
+        Jugador.objects.create(nombre="Alta nueva")
+        self.api.force_authenticate(self.u_dani)
+        r = self.api.get("/api/grupos/").json()
+        sin = {f["nombre"] for f in r["sin_grupo"]}
+        self.assertIn("Alta nueva", sin)
+        # Los de otro color no le caen en «Sin grupo».
+        self.assertNotIn("De Nacho", sin)
+
+    def test_por_division_el_head_coach_ve_solo_su_grupo_y_sin_grupo(self):
+        Jugador.objects.create(nombre="Alta nueva")
+
+        def nombres(user):
+            self.api.force_authenticate(user)
+            r = self.api.get("/api/grupos/divisiones/")
+            self.assertEqual(r.status_code, 200)
+            return {j["nombre"] for d in r.json()["divisiones"] for j in d["jugadores"]}
+
+        mios = {"De Blas", "De Nacho", "Alta nueva"}
+        self.assertEqual(nombres(self.u_dani) & mios, {"De Blas", "Alta nueva"})
+        self.assertEqual(nombres(self.u_blas) & mios, mios)
+
+    def test_direccion_lo_ve_todo_aunque_lleve_un_color(self):
+        from users.models import User
+
+        jefe = User.objects.create_user(
+            username="jefe", password="x", role=User.Role.SUPERADMIN)
+        self.naranja.user = jefe
+        self.naranja.save()
+        self.assertEqual(set(self._bloques(jefe)), {"Dani", "Santi"})
 
     def test_el_head_coach_ordena_su_grupo_y_no_otro(self):
         self.api.force_authenticate(self.u_dani)

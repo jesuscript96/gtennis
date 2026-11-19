@@ -1814,11 +1814,15 @@ class GrupoViewSet(viewsets.ViewSet):
     19/11/2026: solo salen los grupos de color. Fuera los invitados (no son
     de ningún grupo) y quien ya se ha ido; los entrenadores sin grupo de color
     van en una línea aparte para dirección, desde donde se les da grupo.
+
+    19/11/2026 (tarde): el head coach de un color ve solo su grupo (y «Sin
+    grupo», para colocar las altas), en las dos pestañas: Dani Gimeno veía a
+    los alumnos de Pablo y de Santi.
     """
 
-    # El organigrama lo ve todo el mundo igual (14/10/2026): dirección,
-    # coaches y entrenadores. Reorganizarlo es cosa de dirección y del head
-    # coach de cada color; el entrenador solo mira.
+    # El organigrama lo ven entero dirección y los entrenadores (14/10/2026);
+    # el head coach de un color, solo el suyo (19/11/2026). Reorganizarlo es
+    # cosa de dirección y del head coach de cada color; el entrenador solo mira.
     permission_classes = [DireccionOrCoachWrite]
 
     def _ficha(self, j, con=None):
@@ -1865,10 +1869,22 @@ class GrupoViewSet(viewsets.ViewSet):
         (la regla está en `academy.grupos`, la misma que usa la ficha)."""
         grupos.assert_puede_mover(self.request.user, jugador, entrenador)
 
-    def list(self, request):
+    def _su_color(self):
+        """El grupo de color que ve el usuario si es su head coach y no es
+        dirección; si no, None (lo ve todo).
+
+        19/11/2026: el head coach de un color (Dani Gimeno, Pablo, Santi) ve
+        solo su grupo, no los alumnos de los demás. El resto sigue igual."""
+        if self.request.user.is_superadmin:
+            return None
+        coach = _coach_activo(self.request.user)
+        return coach if (coach is not None and coach.color) else None
+
+    def _organigrama(self, request):
+        """Todos los grupos de color, como los ve dirección. Lo que ve cada
+        uno se recorta después (`list`, `divisiones`)."""
         from collections import defaultdict
 
-        # Todos ven la página entera, como dirección: no se filtra por usuario.
         entrenadores = list(
             Entrenador.objects.filter(activo=True)
             .prefetch_related("coaches")
@@ -1993,17 +2009,35 @@ class GrupoViewSet(viewsets.ViewSet):
             self._ficha(j) for j in sorted(jugadores.values(), key=lambda x: x.nombre)
             if j.id not in en_columnas
         ]
-        return Response({
+        return {
             "bloques": bloques,
             "sin_grupo": sin_grupo,
             "sin_grupo_entrenadores": sin_grupo_entrenadores,
-            "entrenadores": [{"id": e.id, "nombre": e.nombre} for e in entrenadores],
+            "entrenadores": entrenadores,
+            "direccion": direccion,
+        }
+
+    def list(self, request):
+        org = self._organigrama(request)
+        bloques = org["bloques"]
+        # El head coach, solo su bloque. «Sin grupo» sí le sale entero: son
+        # las altas que no lleva nadie y él las coloca en su grupo.
+        suyo = self._su_color()
+        if suyo is not None:
+            bloques = [b for b in bloques if b["coach"]["id"] == suyo.id]
+        direccion = org["direccion"]
+        return Response({
+            "bloques": bloques,
+            "sin_grupo": org["sin_grupo"],
+            "sin_grupo_entrenadores": org["sin_grupo_entrenadores"],
+            "entrenadores": [{"id": e.id, "nombre": e.nombre} for e in org["entrenadores"]],
             # Alumnos: dirección y el head coach de un color. Columnas
             # (entrenadores de un bloque a otro): solo dirección.
             "puede_editar": direccion or self._color_propio() is not None,
             "puede_mover_entrenadores": direccion,
             # Bloques cuyas columnas puede ordenar (todos, para dirección).
-            "puede_ordenar": [c.id for c in coaches if self._puede_ordenar(c.id)],
+            "puede_ordenar": [b["coach"]["id"] for b in bloques
+                              if self._puede_ordenar(b["coach"]["id"])],
         })
 
     @action(detail=False, methods=["get"])
@@ -2021,6 +2055,15 @@ class GrupoViewSet(viewsets.ViewSet):
             .select_related("division", "escuela", "entrenador_responsable")
             .order_by("nombre")
         )
+        # El head coach ve aquí a los mismos que en «Por entrenador»: los de
+        # su grupo y los que aún no tienen grupo (19/11/2026).
+        suyo = self._su_color()
+        if suyo is not None:
+            org = self._organigrama(request)
+            ve = {f["id"] for f in org["sin_grupo"]} | {
+                f["id"] for b in org["bloques"] if b["coach"]["id"] == suyo.id
+                for g in b["grupos"] for f in g["jugadores"]}
+            jugadores = jugadores.filter(pk__in=ve)
         por_division = defaultdict(list)
         for j in jugadores:
             resp = j.entrenador_responsable

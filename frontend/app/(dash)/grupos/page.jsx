@@ -52,6 +52,9 @@ import DivisionesRanking from "../../../components/DivisionesRanking";
  * en una línea para dirección, desde la que se arrastran a un grupo. En «Sin
  * grupo» no salen invitados ni quien ya se fue, y las altas que aún no han
  * empezado llevan la fecha en que llegan.
+ *
+ * 19/11/2026 (tarde): el head coach de un color ve solo su bloque (y «Sin
+ * grupo»), también en «Por división». El recorte lo hace el backend.
  */
 const VISTAS = [["entrenador", "Por entrenador"], ["division", "Por división"]];
 
