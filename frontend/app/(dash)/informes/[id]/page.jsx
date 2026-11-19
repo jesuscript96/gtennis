@@ -122,9 +122,11 @@ function Validar({ inf, onCambio }) {
             Añadir destinatario
           </button>
           <p className="eval-nota">
-            {inf.correo_activo
-              ? "Le llega a la familia por correo, con el PDF en su idioma: mañana a las 8:30 o ahora mismo."
-              : "El correo aún no está configurado en el servidor: al aprobar no se envía; se podrá enviar después."}
+            {!inf.correo_activo
+              ? "El correo aún no está configurado en el servidor: al aprobar no se envía; se podrá enviar después."
+              : inf.puede_enviar
+                ? "Le llega a la familia por correo, con el PDF en su idioma: mañana a las 8:30 o ahora mismo."
+                : "Al aprobarlo, dirección o Administración lo envían a la familia por correo, con el PDF en su idioma."}
             {" "}Al aprobar, el PDF pasa a la carpeta de validados en Drive.
           </p>
           <Respuestas inf={inf} />
