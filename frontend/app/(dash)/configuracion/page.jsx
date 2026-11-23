@@ -5,8 +5,6 @@ import { getConfig, saveConfig } from "../../../lib/api";
 
 const NUM_FIELDS = [
   ["peso_asignacion", "Peso · que todos jueguen", "Prioridad dominante. Cuanto más alto, antes repite pareja que dejar a alguien fuera."],
-  ["peso_central", "Peso · priorizar pistas GTennis", "Bonus por cada jugador asignado a pista central. Más alto = llena GTennis antes de usar satélites."],
-  ["peso_satelite", "Peso · evitar satélites", "Penalización por usar pistas satélite. Más alto = se usan solo si hace falta."],
   ["peso_repeticion", "Peso · antirrepetición", "Penalización por repetir pareja. Más alto = más rotación."],
   ["peso_division_entrenador", "Peso · grupo del entrenador", "Cuánto cuesta que un entrenador coja un grupo que no es el suyo, por cada división de distancia. Pesa más cuanto más arriba está el alumno."],
   ["peso_pista_division", "Peso · pista según división", "Cada división tira hacia su pista: la 1 a la pista 1 y así. Desempata cuando hay sitio; nunca deja a nadie fuera."],
@@ -17,8 +15,7 @@ const NUM_FIELDS = [
 ];
 
 const MODOS_SATELITES = [
-  ["RESCATE", "Solo para no dejar a nadie en el banquillo"],
-  ["DESBORDAR", "Desbordar cuando el Resort se llena (con entrenador)"],
+  ["RESCATE", "Cuando el Resort se llena"],
   ["NUNCA", "Nunca"],
 ];
 
@@ -88,7 +85,7 @@ export default function ConfiguracionPage() {
         ))}
 
         <label className="field">
-          <span>Clubs satélite (Sta. Bárbara, Bétera, Mas Camarena)</span>
+          <span>Satélites</span>
           <select
             value={cfg.modo_satelites || "RESCATE"}
             onChange={(e) => setCfg({ ...cfg, modo_satelites: e.target.value })}
@@ -96,9 +93,10 @@ export default function ConfiguracionPage() {
             {MODOS_SATELITES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <span style={{ marginTop: 6, fontSize: 11 }}>
-            Por la tarde nunca se usan. En «solo para no dejar a nadie en el banquillo», quien no
-            cabe en el Resort ni en un hueco de sus pistas va a Sta. Bárbara (y luego Bétera y Mas
-            Camarena) sin entrenador, marcado con ⚠ en el cuadrante.
+            Por la tarde nunca se usan. Quien no cabe en el Resort ni en un hueco de sus pistas va a
+            Satélites, donde se abren las pistas que hagan falta: de tierra y, si la resina del Resort
+            está ocupada, de resina para quien la necesita. Un entrenador por cada dos pistas (el
+            segundo a partir de la tercera). Los invitados no van nunca a Satélites.
           </span>
         </label>
 

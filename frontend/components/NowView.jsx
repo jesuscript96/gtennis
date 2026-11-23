@@ -102,7 +102,7 @@ export default function NowView() {
           for (const p of sede.pistas) byNum[p.numero] = p;
           return (
             <div key={sede.id}>
-              <div className="sede-title">{sede.nombre}{sede.es_satelite ? " · satélite" : ""}</div>
+              <div className="sede-title">{sede.nombre}{sede.es_satelite && !/sat[eé]lite/i.test(sede.nombre) ? " · satélite" : ""}</div>
               {central ? (
                 <div className="club">
                   {CENTRAL_COLS.map((col, ci) => (

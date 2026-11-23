@@ -70,9 +70,10 @@ def generar_dia(fecha):
                         "como «forzada» en el cuadrante.")
         satelites = informe.get("satelites", [])
         if satelites:
-            sedes = ", ".join(sorted({s["sede"] for s in satelites if s["sede"]}))
+            sin = sum(1 for s in satelites if not s.get("entrenador"))
             mensaje += (f" {len(satelites)} jugador(es) no cabían en el Resort y "
-                        f"van a {sedes or 'los satélites'} sin entrenador.")
+                        "van a Satélites"
+                        + (f" ({sin} sin entrenador)." if sin else "."))
     except Exception:  # noqa: BLE001 — cualquier fallo se avisa
         fila.detalle = traceback.format_exc()[-4000:]
         titulo = f"Ha fallado la generación del {nombre}"

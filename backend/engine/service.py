@@ -438,6 +438,9 @@ def _candidatos_bloque(
     if bloque == "TARDE":
         orden = sorted(grupo, key=lambda t: t.hora_inicio)
         desborde = {t.id: {d.id for d in orden[i + 1:]} for i, t in enumerate(orden)}
+    # Los invitados no van nunca a Satélites (23/11/2026).
+    invitados = set(Jugador.objects.filter(invitaciones__isnull=False)
+                    .values_list("id", flat=True))
     jugadores, franjas_de, max_franjas = [], {}, {}
     for j in Jugador.objects.filter(activo=True).select_related("division"):
         division = j.division.nivel if j.division else None
@@ -464,6 +467,7 @@ def _candidatos_bloque(
         if not opciones:
             continue
         _unico, solo_central = escuela_cfg.get(j.escuela_id, (None, False))
+        solo_central = solo_central or j.id in invitados
         jugadores.append(_jugador_motor(
             j, fecha, sponsors, surface_prefs, max(opciones.values()), solo_central,
             cfg.nivel_solo_tierra if cfg else 0,
@@ -1261,17 +1265,24 @@ def _subir_directiva(tid, nueva, directivo, yo, pistas, coach_de, by_id,
 def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
               vetos_coach, overrides, resort, satelites, libres_de, tomar,
               nombres, no_vigilan, es_tarde, report, directiva=frozenset(),
-              atados=None, coach_share=None):
+              atados=None, coach_share=None, sede_satelites=None):
     """Quien sigue en el banquillo después del relleno forzado entra en una
-    pista nueva (22/10/2026): primero las que quedan libres en el Resort, que
-    tiene preferencia hasta llenarse, y solo después los clubs satélite (Sta.
-    Bárbara, luego Bétera y Mas Camarena; solo por la mañana).
+    pista nueva: primero las que quedan libres en el Resort, que tiene
+    preferencia hasta llenarse (22/10/2026), y solo después Satélites (solo
+    por la mañana).
 
-    Cada pista nueva sigue la regla de los entrenadores: la 2 y la 5 del Resort
-    pueden ir vigiladas desde la de al lado; las demás, la resina y cada
-    satélite llevan entrenador, el primero libre (los del reparto que sobren y
-    después el banquillo por su orden: Dani, Sergio, Iván, Jorge García). Si
+    Resort: la 2 y la 5 pueden ir vigiladas desde la de al lado; las demás y
+    la resina llevan entrenador, el primero libre (los del reparto que sobren
+    y después el banquillo por su orden: Dani, Sergio, Iván, Jorge García). Si
     no queda ninguno, por la mañana se abre igual, sin entrenador y con aviso.
+
+    Satélites (23/11/2026): ya no se distingue entre clubs. Se montan tantas
+    pistas como hagan falta, de tierra y, cuando la resina del Resort está
+    ocupada, de resina para quien la necesita. Un entrenador por cada dos
+    pistas: la primera saca entrenador, la segunda va con el mismo, la tercera
+    saca otro… (sin ninguno libre, se abre igual con aviso). Los invitados no
+    van nunca. `satelites` son sus pistas y `sede_satelites` la sede donde se
+    montan las que falten; sin ella, no se usa.
 
     Se junta con alguien de su nivel si lo hay; si no, abre pista (aunque sea
     solo él) y, si ya no quedan pistas, se mete donde haya hueco rompiendo las
@@ -1281,13 +1292,18 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
 
     Si el que queda libre es de la directiva (22/10/2026), se queda arriba: va
     a la pista del Resort de divisiones más altas que lleve un entrenador
-    normal, y ese baja a la pista nueva (seguro si es resina u otra sede)."""
-    from academy.models import Jugador as _J
+    normal, y ese baja a la pista nueva (seguro si es resina o Satélites)."""
+    from academy.models import Invitado, Jugador as _J
 
-    todas = list(resort) + list(satelites)
-    by_id = {c.id: c for c in todas}
+    resort = list(resort)
+    # La lista de quien llama: las pistas que se monten quedan para los días
+    # siguientes de la misma generación.
+    satelites = satelites if sede_satelites is not None else []
+    by_id = {c.id: c for c in resort + satelites}
     sedes = dict(Sede.objects.filter(
-        id__in={c.venue_id for c in todas}).values_list("id", "nombre"))
+        id__in={c.venue_id for c in by_id.values()}).values_list("id", "nombre"))
+    if sede_satelites is not None:
+        sedes[sede_satelites.id] = sede_satelites.nombre
     pistas = defaultdict(list)
     for a in Asignacion.objects.filter(
         semana=semana, dia=dia, turno__in=grupo,
@@ -1298,10 +1314,11 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
                 for k, filas in pistas.items()}
     # En el Resort solo se usan las pistas que estaban vacías: los huecos de
     # las abiertas ya los ha mirado el relleno.
-    resort_ids = {c.id for c in resort}
     abiertas_aqui = set()
     jugadores = {}
     tope_bloque = cfg.capacidad_tarde if es_tarde else cfg.capacidad_manana
+    invitados = set(Invitado.objects.filter(jugador_creado__isnull=False)
+                    .values_list("jugador_creado_id", flat=True))
 
     def player(jid, j=None):
         if jid not in jugadores:
@@ -1316,7 +1333,7 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
         return bool(pistas.get((tid, c.id)))
 
     def vecinas(c):
-        return [o for o in todas if o.venue_id == c.venue_id and o.number is not None
+        return [o for o in resort if o.venue_id == c.venue_id and o.number is not None
                 and c.number is not None and abs(o.number - c.number) == 1]
 
     def puede_vigilar(tid, v, c):
@@ -1331,76 +1348,167 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
     def vigilada_posible(tid, c):
         if debe_llevar_entrenador(c):
             return False
-        if c.surface == "RESINA" or c.is_satellite:
-            # La resina y cada satélite, al menos uno con entrenador en su sede.
-            grupo_sede = [o for o in todas if o.venue_id == c.venue_id
-                          and (c.is_satellite or o.surface == "RESINA")]
-            if not any(coach_de.get((tid, o.id)) for o in grupo_sede):
+        if c.surface == "RESINA":
+            # La resina, al menos una con entrenador.
+            if not any(coach_de.get((tid, o.id)) for o in resort
+                       if o.venue_id == c.venue_id and o.surface == "RESINA"):
                 return False
         return any(puede_vigilar(tid, v, c) for v in vecinas(c))
 
-    orden_pistas = (sorted(resort, key=lambda c: c.number or 0)
-                    + sorted(satelites, key=lambda c: (c.fill_rank, c.venue_id, c.number or 0)))
+    def por_numero(cs):
+        return sorted(cs, key=lambda c: c.number or 0)
+
+    def resina_del_resort_ocupada(tid):
+        return all(abierta(tid, c) for c in resort if c.surface == "RESINA")
+
+    def compartible(tid, jid):
+        """El entrenador de Satélites que en esta franja lleva una sola pista:
+        la siguiente que se abra va con él (uno por cada dos pistas)."""
+        cuenta = Counter(coach_de.get((tid, c.id)) for c in satelites if abierta(tid, c))
+        for c in por_numero(satelites):
+            coach = coach_de.get((tid, c.id))
+            if (coach and abierta(tid, c) and cuenta[coach] == 1
+                    and coach not in no_vigilan
+                    and coach not in vetos_coach.get(jid, ())):
+                return coach
+        return None
+
+    def satelite_libre(tid, superficie):
+        """La primera pista de Satélites de esa superficie vacía en la franja;
+        None si hay que montar otra."""
+        return next((c for c in por_numero(satelites)
+                     if c.surface == superficie and not abierta(tid, c)), None)
+
+    def montar(superficie):
+        """Una pista más en Satélites: una de esa superficie que no esté en la
+        lista (apagada, p. ej.), si la hay, o una nueva con el número
+        siguiente."""
+        p = (Pista.objects.filter(sede=sede_satelites, superficie=superficie)
+             .exclude(id__in=list(by_id)).order_by("-activa", "numero").first())
+        if p is not None:
+            Pista.objects.filter(pk=p.pk).update(activa=True)
+        else:
+            ultimo = max(Pista.objects.filter(sede=sede_satelites)
+                         .values_list("numero", flat=True), default=0)
+            p = Pista.objects.create(sede=sede_satelites, numero=ultimo + 1,
+                                     superficie=superficie, activa=True)
+        c = Court(
+            id=p.id, venue_id=sede_satelites.id,
+            capacity=max(sede_satelites.densidad_max or 0, sede_satelites.densidad_default),
+            normal_density=sede_satelites.densidad_default, is_satellite=True,
+            fill_rank=sede_satelites.orden_desbordamiento, surface=superficie,
+            number=p.numero)
+        satelites.append(c)
+        by_id[c.id] = c
+        report.setdefault("pistas_montadas", []).append(
+            {"dia": dia, "pista": p.id, "numero": p.numero, "superficie": superficie})
+        return c
+
     turnos = {t.id: t for t in grupo}
     metidos = {}
     orden = sorted(fuera, key=lambda jid: (-player(jid).priority,
                                            player(jid).division or 99))
     for jid in orden:
         yo = player(jid)
+        # (clave, (pista o None para montar una, entrenador, reglas rotas,
+        # entrenador compartido, superficie de la que se monta))
         opciones, impide = [], set()
+
+        def unirse(tid, c, n, filas):
+            """Meterse en una pista ya abierta por el rescate."""
+            otros = [a.jugador_id for a in filas]
+            if any(_normalise(jid, o) in vetoes for o in otros):
+                impide.add("tiene una rencilla con quien queda en la pista libre")
+                return
+            coach = coach_de.get((tid, c.id))
+            tope = min(c.capacity, tope_bloque)
+            if coach is None:
+                tope = min(tope, 2)
+            if len(filas) >= tope:
+                return
+            if coach and coach in vetos_coach.get(jid, ()):
+                impide.add("no puede entrenar con el entrenador de la pista libre")
+                return
+            rotas = _reglas_de_pista(
+                yo, [player(a.jugador_id, a.jugador) for a in filas], cfg.vecindad_max,
+                edad_obligatoria(cfg))
+            opciones.append(((5 if rotas else 0, len(rotas), en_franja(tid), n, tid),
+                             (c, coach, rotas, False, None)))
+
         for tid in franjas_de.get(jid, {}):
             libres = [c for c in libres_de(turnos[tid])
                       if c not in vetos_coach.get(jid, ())]
-            for n, c in enumerate(orden_pistas):
+            for n, c in enumerate(por_numero(resort)):
                 filas = pistas.get((tid, c.id), [])
-                if c.id in resort_ids and filas and (tid, c.id) not in abiertas_aqui:
-                    continue
-                if c.is_satellite and yo.solo_central:
-                    impide.add("solo entrena en el Resort")
+                if filas and (tid, c.id) not in abiertas_aqui:
                     continue
                 if yo.surface_pref and c.surface and c.surface != yo.surface_pref:
                     impide.add(f"solo entrena en {yo.surface_pref.lower()}")
                     continue
-                otros = [a.jugador_id for a in filas]
-                if any(_normalise(jid, o) in vetoes for o in otros):
-                    impide.add("tiene una rencilla con quien queda en la pista libre")
-                    continue
-                coach = coach_de.get((tid, c.id))
                 if filas:
-                    tope = min(c.capacity, tope_bloque)
-                    if coach is None:
-                        tope = min(tope, 2)
-                    if len(filas) >= tope:
-                        continue
-                    if coach and coach in vetos_coach.get(jid, ()):
-                        impide.add("no puede entrenar con el entrenador de la pista libre")
-                        continue
-                    rotas = _reglas_de_pista(
-                        yo, [player(a.jugador_id, a.jugador) for a in filas], cfg.vecindad_max,
-                        edad_obligatoria(cfg))
-                    clase = 5 if rotas else 0
-                    opciones.append((clase, len(rotas), en_franja(tid), n, tid, c, coach, rotas))
-                    continue
-                satelite = 1 if c.is_satellite else 0
-                if vigilada_posible(tid, c):
-                    opciones.append((1 + satelite, 0, en_franja(tid), n, tid, c, None, []))
+                    unirse(tid, c, n, filas)
+                elif vigilada_posible(tid, c):
+                    opciones.append(((1, 0, en_franja(tid), n, tid), (c, None, [], False, None)))
                 elif libres:
-                    opciones.append((1 + satelite, 1, en_franja(tid), n, tid, c, libres[0], []))
+                    opciones.append(((1, 1, en_franja(tid), n, tid),
+                                     (c, libres[0], [], False, None)))
                 elif not es_tarde:
-                    opciones.append((3 + satelite, 0, en_franja(tid), n, tid, c, None, []))
+                    opciones.append(((3, 0, en_franja(tid), n, tid), (c, None, [], False, None)))
+            # Satélites, solo por la mañana.
+            if sede_satelites is None or es_tarde:
+                continue
+            if jid in invitados:
+                impide.add("es invitado: no va a Satélites")
+                continue
+            if yo.solo_central:
+                impide.add("solo entrena en el Resort")
+                continue
+            for c in por_numero(satelites):
+                filas = pistas.get((tid, c.id), [])
+                if not filas:
+                    continue
+                if yo.surface_pref and c.surface and c.surface != yo.surface_pref:
+                    continue
+                unirse(tid, c, 100 + (c.number or 0), filas)
+            # Pista nueva: de tierra, y de resina solo para quien la necesita
+            # y cuando la del Resort está ocupada.
+            superficie = yo.surface_pref or "TIERRA"
+            if superficie == "RESINA" and not resina_del_resort_ocupada(tid):
+                continue
+            c = satelite_libre(tid, superficie)
+            n = 100 + (c.number if c is not None and c.number else 999)
+            compartido = compartible(tid, jid)
+            if compartido:
+                opciones.append(((2, 0, en_franja(tid), n, tid),
+                                 (c, compartido, [], True, superficie)))
+            elif libres:
+                opciones.append(((2, 1, en_franja(tid), n, tid),
+                                 (c, libres[0], [], False, superficie)))
+            else:
+                opciones.append(((4, 0, en_franja(tid), n, tid),
+                                 (c, None, [], False, superficie)))
         if not opciones:
             # Si el relleno ya dejó su aviso («había sitio, pero…»), ese vale.
             if AvisoBanquillo.objects.filter(
                     semana=semana, dia=dia, bloque=grupo[0].bloque, jugador_id=jid).exists():
                 continue
+            con_satelites = sede_satelites is not None and not es_tarde
             AvisoBanquillo.objects.create(
                 semana=semana, dia=dia, bloque=grupo[0].bloque, jugador_id=jid,
-                motivo=("No cabe en el Resort" + ("" if es_tarde else " ni en los satélites")
+                motivo=("No cabe en el Resort" + (" ni en Satélites" if con_satelites else "")
                         + (": " + "; ".join(sorted(impide)) if impide else "") + "."))
             continue
-        clase, _n, _f, _o, tid, c, coach, rotas = min(opciones)
+        clave, (c, coach, rotas, compartido, superficie) = min(opciones, key=lambda o: o[0])
+        tid = clave[4]
+        if c is None:
+            c = montar(superficie)
         nueva = not pistas.get((tid, c.id))
-        if nueva and coach in directiva:
+        if nueva and compartido:
+            # La segunda pista de este entrenador en Satélites: no se le vuelve
+            # a sacar, ya está en esta franja.
+            abiertas_aqui.add((tid, c.id))
+            coach_de[(tid, c.id)] = coach
+        elif nueva and coach in directiva:
             arriba = _subir_directiva(tid, c, coach, yo, pistas, coach_de, by_id,
                                       directiva, no_vigilan, vetos_coach, atados or {})
             if arriba is not None:
@@ -1426,18 +1534,12 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
             coach_de[(tid, c.id)] = coach
             if coach is not None:
                 tomar(coach, turnos[tid])
-        sede = sedes.get(c.venue_id, "Satélite")
-        sin_nadie = coach is None and not any(
-            coach_de.get((tid, v.id)) for v in vecinas(c))
-        if c.is_satellite:
-            motivo = (f"{sede} con {nombres.get(coach, 'entrenador')}" if coach
-                      else f"{sede} sin entrenador") + ", para que no se quede en el banquillo"
-            if rotas:
-                motivo += ": " + ", ".join(rotas)
-            forzada = True
-        elif rotas:
+        sede = sedes.get(c.venue_id, "Satélites")
+        if rotas:
             motivo, forzada = "Forzada para que entrene: " + ", ".join(rotas), True
-        elif sin_nadie:
+        elif coach is None and c.is_satellite:
+            motivo, forzada = f"{sede} sin entrenador, para que no se quede en el banquillo", True
+        elif coach is None and not any(coach_de.get((tid, v.id)) for v in vecinas(c)):
             motivo = f"Pista {c.number} del {sede} sin entrenador, para que no se quede en el banquillo"
             forzada = True
         else:
@@ -1454,7 +1556,7 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
             report.setdefault("satelites", []).append(
                 {"dia": dia, "turno": turnos[tid].codigo, "pista": c.id, "jugador": jid,
                  "sede": sede, "entrenador": coach, "reglas": rotas})
-        elif forzada:
+        if forzada and (rotas or not c.is_satellite):
             report.setdefault("forzadas", []).append(
                 {"dia": dia, "turno": turnos[tid].codigo, "pista": c.id, "jugador": jid,
                  "reglas": rotas or ["sin entrenador"]})
@@ -1945,13 +2047,18 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
     # dejar días a medias.
     fin_generacion = time.monotonic() + float(
         os.environ.get("MOTOR_TOPE_GENERACION_S", "180"))
-    # Los satélites entran en el reparto solo en modo «desbordar». En modo
-    # «rescate» (el normal desde el 21/10/2026) se abren después, sin
-    # entrenador, para quien se quedaría en el banquillo.
+    # El reparto es solo del Resort. Satélites se abre después, con las
+    # pistas que hagan falta, para quien se quedaría en el banquillo
+    # (23/11/2026: ya no entran nunca en el reparto).
     todas = _build_courts()
-    satelites = [c for c in todas if c.is_satellite]
-    courts = (todas if cfg.modo_satelites == ConfiguracionMotor.ModoSatelites.DESBORDAR
-              else [c for c in todas if not c.is_satellite])
+    courts = [c for c in todas if not c.is_satellite]
+    sede_satelites = (
+        Sede.objects.filter(es_satelite=True, activa=True)
+        .order_by("orden_desbordamiento", "id").first()
+        if cfg.modo_satelites != ConfiguracionMotor.ModoSatelites.NUNCA else None)
+    # Las pistas de Satélites; el rescate añade aquí las que monte.
+    satelites = [c for c in todas if sede_satelites is not None
+                 and c.venue_id == sede_satelites.id]
     courts_by_id = {c.id: c for c in todas}
     vetoes = _vetoes()
     vetos_coach = _vetos_entrenador()
@@ -2590,11 +2697,10 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     if a.entrenador_id:
                         coach_share[(jid, a.entrenador_id)] += 1
                 fuera = [jid for jid in fuera if jid not in metidos]
-            # Lo que queda abre pista: primero lo libre del Resort y luego los
-            # satélites (solo por la mañana), con entrenador si queda alguno.
+            # Lo que queda abre pista: primero lo libre del Resort y luego
+            # Satélites (solo por la mañana), con entrenador si queda alguno.
             if fuera:
-                usar_sat = (not es_tarde and satelites and cfg.modo_satelites
-                            != ConfiguracionMotor.ModoSatelites.NUNCA)
+                usar_sat = not es_tarde and sede_satelites is not None
 
                 def libres_rescate(turno):
                     del_rep = [c.id for c in elegibles_para(turno)
@@ -2614,7 +2720,10 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     nombres_coach, set(solo_con), es_tarde, report,
                     directiva=set(banquillo_orden), atados=sponsors,
                     coach_share=coach_share,
+                    sede_satelites=sede_satelites if usar_sat else None,
                 )
+                for c in satelites:
+                    courts_by_id.setdefault(c.id, c)
                 for jid, a in metidos.items():
                     player_sessions[jid] += 1
                     sesiones_hoy[jid] += 1
@@ -2623,7 +2732,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                     if a.entrenador_id:
                         coach_share[(jid, a.entrenador_id)] += 1
                 # El relleno pudo dejar un aviso («había sitio, pero…») a quien
-                # al final ha entrado en un satélite.
+                # al final ha entrado en Satélites.
                 AvisoBanquillo.objects.filter(
                     semana=semana, dia=dia, bloque=bloque, jugador_id__in=list(metidos),
                     motivo__startswith="Había sitio",

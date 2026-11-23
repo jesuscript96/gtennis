@@ -1,13 +1,18 @@
-"""21/10/2026: nadie se queda en el banquillo por la mañana. Primero el relleno
-forzado en las pistas abiertas del Resort; lo que quede abre pista en los
-satélites (Sta. Bárbara, luego Bétera y Mas Camarena), sin entrenador y con
-aviso. Por la tarde nunca."""
+"""Nadie se queda en el banquillo por la mañana (21/10/2026). Primero el
+relleno forzado en las pistas abiertas del Resort; lo que quede abre pista,
+primero en el Resort y luego en Satélites. Por la tarde nunca.
+
+23/11/2026: solo Resort y Satélites. En Satélites se montan las pistas que
+hagan falta, de tierra y, si la resina del Resort está ocupada, de resina; un
+entrenador por cada dos pistas (el segundo a partir de la tercera); los
+invitados no van nunca."""
+from collections import Counter
 from datetime import date
 
 from django.test import TestCase
 
 from academy.models import (
-    Division, Entrenador, HorarioJugador, Jugador, Pista, Rencilla, Sede, Turno,
+    Division, Entrenador, HorarioJugador, Invitado, Jugador, Pista, Rencilla, Sede, Turno,
 )
 from engine.service import generate
 from scheduling.models import Asignacion, AvisoBanquillo, ConfiguracionMotor, Semana
@@ -29,9 +34,10 @@ class SatelitesDeRescateTests(TestCase):
         self.t1 = Turno.objects.get(codigo="T1")
         resort = Sede.objects.create(nombre="Resort prueba", densidad_default=2, densidad_max=2)
         self.resort = Pista.objects.create(sede=resort, numero=1, superficie="TIERRA")
-        sb = self.satelite("Sta. Bárbara", 1)
-        self.sb = [self.pista(sb, n, "TIERRA") for n in (1, 2)]
-        self.betera = self.pista(self.satelite("Poli Bétera", 2), 1, "RESINA")
+        self.satelites = self.satelite("Satélites", 1)
+        # Dos de tierra y una de resina encendidas; el resto, apagadas.
+        self.sat = [self.pista(self.satelites, n, "TIERRA") for n in (1, 2)]
+        self.sat_resina = self.pista(self.satelites, 5, "RESINA")
         self.pablo = Entrenador.objects.create(nombre="Pablo")
         self.semana, _ = Semana.objects.get_or_create(fecha_inicio=LUNES)
 
@@ -54,26 +60,36 @@ class SatelitesDeRescateTests(TestCase):
             turno_manana=None if tarde else self.m1, turno_tarde=self.t1 if tarde else None)
         return j
 
-    def resort_lleno(self, turno=None):
-        """La pista del Resort con dos puestos a mano: no queda hueco."""
+    def resort_lleno(self, turno=None, pista=None):
+        """Una pista del Resort con dos puestos a mano: no queda hueco."""
         turno = turno or self.m1
+        pista = pista or self.resort
         for n in ("A", "B"):
             Asignacion.objects.create(
-                semana=self.semana, dia=0, turno=turno, pista=self.resort,
-                jugador=self.jugador(f"Fijo {n} {turno.codigo}", 4,
+                semana=self.semana, dia=0, turno=turno, pista=pista,
+                jugador=self.jugador(f"Fijo {n} {turno.codigo} {pista.numero}", 4,
                                      tarde=turno != self.m1),
                 entrenador=self.pablo, manual=True)
 
     def de(self, j):
         return Asignacion.objects.filter(semana=self.semana, dia=0, jugador=j).first()
 
-    def test_quien_no_cabe_va_a_santa_barbara_sin_entrenador_y_con_aviso(self):
+    def sueltos(self, n):
+        """`n` jugadores que no pueden ir juntos (rencillas entre todos): cada
+        uno abre su pista."""
+        js = [self.jugador(f"Suelto {i}", 5) for i in range(n)]
+        for i, a in enumerate(js):
+            for b in js[i + 1:]:
+                Rencilla.objects.create(jugador_a=a, jugador_b=b)
+        return js
+
+    def test_quien_no_cabe_va_a_satelites_sin_entrenador_y_con_aviso(self):
         self.resort_lleno()
         nik = self.jugador("Nik", 9)
         rep = generate(self.semana, dias=[0], bloques=["MANANA"])
         a = self.de(nik)
-        self.assertEqual((a.pista, a.entrenador, a.forzada), (self.sb[0], None, True))
-        self.assertIn("Sta. Bárbara sin entrenador", a.motivo_forzado)
+        self.assertEqual((a.pista, a.entrenador, a.forzada), (self.sat[0], None, True))
+        self.assertIn("Satélites sin entrenador", a.motivo_forzado)
         self.assertEqual(len(rep["satelites"]), 1)
         self.assertFalse(AvisoBanquillo.objects.filter(jugador=nik).exists())
 
@@ -94,24 +110,66 @@ class SatelitesDeRescateTests(TestCase):
         generate(self.semana, dias=[0], bloques=["MANANA"])
         self.assertEqual(self.de(a).pista, self.de(b).pista)
         self.assertNotEqual(self.de(c).pista, self.de(a).pista)
-        self.assertEqual({self.de(x).pista for x in (a, b, c)}, set(self.sb))
+        self.assertEqual({self.de(x).pista for x in (a, b, c)}, set(self.sat))
         self.assertNotIn(":", self.de(a).motivo_forzado)  # no rompe nada
 
-    def test_una_rencilla_no_se_junta_ni_en_el_satelite(self):
+    def test_una_rencilla_no_se_junta_ni_en_satelites(self):
         self.resort_lleno()
         a, b = self.jugador("Uno", 8), self.jugador("Dos", 8)
         Rencilla.objects.create(jugador_a=a, jugador_b=b)
         generate(self.semana, dias=[0], bloques=["MANANA"])
         self.assertNotEqual(self.de(a).pista, self.de(b).pista)
 
-    def test_el_de_resina_salta_a_betera(self):
+    def test_se_montan_las_pistas_que_hagan_falta(self):
+        self.resort_lleno()
+        antes = Pista.objects.filter(sede=self.satelites).count()
+        jugadores = self.sueltos(5)
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        pistas = {self.de(j).pista for j in jugadores}
+        self.assertEqual(len(pistas), 5)
+        self.assertTrue(all(p.sede == self.satelites and p.superficie == "TIERRA"
+                            for p in pistas))
+        # Las dos encendidas, las dos de tierra apagadas (3 y 4) y una nueva.
+        self.assertEqual(Pista.objects.filter(sede=self.satelites).count(), antes + 1)
+        self.assertEqual(len(rep["pistas_montadas"]), 3)
+
+    def test_sin_preferencia_no_se_abre_resina(self):
+        self.resort_lleno()
+        jugadores = self.sueltos(3)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertNotIn(self.sat_resina, {self.de(j).pista for j in jugadores})
+
+    def test_el_de_resina_va_a_satelites_si_la_resina_del_resort_esta_ocupada(self):
         from academy.models import PreferenciaSuperficie
 
+        resina = self.pista(self.resort.sede, 7, "RESINA")
+        self.resort_lleno()
+        self.resort_lleno(pista=resina)
+        javi = self.jugador("Javi", 2)
+        PreferenciaSuperficie.objects.create(jugador=javi, superficie="RESINA")
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual(self.de(javi).pista, self.sat_resina)
+
+    def test_si_la_resina_del_resort_esta_libre_va_alli(self):
+        from academy.models import PreferenciaSuperficie
+
+        resina = self.pista(self.resort.sede, 7, "RESINA")
         self.resort_lleno()
         javi = self.jugador("Javi", 2)
         PreferenciaSuperficie.objects.create(jugador=javi, superficie="RESINA")
         generate(self.semana, dias=[0], bloques=["MANANA"])
-        self.assertEqual(self.de(javi).pista, self.betera)
+        self.assertEqual(self.de(javi).pista, resina)
+
+    def test_los_invitados_no_van_a_satelites(self):
+        self.resort_lleno()
+        yulan = self.jugador("Yulan (invitado)", 9)
+        Invitado.objects.create(nombre="Yulan", entrenador_solicitante=self.pablo,
+                                estado=Invitado.Estado.APROBADO, jugador_creado=yulan)
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertIsNone(self.de(yulan))
+        self.assertFalse(rep.get("satelites"))
+        aviso = AvisoBanquillo.objects.get(jugador=yulan)
+        self.assertIn("invitado", aviso.motivo)
 
     def test_por_la_tarde_nunca(self):
         self.resort_lleno(turno=self.t1)
@@ -130,13 +188,14 @@ class SatelitesDeRescateTests(TestCase):
 
 
 class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
-    """22/10/2026: el Resort tiene preferencia hasta llenarse, y Sta. Bárbara
-    abre con entrenador: el primero libre del banquillo por su orden."""
+    """22/10/2026: el Resort tiene preferencia hasta llenarse, y Satélites
+    abre con entrenador: el primero libre del banquillo por su orden. Desde el
+    23/11/2026, uno por cada dos pistas."""
 
     def banquillo(self, nombre, orden):
         return Entrenador.objects.create(nombre=nombre, reserva=True, orden_banquillo=orden)
 
-    def test_antes_una_pista_libre_del_resort_que_sta_barbara(self):
+    def test_antes_una_pista_libre_del_resort_que_satelites(self):
         self.resort_lleno()
         p3 = Pista.objects.create(sede=self.resort.sede, numero=3, superficie="TIERRA")
         sergio = self.banquillo("Sergio", 2)
@@ -146,30 +205,49 @@ class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
         self.assertEqual((a.pista, a.entrenador), (p3, sergio))
         self.assertFalse(rep.get("satelites"))
 
-    def test_sta_barbara_con_el_primero_del_banquillo(self):
+    def test_satelites_con_el_primero_del_banquillo_y_sin_aviso(self):
         self.resort_lleno()
         self.banquillo("Ivan", 3)
         sergio = self.banquillo("Sergio", 2)
         nik = self.jugador("Nik", 9)
         rep = generate(self.semana, dias=[0], bloques=["MANANA"])
         a = self.de(nik)
-        self.assertEqual((a.pista, a.entrenador), (self.sb[0], sergio))
-        self.assertIn("Sta. Bárbara con Sergio", a.motivo_forzado)
+        self.assertEqual((a.pista, a.entrenador, a.forzada), (self.sat[0], sergio, False))
         self.assertEqual(rep["satelites"][0]["entrenador"], sergio.id)
 
-    def test_el_segundo_va_vigilado_al_lado(self):
+    def test_la_segunda_pista_va_con_el_mismo_entrenador(self):
         self.resort_lleno()
         sergio = self.banquillo("Sergio", 2)
         self.banquillo("Ivan", 3)
         a, b = self.jugador("Uno", 2), self.jugador("Dos", 9)
         generate(self.semana, dias=[0], bloques=["MANANA"])
-        pistas = {self.de(a).pista, self.de(b).pista}
-        self.assertEqual(pistas, set(self.sb))
-        self.assertEqual({self.de(a).entrenador, self.de(b).entrenador}, {sergio, None})
+        self.assertEqual({self.de(a).pista, self.de(b).pista}, set(self.sat))
+        self.assertEqual((self.de(a).entrenador, self.de(b).entrenador), (sergio, sergio))
+
+    def test_un_entrenador_por_cada_dos_pistas(self):
+        self.resort_lleno()
+        sergio = self.banquillo("Sergio", 2)
+        ivan = self.banquillo("Ivan", 3)
+        jorge = self.banquillo("Jorge", 4)
+        jugadores = self.sueltos(5)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        por_pista = {self.de(j).pista_id: self.de(j).entrenador for j in jugadores}
+        self.assertEqual(len(por_pista), 5)
+        self.assertEqual(Counter(por_pista.values()), {sergio: 2, ivan: 2, jorge: 1})
+
+    def test_la_tercera_saca_otro_y_si_no_hay_va_sin_entrenador(self):
+        self.resort_lleno()
+        sergio = self.banquillo("Sergio", 2)
+        jugadores = self.sueltos(3)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        entrenadores = Counter(self.de(j).entrenador for j in jugadores)
+        self.assertEqual(entrenadores, {sergio: 2, None: 1})
+        sin = next(self.de(j) for j in jugadores if self.de(j).entrenador is None)
+        self.assertTrue(sin.forzada)
 
 
-class DirectivaNoVaASantaBarbaraTests(SatelitesDeRescateTests):
-    """22/10/2026: si para abrir Sta. Bárbara solo queda libre alguien de la
+class DirectivaNoVaASatelitesTests(SatelitesDeRescateTests):
+    """22/10/2026: si para abrir Satélites solo queda libre alguien de la
     directiva, se queda arriba en el Resort y baja otro."""
 
     def test_sube_la_directiva_y_baja_el_otro(self):
@@ -179,7 +257,7 @@ class DirectivaNoVaASantaBarbaraTests(SatelitesDeRescateTests):
         rep = generate(self.semana, dias=[0], bloques=["MANANA"])
         self.assertEqual({self.de(a).entrenador, self.de(b).entrenador}, {sergio})
         self.assertEqual((self.de(nik).pista, self.de(nik).entrenador),
-                         (self.sb[0], self.pablo))
+                         (self.sat[0], self.pablo))
         self.assertTrue(rep["directiva_arriba"])
 
 

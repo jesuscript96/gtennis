@@ -4,8 +4,9 @@ from django.db import models
 
 
 class Sede(models.Model):
-    """Venue. Central is the base; the rest are satellite overflow venues
-    (Sta. Bárbara, Bétera, Liria)."""
+    """Venue. Desde el 23/11/2026 solo hay dos: el Resort (la base) y
+    «Satélites», donde va lo que no cabe en el Resort (las viejas Sta.
+    Bárbara, Poli Bétera y Mas Camarena, sin distinguir)."""
 
     nombre = models.CharField(max_length=80, unique=True)
     es_satelite = models.BooleanField(default=False)

@@ -35,9 +35,19 @@ from .serializers import (
 )
 
 
-def _sedes_payload():
-    return [
-        {
+def _sedes_payload(asignaciones=None):
+    """Las sedes activas con sus pistas activas. Una pista apagada (o de una
+    sede apagada, como Poli Bétera desde el 23/11/2026) sale igual si tiene
+    algo en `asignaciones`: lo que ya estaba puesto no desaparece."""
+    usadas = (set(asignaciones.values_list("pista_id", flat=True))
+              if asignaciones is not None else set())
+    out = []
+    for s in Sede.objects.prefetch_related("pistas"):
+        pistas = [p for p in s.pistas.all()
+                  if (s.activa and p.activa) or p.id in usadas]
+        if not s.activa and not pistas:
+            continue
+        out.append({
             "id": s.id,
             "nombre": s.nombre,
             "es_satelite": s.es_satelite,
@@ -45,11 +55,10 @@ def _sedes_payload():
             "orden": s.orden_desbordamiento,
             "pistas": [
                 {"id": p.id, "numero": p.numero, "superficie": p.superficie}
-                for p in s.pistas.filter(activa=True)
+                for p in pistas
             ],
-        }
-        for s in Sede.objects.filter(activa=True).prefetch_related("pistas")
-    ]
+        })
+    return out
 
 
 def _turnos_payload(dia=None):
@@ -172,7 +181,7 @@ class AhoraView(APIView):
                         if status == "proximo" else None),
             "turno_mostrado": turno_sel.codigo,
             "semana": SemanaSerializer(semana).data,
-            "sedes": _sedes_payload(),
+            "sedes": _sedes_payload(qs),
             "turnos": _turnos_payload(hoy),
             "asignaciones": AsignacionSerializer(qs, many=True).data,
         })
@@ -270,7 +279,7 @@ class SemanaViewSet(viewsets.ModelViewSet):
             "semana": SemanaSerializer(semana).data,
             "dias": [{"idx": i, "nombre": n} for i, n in DIAS],
             "turnos": _turnos_payload(),
-            "sedes": _sedes_payload(),
+            "sedes": _sedes_payload(qs),
             "asignaciones": AsignacionSerializer(qs, many=True).data,
         })
 
@@ -369,7 +378,7 @@ class SemanaViewSet(viewsets.ModelViewSet):
                 "semana": SemanaSerializer(semana).data,
                 "dia": dia,
                 "turnos": _turnos_payload(dia),
-                "sedes": _sedes_payload(),
+                "sedes": _sedes_payload(asignaciones),
                 "asignaciones": AsignacionSerializer(asignaciones, many=True).data,
             }
         )

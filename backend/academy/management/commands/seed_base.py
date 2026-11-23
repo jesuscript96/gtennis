@@ -3,10 +3,10 @@ turnos (con horario de verano) y la escala de divisiones 1-9.
 
 La estructura real de la academia (feedback de Sergio #7/#8/#1):
     Resort        base, 6 tierra (P1-P6) + 2 resina (P7-P8)
-    Sta. Bárbara  satélite, 3 tierra
-    Poli Bétera   satélite, 2 resina
-    Mas Camarena  satélite, 1 resina
-    (Liria, Bétera vieja y Central ya no se usan; están inactivos)
+    Satélites     lo que no cabe en el Resort (23/11/2026): de partida 4 tierra
+                  (P1-P4) + 2 resina (P5-P6); el motor monta más si hacen falta
+    (Sta. Bárbara pasó a ser «Satélites»; Poli Bétera, Mas Camarena, Liria,
+    Bétera vieja y Central ya no se usan; están inactivos)
 
 Turnos: M1·M2·JP·T1·T2 (JP entre M2 y T1, exclusivo de Junior Program).
 
@@ -28,17 +28,10 @@ SEDES = [
         (5, Pista.Superficie.TIERRA), (6, Pista.Superficie.TIERRA),
         (7, Pista.Superficie.RESINA),  (8, Pista.Superficie.RESINA),
     ]),
-    ("Sta. Bárbara", True, 2, 4, 1, [
-        (1, Pista.Superficie.TIERRA),
-        (2, Pista.Superficie.TIERRA),
-        (3, Pista.Superficie.TIERRA),
-    ]),
-    ("Poli Bétera", True, 2, 4, 2, [
-        (1, Pista.Superficie.RESINA),
-        (2, Pista.Superficie.RESINA),
-    ]),
-    ("Mas Camarena", True, 2, 4, 3, [
-        (1, Pista.Superficie.RESINA),
+    ("Satélites", True, 2, 4, 1, [
+        (1, Pista.Superficie.TIERRA), (2, Pista.Superficie.TIERRA),
+        (3, Pista.Superficie.TIERRA), (4, Pista.Superficie.TIERRA),
+        (5, Pista.Superficie.RESINA), (6, Pista.Superficie.RESINA),
     ]),
 ]
 

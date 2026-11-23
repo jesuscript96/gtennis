@@ -292,7 +292,7 @@ export const RESOURCES = {
       { name: "nombre", label: "Nombre", type: "text", required: true },
       { name: "es_satelite", label: "Sede satélite (desbordamiento)", type: "bool" },
       { name: "densidad_default", label: "Densidad por defecto (jug/pista)", type: "number", default: 2 },
-      { name: "densidad_max", label: "Densidad máxima (Sta. Bárbara hasta 4)", type: "number", default: 2 },
+      { name: "densidad_max", label: "Densidad máxima (jug/pista)", type: "number", default: 2 },
       { name: "orden_desbordamiento", label: "Orden de desbordamiento", type: "number", default: 0 },
       { name: "activa", label: "Activa", type: "bool", default: true },
     ],

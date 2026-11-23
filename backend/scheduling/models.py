@@ -338,7 +338,7 @@ class DisponibilidadEntrenador(models.Model):
 
 class Asignacion(models.Model):
     """One engine-produced cell: a player on a court, in a shift, on a day.
-    Two (or up to 4 in Sta. Bárbara) per (semana, dia, turno, pista)."""
+    Two (or up to 4) per (semana, dia, turno, pista)."""
 
     semana = models.ForeignKey(
         Semana, on_delete=models.CASCADE, related_name="asignaciones"
@@ -583,16 +583,15 @@ class ConfiguracionMotor(models.Model):
     )
     class ModoSatelites(models.TextChoices):
         NUNCA = "NUNCA", "Nunca"
-        RESCATE = "RESCATE", "Solo para no dejar a nadie en el banquillo"
-        DESBORDAR = "DESBORDAR", "Desbordar cuando el Resort se llena"
+        RESCATE = "RESCATE", "Cuando el Resort se llena"
 
-    # 21/10/2026: por defecto los satélites solo se abren, sin entrenador, para
-    # quien se quedaría en el banquillo después del relleno forzado. Por la
-    # tarde nunca.
+    # 23/11/2026: solo Resort y Satélites. Lo que no cabe en el Resort abre en
+    # Satélites tantas pistas como hagan falta, con un entrenador por cada dos
+    # pistas. Por la tarde nunca. (El modo «desbordar», que metía los
+    # satélites en el reparto, ya no existe.)
     modo_satelites = models.CharField(
         max_length=10, choices=ModoSatelites.choices, default=ModoSatelites.RESCATE,
-        help_text="Cuándo usa el motor los clubs satélite (Sta. Bárbara, Bétera, "
-                  "Mas Camarena). Por la tarde nunca.",
+        help_text="Cuándo usa el motor los Satélites. Por la tarde nunca.",
     )
 
     class Meta:

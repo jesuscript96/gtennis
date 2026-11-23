@@ -449,7 +449,7 @@ function Inner() {
 
         {data.sedes.map((sede) => (
           <div key={sede.id} className="msede">
-            <div className="msede-title">{sede.nombre}{sede.es_satelite ? " · satélite" : ""}</div>
+            <div className="msede-title">{sede.nombre}{sede.es_satelite && !/sat[eé]lite/i.test(sede.nombre) ? " · satélite" : ""}</div>
             {sede.pistas.map((p) => {
               const items = cellMap[`${p.id}_${turno.id}`];
               const ctx = { semana: semanaId, dia, turno: turno.id, pista: p.id };
@@ -728,7 +728,7 @@ function Inner() {
             </thead>
             <tbody>
               {data.sedes.map((sede) => (
-                <tr key={`h-${sede.id}`} className="sede-row"><td colSpan={data.turnos.length + 1}>{sede.nombre}{sede.es_satelite ? " · satélite" : ""}</td></tr>
+                <tr key={`h-${sede.id}`} className="sede-row"><td colSpan={data.turnos.length + 1}>{sede.nombre}{sede.es_satelite && !/sat[eé]lite/i.test(sede.nombre) ? " · satélite" : ""}</td></tr>
               )).flatMap((header, si) => {
                 const sede = data.sedes[si];
                 return [header, ...sede.pistas.map((p) => (
