@@ -381,6 +381,28 @@ class MismoEntrenadorEnLasDosFranjasTests(SatelitesDeRescateTests):
         a.refresh_from_db()
         self.assertEqual((a.entrenador, a.forzada), (self.pablo, False))
 
+    def test_si_ninguno_puede_moverse_va_un_tercero_a_las_dos(self):
+        # Pablo (M1) está a mano en el Resort en M2 e Ivan (M2) a mano en M1:
+        # ninguno de los dos puede cambiarse. Lola, libre en las dos, va a
+        # Satélites toda la mañana.
+        lola = Entrenador.objects.create(nombre="Lola", activo=False)
+        self.fila(self.m1, self.sat[0], self.pablo, "X")
+        self.fila(self.m1, self.resort, self.ivan, "A", manual=True)
+        self.fila(self.m2, self.resort, self.pablo, "B", manual=True)
+        self.fila(self.m2, self.sat[0], self.ivan, "Y")
+        self.libres = {(lola.id, "M1"), (lola.id, "M2")}
+        from engine.service import _mismos_en_satelites
+
+        _mismos_en_satelites(
+            self.semana, 0, [self.m1, self.m2],
+            libre=lambda cid, t: (cid, t.codigo) in self.libres,
+            tomar=lambda cid, t: None,
+            soltar=lambda cid, t: self.soltados.append((cid, t.codigo)),
+            vetos_coach={}, atados_de=lambda t: {}, no_vigilan=set(),
+            libres_de=lambda t: [c for c, f in self.libres if f == t.codigo])
+        self.assertEqual(self.coach_en(self.m1, self.sat[0]), lola)
+        self.assertEqual(self.coach_en(self.m2, self.sat[0]), lola)
+
     def test_por_la_tarde_primero_el_de_la_manana(self):
         t1, t2 = self.t1, Turno.objects.get(codigo="T2")
         self.fila(self.m1, self.sat[0], self.pablo, "X")
@@ -416,3 +438,130 @@ class SatelitesPorLaTardeTests(SatelitesDeRescateTests):
         nik = self.jugador("Nik", 9, tarde=True)
         generate(self.semana, dias=[0], bloques=["TARDE"])
         self.assertIsNone(self.de(nik))
+
+
+class TrioQuePuedeEntrenarJuntoTests(SatelitesDeRescateTests):
+    """23/11/2026: los tres que lleva un entrenador en Satélites (2+1) tienen
+    que poder entrenar entre ellos. Si no, se cambia una pista entera con el
+    Resort (o, si no hay, al que va solo), como hizo Iván el lunes."""
+
+    def setUp(self):
+        super().setUp()
+        self.cfg.vecindad_max = 1
+        self.cfg.save()
+        self.marta = Entrenador.objects.create(nombre="Marta", activo=False)
+
+    def fila(self, pista, coach, jugador, manual=False):
+        return Asignacion.objects.create(
+            semana=self.semana, dia=0, turno=self.m1, pista=pista, jugador=jugador,
+            entrenador=coach, manual=manual)
+
+    def pasar(self, por_id=None):
+        from engine.service import _trios_en_satelites
+
+        return _trios_en_satelites(
+            self.semana, 0, [self.m1], por_id or {}, self.cfg, set(), {},
+            lambda t: {}, set(), set())
+
+    def donde(self, j):
+        return self.de(j).pista
+
+    def test_como_ivan_entra_la_pareja_y_sale_la_que_encaja(self):
+        r5, r6 = self.jugador("R5", 5), self.jugador("R6", 6)
+        d8, d9, d6 = self.jugador("D8", 8), self.jugador("D9", 9), self.jugador("D6", 6)
+        self.fila(self.resort, self.pablo, r5)
+        self.fila(self.resort, self.pablo, r6)
+        self.fila(self.sat[0], self.marta, d8)
+        self.fila(self.sat[0], self.marta, d9)
+        self.fila(self.sat[1], self.marta, d6)
+        self.assertEqual(self.pasar(), 1)
+        self.assertEqual({self.donde(d8), self.donde(d9)}, {self.resort})
+        self.assertEqual(self.de(d8).entrenador, self.pablo)
+        self.assertEqual({self.donde(r5), self.donde(r6)}, {self.sat[0]})
+        self.assertEqual({self.de(x).entrenador for x in (r5, r6, d6)}, {self.marta})
+
+    def test_si_no_hay_pareja_se_cambia_al_que_va_solo(self):
+        d9b, r6 = self.jugador("D9b", 9), self.jugador("R6", 6)
+        d8, d9, d5 = self.jugador("D8", 8), self.jugador("D9", 9), self.jugador("D5", 5)
+        self.fila(self.resort, self.pablo, d9b)
+        self.fila(self.resort, self.pablo, r6)
+        self.fila(self.sat[0], self.marta, d8)
+        self.fila(self.sat[0], self.marta, d9)
+        self.fila(self.sat[1], self.marta, d5)
+        self.assertEqual(self.pasar(), 1)
+        self.assertEqual(self.donde(d5), self.resort)
+        self.assertEqual(self.donde(d9b), self.sat[1])
+        self.assertEqual(self.de(d9b).entrenador, self.marta)
+
+    def test_si_ya_encajan_no_se_toca(self):
+        d5, d6, d6b = self.jugador("D5", 5), self.jugador("D6", 6), self.jugador("D6b", 6)
+        self.fila(self.sat[0], self.marta, d5)
+        self.fila(self.sat[0], self.marta, d6)
+        self.fila(self.sat[1], self.marta, d6b)
+        self.assertEqual(self.pasar(), 0)
+
+    def test_con_cuatro_no_se_mira(self):
+        r5, r6 = self.jugador("R5", 5), self.jugador("R6", 6)
+        self.fila(self.resort, self.pablo, r5)
+        self.fila(self.resort, self.pablo, r6)
+        for pista, nombres in ((self.sat[0], ("D8", "D9")), (self.sat[1], ("D5", "D6"))):
+            for n in nombres:
+                self.fila(pista, self.marta, self.jugador(n, int(n[1])))
+        self.assertEqual(self.pasar(), 0)
+
+    def test_no_se_toca_lo_puesto_a_mano(self):
+        r5, r6 = self.jugador("R5", 5), self.jugador("R6", 6)
+        self.fila(self.resort, self.pablo, r5, manual=True)
+        self.fila(self.resort, self.pablo, r6, manual=True)
+        self.fila(self.sat[0], self.marta, self.jugador("D8", 8))
+        self.fila(self.sat[0], self.marta, self.jugador("D9", 9))
+        self.fila(self.sat[1], self.marta, self.jugador("D6", 6))
+        self.assertEqual(self.pasar(), 0)
+
+    def test_no_salen_las_divisiones_protegidas(self):
+        r1, r2 = self.jugador("R1", 1), self.jugador("R2", 2)
+        self.fila(self.resort, self.pablo, r1)
+        self.fila(self.resort, self.pablo, r2)
+        self.fila(self.sat[0], self.marta, self.jugador("D8", 8))
+        self.fila(self.sat[0], self.marta, self.jugador("D9", 9))
+        self.fila(self.sat[1], self.marta, self.jugador("D2", 2))
+        self.assertEqual(self.pasar(), 0)
+
+    def test_no_sale_quien_no_puede_ir_a_satelites(self):
+        from engine.pairing import Player
+
+        r5, r6 = self.jugador("R5", 5), self.jugador("R6", 6)
+        self.fila(self.resort, self.pablo, r5)
+        self.fila(self.resort, self.pablo, r6)
+        self.fila(self.sat[0], self.marta, self.jugador("D8", 8))
+        self.fila(self.sat[0], self.marta, self.jugador("D9", 9))
+        self.fila(self.sat[1], self.marta, self.jugador("D6", 6))
+        invitada = Player(id=r5.id, division=5, sexo="CHICO", edad=20, solo_central=True)
+        self.assertEqual(self.pasar(por_id={r5.id: invitada}), 0)
+
+    def test_con_el_motor_sale_el_trio_de_ivan(self):
+        Entrenador.objects.create(nombre="Lola")
+        r5, r6 = self.jugador("R5", 5), self.jugador("R6", 6)
+        d8, d9, d6 = self.jugador("D8", 8), self.jugador("D9", 9), self.jugador("D6", 6)
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
+        en_resort = {j for j in (r5, r6, d8, d9, d6) if self.donde(j) == self.resort}
+        self.assertEqual(en_resort, {d8, d9})
+        fuera = [self.de(j) for j in (r5, r6, d6)]
+        self.assertEqual(len({a.entrenador_id for a in fuera}), 1)
+        self.assertEqual(len({a.pista_id for a in fuera}), 2)
+        self.assertTrue(rep["trios_satelites"])
+
+
+class SuEntrenadorASatelitesTests(SatelitesDeRescateTests):
+    """23/11/2026: si el entrenador del jugador está libre, va él a Satélites
+    antes que otro libre."""
+
+    def test_va_su_responsable(self):
+        self.resort_lleno()
+        Entrenador.objects.create(nombre="Lola")
+        marta = Entrenador.objects.create(nombre="Marta")
+        nik = self.jugador("Nik", 9)
+        Jugador.objects.filter(pk=nik.pk).update(entrenador_responsable=marta)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual((self.de(nik).pista.sede, self.de(nik).entrenador),
+                         (self.satelites, marta))
