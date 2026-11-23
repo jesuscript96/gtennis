@@ -1248,6 +1248,18 @@ class GruposParaTodosTests(TestCase):
         self.assertEqual(nombres(self.u_dani) & mios, {"De Blas", "Alta nueva"})
         self.assertEqual(nombres(self.u_blas) & mios, mios)
 
+    def test_los_invitados_no_salen_ni_por_entrenador_ni_por_division(self):
+        # 23/11/2026: Yulan salía en Divisiones el día que venía.
+        from academy.models import Invitado
+
+        yulan = Jugador.objects.create(nombre="Yulan (invitada)", entrenador_responsable=self.blas)
+        Invitado.objects.create(nombre="Yulan", entrenador_solicitante=self.blas,
+                                estado=Invitado.Estado.APROBADO, jugador_creado=yulan)
+        self.api.force_authenticate(self.u_blas)
+        por_division = self.api.get("/api/grupos/divisiones/").json()["divisiones"]
+        self.assertNotIn(yulan.id, {j["id"] for d in por_division for j in d["jugadores"]})
+        self.assertNotIn(f'"id": {yulan.id},', str(self.api.get("/api/grupos/").json()).replace("'", '"'))
+
     def test_direccion_lo_ve_todo_aunque_lleve_un_color(self):
         from users.models import User
 

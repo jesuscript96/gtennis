@@ -2044,13 +2044,14 @@ class GrupoViewSet(viewsets.ViewSet):
     def divisiones(self, request):
         """Los alumnos por división (21/10/2026): solo jugadores, sin
         entrenadores. Todas las divisiones, también las vacías, y al final
-        quien no tiene división. Fuera quien ya no entrena (baja pasada:
-        invitados que ya vinieron, «No entrena»)."""
+        quien no tiene división. Fuera quien ya no entrena (baja pasada,
+        «No entrena») y los invitados, también el día que vienen: se llevan
+        en Invitados, como en «Por entrenador» (23/11/2026, salía Yulan)."""
         from datetime import date
 
         hoy = date.today()
         jugadores = (
-            Jugador.objects.filter(activo=True)
+            Jugador.objects.filter(activo=True, invitaciones__isnull=True)
             .filter(Q(fecha_baja__isnull=True) | Q(fecha_baja__gte=hoy))
             .select_related("division", "escuela", "entrenador_responsable")
             .order_by("nombre")
