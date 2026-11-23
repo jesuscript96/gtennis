@@ -644,6 +644,14 @@ class FaltasTests(Base):
             format="json")
         self.assertEqual(AusenciaJugador.objects.get(pk=r.json()["id"]).creada_por, self.u_blas)
 
+    def test_falta_por_descanso(self):
+        # 23/11/2026: «Descanso» es un motivo más de falta.
+        r = self.api(self.u_blas).post("/api/ausencias-fechas/", {
+            "jugador": self.ana.id, "fecha_inicio": "2026-12-08", "fecha_fin": "2026-12-08",
+            "ambito": "DIA", "estado": "AUSENCIA_JUGADOR", "subtipo": "DESCANSO"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["subtipo_display"], "Descanso")
+
 
 class CalendarioDelEntrenadorTests(Base):
     """Un solo calendario del entrenador, con horas opcionales; el motor y el

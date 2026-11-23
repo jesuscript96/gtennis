@@ -19,6 +19,7 @@ const SUBTIPO_OPTS = [
   { value: "PRUEBA_MEDICA", label: "Prueba médica" },
   { value: "VACACIONES", label: "Vacaciones" },
   { value: "MILONGA", label: "Milonga" },
+  { value: "DESCANSO", label: "Descanso" },
 ];
 // Con la hora delante: el entrenador piensa en «la de las diez y media», no
 // en un código. Faltaba JP desde que entró el curso de septiembre.

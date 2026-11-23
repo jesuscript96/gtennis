@@ -50,6 +50,7 @@ export const MOTIVOS_JUGADOR = [
   { value: "ESTUDIOS", label: "Estudios", estado: "AUSENCIA_JUGADOR", subtipo: "ESTUDIOS" },
   { value: "PRUEBA_MEDICA", label: "Prueba médica", estado: "AUSENCIA_JUGADOR", subtipo: "PRUEBA_MEDICA" },
   { value: "VACACIONES", label: "Vacaciones", estado: "AUSENCIA_JUGADOR", subtipo: "VACACIONES" },
+  { value: "DESCANSO", label: "Descanso", estado: "AUSENCIA_JUGADOR", subtipo: "DESCANSO" },
   { value: "TORNEO", label: "Torneo", estado: "EN_TORNEO", subtipo: "" },
   { value: "OTRO", label: "Otro", estado: "AUSENCIA_JUGADOR", subtipo: "" },
   // No son faltas: viene, pero esos días entrena en esa superficie (preparar
@@ -64,6 +65,7 @@ export const MOTIVOS_ENTRENADOR = [
   { value: "FORMACION", label: "Formación" },
   { value: "ENFERMEDAD", label: "Enfermedad" },
   { value: "PERSONAL", label: "Asunto personal" },
+  { value: "DESCANSO", label: "Descanso" },
   { value: "OTRO", label: "Otro" },
 ];
 const AMBITOS = [
@@ -100,6 +102,7 @@ export function alternarAmbito(actuales, valor) {
 const SUBTIPO_CORTO = {
   LESION: "lesión", ENFERMEDAD: "enfermedad", ESTUDIOS: "estudios",
   PRUEBA_MEDICA: "prueba médica", VACACIONES: "vacaciones", MILONGA: "milonga",
+  DESCANSO: "descanso",
 };
 
 // De dónde salen las faltas de un alumno y cómo se escriben. Junto a ellas,

@@ -25,6 +25,8 @@ class SubtipoAusencia(models.TextChoices):
     PRUEBA_MEDICA = "PRUEBA_MEDICA", "Prueba médica"
     VACACIONES = "VACACIONES", "Vacaciones"
     MILONGA = "MILONGA", "Milonga"
+    # Pedido el 23/11/2026: el alumno no viene porque toca descansar.
+    DESCANSO = "DESCANSO", "Descanso"
 
 
 class Ambito(models.TextChoices):
