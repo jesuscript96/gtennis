@@ -221,6 +221,11 @@ VIGILADAS_ESTRICTAS = True
 # (800)—, así que solo salen cuando hacen falta para colocar a alguien.
 PESO_BANQUILLO = 2000
 
+# Quien no puede ir a Satélites (invitados, escuelas solo del Resort) va por
+# delante en el Resort cuando los demás sí pueden salir (23/11/2026, Yulan):
+# como haberse quedado diez veces en el banquillo.
+PRIORIDAD_SOLO_RESORT = 10 * (NIVEL_MAX + 1)
+
 # Colores en el solver (22/10/2026): cada jugador con color en una pista cuyo
 # entrenador es de otro color. Por debajo de abrir pista (900): no se abren
 # pistas para cuadrar colores, solo se coloca a la gente para que encajen.
@@ -1268,8 +1273,8 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
               atados=None, coach_share=None, sede_satelites=None):
     """Quien sigue en el banquillo después del relleno forzado entra en una
     pista nueva: primero las que quedan libres en el Resort, que tiene
-    preferencia hasta llenarse (22/10/2026), y solo después Satélites (solo
-    por la mañana).
+    preferencia hasta llenarse (22/10/2026), y solo después Satélites (por la
+    tarde, solo si quien llama pasa `sede_satelites`; sin entrenador, nunca).
 
     Resort: la 2 y la 5 pueden ir vigiladas desde la de al lado; las demás y
     la resina llevan entrenador, el primero libre (los del reparto que sobren
@@ -1454,8 +1459,8 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
                                      (c, libres[0], [], False, None)))
                 elif not es_tarde:
                     opciones.append(((3, 0, en_franja(tid), n, tid), (c, None, [], False, None)))
-            # Satélites, solo por la mañana.
-            if sede_satelites is None or es_tarde:
+            # Satélites (quien llama decide si este bloque los usa).
+            if sede_satelites is None:
                 continue
             if jid in invitados:
                 impide.add("es invitado: no va a Satélites")
@@ -1484,7 +1489,7 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
             elif libres:
                 opciones.append(((2, 1, en_franja(tid), n, tid),
                                  (c, libres[0], [], False, superficie)))
-            else:
+            elif not es_tarde:
                 opciones.append(((4, 0, en_franja(tid), n, tid),
                                  (c, None, [], False, superficie)))
         if not opciones:
@@ -1492,7 +1497,7 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
             if AvisoBanquillo.objects.filter(
                     semana=semana, dia=dia, bloque=grupo[0].bloque, jugador_id=jid).exists():
                 continue
-            con_satelites = sede_satelites is not None and not es_tarde
+            con_satelites = sede_satelites is not None
             AvisoBanquillo.objects.create(
                 semana=semana, dia=dia, bloque=grupo[0].bloque, jugador_id=jid,
                 motivo=("No cabe en el Resort" + (" ni en Satélites" if con_satelites else "")
@@ -1561,6 +1566,123 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
                 {"dia": dia, "turno": turnos[tid].codigo, "pista": c.id, "jugador": jid,
                  "reglas": rotas or ["sin entrenador"]})
     return metidos
+
+
+def _mismos_en_satelites(semana, dia, grupo, libre, tomar, soltar, vetos_coach,
+                         atados_de, no_vigilan, coach_share=None, report=None):
+    """Quien va a Satélites se queda allí todo el bloque (23/11/2026): mejor
+    que un entrenador haga M1 y M2 en Satélites que mandar a uno en M1 y a
+    otro en M2. Por la tarde, primero los que ya fueron por la mañana.
+
+    Los «viajeros», por este orden: los que fueron en otro bloque del día,
+    los que están en Satélites en más franjas y luego por orden de franja y
+    pista. En cada franja, el viajero que no está en Satélites ocupa el sitio
+    del peor colocado (o de una pista sin entrenador): si está libre a esa
+    hora, sin más; si está en una pista del Resort, se cambian y el otro sube
+    a esa pista. No se toca nada puesto a mano ni se rompe un veto o un
+    contrato. Devuelve cuántos cambios ha hecho."""
+    orden = sorted(grupo, key=lambda t: t.hora_inicio)
+    filas = defaultdict(list)
+    sat = set()
+    for a in (Asignacion.objects.filter(semana=semana, dia=dia, turno__in=grupo)
+              .select_related("pista__sede", "turno")):
+        filas[(a.turno_id, a.pista_id)].append(a)
+        if a.pista.sede.es_satelite:
+            sat.add(a.pista_id)
+    numero = {a.pista_id: a.pista.numero for fs in filas.values() for a in fs}
+    if not sat:
+        return 0
+
+    def coach(fs):
+        return next((a.entrenador_id for a in fs if a.entrenador_id), None)
+
+    def unidades(tid):
+        """{entrenador: [pistas]} de Satélites en la franja (None = sin él)."""
+        u = defaultdict(list)
+        for (t, p), fs in filas.items():
+            if t == tid and fs and p in sat:
+                u[coach(fs)].append(p)
+        return u
+
+    previos = list(dict.fromkeys(
+        Asignacion.objects.filter(semana=semana, dia=dia, pista__sede__es_satelite=True,
+                                  entrenador__isnull=False)
+        .exclude(turno__in=grupo).order_by("turno__orden", "pista__numero")
+        .values_list("entrenador_id", flat=True)))
+    cuenta, vistos = Counter(), []
+    for t in orden:
+        u = unidades(t.id)
+        for c in sorted((c for c in u if c), key=lambda c: min(numero[p] for p in u[c])):
+            cuenta[c] += 1
+            if c not in vistos:
+                vistos.append(c)
+    preferidos = previos + sorted((c for c in vistos if c not in previos),
+                                  key=lambda c: (-cuenta[c], vistos.index(c)))
+    preferidos = [c for c in preferidos if c not in no_vigilan]
+    rango = {c: i for i, c in enumerate(preferidos)}
+
+    def poner(gente, nuevo, turno):
+        for a in gente:
+            viejo = a.entrenador_id
+            if coach_share is not None:
+                if viejo:
+                    coach_share[(a.jugador_id, viejo)] -= 1
+                coach_share[(a.jugador_id, nuevo)] += 1
+            campos = {"entrenador_id": nuevo}
+            if (a.pista_id in sat and a.forzada
+                    and "sin entrenador" in (a.motivo_forzado or "")):
+                campos.update(forzada=False, motivo_forzado="")
+                a.forzada, a.motivo_forzado = False, ""
+            a.entrenador_id = nuevo
+            Asignacion.objects.filter(pk=a.pk).update(**campos)
+            for r in (report or {}).get("satelites", []):
+                if (r["dia"], r["turno"], r["pista"]) == (dia, turno.codigo, a.pista_id):
+                    r["entrenador"] = nuevo
+
+    cambios = 0
+    for t in orden:
+        atados = atados_de(t)
+        for viajero in preferidos:
+            u = unidades(t.id)
+            if viajero in u:
+                continue
+            # Primero una pista sin entrenador; luego el peor colocado.
+            peores = sorted((c for c in u if c is None or rango.get(c, 10 ** 6) > rango[viajero]),
+                            key=lambda c: (c is not None, -rango.get(c, 10 ** 6)))
+            for otro in peores:
+                gente = [a for p in u[otro] for a in filas[(t.id, p)]]
+                if any(a.manual for a in gente):
+                    continue
+                if any(viajero in vetos_coach.get(a.jugador_id, ()) for a in gente):
+                    continue
+                if otro is not None and any(otro in atados.get(a.jugador_id, ())
+                                            for a in gente):
+                    continue
+                if libre(viajero, t):
+                    tomar(viajero, t)
+                    if otro is not None:
+                        soltar(otro, t)
+                    poner(gente, viajero, t)
+                    cambios += 1
+                    break
+                if otro is None or otro in no_vigilan:
+                    continue
+                # El viajero está en una pista del Resort a esa hora: se cambian.
+                suya = next((fs for (tt, p), fs in filas.items()
+                             if tt == t.id and p not in sat and fs and coach(fs) == viajero),
+                            None)
+                if (suya is None or any(a.manual for a in suya)
+                        or any(otro in vetos_coach.get(a.jugador_id, ()) for a in suya)
+                        or any(viajero in atados.get(a.jugador_id, ()) for a in suya)):
+                    continue
+                poner(gente, viajero, t)
+                poner(suya, otro, t)
+                if report is not None:
+                    report.setdefault("satelites_mismo_entrenador", []).append(
+                        {"dia": dia, "turno": t.codigo, "entrenador": viajero, "sube": otro})
+                cambios += 1
+                break
+    return cambios
 
 
 # Lo que vale una pareja al rehacer las parejas de una franja (27/10/2026),
@@ -2059,6 +2181,12 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
     # Las pistas de Satélites; el rescate añade aquí las que monte.
     satelites = [c for c in todas if sede_satelites is not None
                  and c.venue_id == sede_satelites.id]
+
+    def satelites_en(tarde):
+        """¿Hay Satélites en este bloque? Por la mañana, salvo «nunca»; por la
+        tarde, solo en el modo «también por la tarde»."""
+        return sede_satelites is not None and (
+            not tarde or cfg.modo_satelites == ConfiguracionMotor.ModoSatelites.SIEMPRE)
     courts_by_id = {c.id: c for c in todas}
     vetoes = _vetoes()
     vetos_coach = _vetos_entrenador()
@@ -2346,6 +2474,15 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 banquillo, overrides,
             )
             franjas_orig = {jid: dict(o) for jid, o in franjas_de.items()}
+            # Si alguien tiene que salir del Resort, que sea quien puede entrenar
+            # en Satélites (23/11/2026: Yulan, invitada, se quedó fuera con su
+            # pareja obligatoria; a Satélites no podía ir). Su pareja obligatoria
+            # entra con él por la regla de las parejas.
+            if satelites_en(es_tarde):
+                for p in players:
+                    if p.solo_central:
+                        franjas_de[p.id] = {f: pr + PRIORIDAD_SOLO_RESORT
+                                            for f, pr in franjas_de[p.id].items()}
             fuera_del_motor = fijos | quitados
             # Todos los de este bloque, también los puestos a mano: hacen falta
             # para ver qué reglas rompe quien se mete en su pista.
@@ -2698,9 +2835,9 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                         coach_share[(jid, a.entrenador_id)] += 1
                 fuera = [jid for jid in fuera if jid not in metidos]
             # Lo que queda abre pista: primero lo libre del Resort y luego
-            # Satélites (solo por la mañana), con entrenador si queda alguno.
+            # Satélites, con entrenador si queda alguno.
             if fuera:
-                usar_sat = not es_tarde and sede_satelites is not None
+                usar_sat = satelites_en(es_tarde)
 
                 def libres_rescate(turno):
                     del_rep = [c.id for c in elegibles_para(turno)
@@ -2711,6 +2848,11 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 def tomar(cid, turno):
                     ocupacion_coach[cid].append(turno.horas(fecha))
                     load[cid] += 1
+
+                def soltar(cid, turno):
+                    if turno.horas(fecha) in ocupacion_coach[cid]:
+                        ocupacion_coach[cid].remove(turno.horas(fecha))
+                    load[cid] -= 1
 
                 metidos = _rescatar(
                     semana, dia, grupo, fuera, por_id_bloque, franjas_orig, cfg,
@@ -2724,6 +2866,14 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                 )
                 for c in satelites:
                     courts_by_id.setdefault(c.id, c)
+                if usar_sat:
+                    _mismos_en_satelites(
+                        semana, dia, grupo,
+                        libre=lambda cid, t: cid in libres_rescate(t),
+                        tomar=tomar, soltar=soltar, vetos_coach=vetos_coach,
+                        atados_de=atados_de, no_vigilan=set(solo_con),
+                        coach_share=coach_share, report=report,
+                    )
                 for jid, a in metidos.items():
                     player_sessions[jid] += 1
                     sesiones_hoy[jid] += 1

@@ -282,3 +282,137 @@ class EdadComoPreferenciaTests(SatelitesDeRescateTests):
         marcada = self.de(a) if self.de(a).forzada else self.de(b)
         self.assertTrue(marcada.forzada)
         self.assertIn("edad", marcada.motivo_forzado)
+
+
+class InvitadoYSuParejaEnElResortTests(SatelitesDeRescateTests):
+    """23/11/2026: Yulan (invitada, D9, solo M1) se quedó fuera porque el
+    reparto dejó fuera a su pareja obligatoria (Nik) y ella no puede ir a
+    Satélites. Ahora, si alguien tiene que salir del Resort, sale quien puede
+    entrenar fuera: ella y Nik se quedan y la pista de los otros va a
+    Satélites."""
+
+    def test_el_invitado_y_su_pareja_se_quedan_y_sale_otra_pista(self):
+        from academy.models import PreferenciaPareja
+
+        a, b = self.jugador("Ocho A", 8), self.jugador("Ocho B", 8)
+        nik = self.jugador("Nik", 9)
+        yulan = self.jugador("Yulan (invitada)", 9, sexo="CHICA", edad=12)
+        Invitado.objects.create(nombre="Yulan", entrenador_solicitante=self.pablo,
+                                estado=Invitado.Estado.APROBADO, jugador_creado=yulan)
+        PreferenciaPareja.objects.create(jugador=yulan, jugador_objetivo=nik,
+                                         tipo=PreferenciaPareja.Tipo.HARD)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual(self.de(yulan).pista, self.resort)
+        self.assertEqual(self.de(nik).pista, self.resort)
+        self.assertEqual({self.de(a).pista.sede, self.de(b).pista.sede}, {self.satelites})
+        self.assertFalse(AvisoBanquillo.objects.filter(jugador=yulan).exists())
+
+    def test_por_la_tarde_sin_satelites_no_se_adelanta(self):
+        # Sin Satélites por la tarde, salir del Resort es quedarse en el
+        # banquillo: el invitado no pasa por delante.
+        from engine.service import PRIORIDAD_SOLO_RESORT
+
+        self.assertGreater(PRIORIDAD_SOLO_RESORT, 2 * 9)
+
+
+class MismoEntrenadorEnLasDosFranjasTests(SatelitesDeRescateTests):
+    """23/11/2026: el entrenador que va a Satélites se queda allí en M1 y M2
+    (y por la tarde, si se usan, primero el de la mañana)."""
+
+    def setUp(self):
+        super().setUp()
+        self.m2 = Turno.objects.get(codigo="M2")
+        # Inactivo: el motor no lo usa en las pruebas heredadas; aquí da igual.
+        self.ivan = Entrenador.objects.create(nombre="Ivan", activo=False)
+        self.libres = set()
+        self.soltados = []
+
+    def fila(self, turno, pista, coach, nombre, manual=False):
+        return Asignacion.objects.create(
+            semana=self.semana, dia=0, turno=turno, pista=pista,
+            jugador=self.jugador(nombre, 9), entrenador=coach, manual=manual)
+
+    def pasar(self, grupo=None):
+        from engine.service import _mismos_en_satelites
+
+        return _mismos_en_satelites(
+            self.semana, 0, grupo or [self.m1, self.m2],
+            libre=lambda cid, t: (cid, t.codigo) in self.libres,
+            tomar=lambda cid, t: None,
+            soltar=lambda cid, t: self.soltados.append((cid, t.codigo)),
+            vetos_coach={}, atados_de=lambda t: {}, no_vigilan=set())
+
+    def coach_en(self, turno, pista):
+        return Asignacion.objects.filter(semana=self.semana, dia=0, turno=turno,
+                                         pista=pista).first().entrenador
+
+    def test_si_esta_en_el_resort_se_cambia_con_el_de_satelites(self):
+        self.fila(self.m1, self.sat[0], self.pablo, "X")
+        self.fila(self.m2, self.resort, self.pablo, "A")
+        self.fila(self.m2, self.sat[0], self.ivan, "Y")
+        self.assertEqual(self.pasar(), 1)
+        self.assertEqual(self.coach_en(self.m2, self.sat[0]), self.pablo)
+        self.assertEqual(self.coach_en(self.m2, self.resort), self.ivan)
+
+    def test_si_esta_libre_va_el_y_el_otro_queda_libre(self):
+        self.fila(self.m1, self.sat[0], self.pablo, "X")
+        self.fila(self.m2, self.sat[0], self.ivan, "Y")
+        self.fila(self.m2, self.sat[1], self.ivan, "Z")
+        self.libres = {(self.pablo.id, "M2")}
+        self.pasar()
+        self.assertEqual(self.coach_en(self.m2, self.sat[0]), self.pablo)
+        self.assertEqual(self.coach_en(self.m2, self.sat[1]), self.pablo)
+        self.assertEqual(self.soltados, [(self.ivan.id, "M2")])
+
+    def test_lo_puesto_a_mano_no_se_toca(self):
+        self.fila(self.m1, self.sat[0], self.pablo, "X")
+        self.fila(self.m2, self.resort, self.pablo, "A", manual=True)
+        self.fila(self.m2, self.sat[0], self.ivan, "Y")
+        self.assertEqual(self.pasar(), 0)
+        self.assertEqual(self.coach_en(self.m2, self.sat[0]), self.ivan)
+
+    def test_una_pista_sin_entrenador_la_coge_el_de_la_otra_franja(self):
+        self.fila(self.m1, self.sat[0], self.pablo, "X")
+        a = self.fila(self.m2, self.sat[0], None, "Y")
+        Asignacion.objects.filter(pk=a.pk).update(
+            forzada=True, motivo_forzado="Satélites sin entrenador, para que no se quede en el banquillo")
+        self.libres = {(self.pablo.id, "M2")}
+        self.pasar()
+        a.refresh_from_db()
+        self.assertEqual((a.entrenador, a.forzada), (self.pablo, False))
+
+    def test_por_la_tarde_primero_el_de_la_manana(self):
+        t1, t2 = self.t1, Turno.objects.get(codigo="T2")
+        self.fila(self.m1, self.sat[0], self.pablo, "X")
+        self.fila(t1, self.resort, self.pablo, "A")
+        self.fila(t1, self.sat[0], self.ivan, "Y")
+        self.pasar(grupo=[t1, t2])
+        self.assertEqual(self.coach_en(t1, self.sat[0]), self.pablo)
+        self.assertEqual(self.coach_en(t1, self.resort), self.ivan)
+
+
+class SatelitesPorLaTardeTests(SatelitesDeRescateTests):
+    """23/11/2026: en el modo «también por la tarde», quien no cabe en T1 ni
+    T2 del Resort va a Satélites, siempre con entrenador."""
+
+    def tarde_llena(self):
+        self.resort_lleno(turno=self.t1)
+        self.resort_lleno(turno=Turno.objects.get(codigo="T2"))
+
+    def test_va_a_satelites_con_entrenador(self):
+        self.cfg.modo_satelites = ConfiguracionMotor.ModoSatelites.SIEMPRE
+        self.cfg.save()
+        self.tarde_llena()
+        sergio = Entrenador.objects.create(nombre="Sergio", reserva=True, orden_banquillo=2)
+        nik = self.jugador("Nik", 9, tarde=True)
+        generate(self.semana, dias=[0], bloques=["TARDE"])
+        self.assertEqual((self.de(nik).pista.sede, self.de(nik).entrenador),
+                         (self.satelites, sergio))
+
+    def test_sin_entrenador_por_la_tarde_no_se_abre(self):
+        self.cfg.modo_satelites = ConfiguracionMotor.ModoSatelites.SIEMPRE
+        self.cfg.save()
+        self.tarde_llena()
+        nik = self.jugador("Nik", 9, tarde=True)
+        generate(self.semana, dias=[0], bloques=["TARDE"])
+        self.assertIsNone(self.de(nik))

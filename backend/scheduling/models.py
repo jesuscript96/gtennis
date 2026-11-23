@@ -583,15 +583,17 @@ class ConfiguracionMotor(models.Model):
     )
     class ModoSatelites(models.TextChoices):
         NUNCA = "NUNCA", "Nunca"
-        RESCATE = "RESCATE", "Cuando el Resort se llena"
+        RESCATE = "RESCATE", "Cuando el Resort se llena (solo mañanas)"
+        SIEMPRE = "SIEMPRE", "Cuando el Resort se llena, también por la tarde"
 
     # 23/11/2026: solo Resort y Satélites. Lo que no cabe en el Resort abre en
     # Satélites tantas pistas como hagan falta, con un entrenador por cada dos
-    # pistas. Por la tarde nunca. (El modo «desbordar», que metía los
-    # satélites en el reparto, ya no existe.)
+    # pistas, el mismo en las dos franjas del bloque. Por la tarde solo en
+    # «SIEMPRE». (El modo «desbordar», que metía los satélites en el reparto,
+    # ya no existe.)
     modo_satelites = models.CharField(
         max_length=10, choices=ModoSatelites.choices, default=ModoSatelites.RESCATE,
-        help_text="Cuándo usa el motor los Satélites. Por la tarde nunca.",
+        help_text="Cuándo usa el motor los Satélites.",
     )
 
     class Meta:

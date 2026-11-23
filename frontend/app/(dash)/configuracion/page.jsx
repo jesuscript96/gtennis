@@ -15,7 +15,8 @@ const NUM_FIELDS = [
 ];
 
 const MODOS_SATELITES = [
-  ["RESCATE", "Cuando el Resort se llena"],
+  ["RESCATE", "Cuando el Resort se llena (solo mañanas)"],
+  ["SIEMPRE", "Cuando el Resort se llena, también por la tarde"],
   ["NUNCA", "Nunca"],
 ];
 
@@ -93,10 +94,11 @@ export default function ConfiguracionPage() {
             {MODOS_SATELITES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <span style={{ marginTop: 6, fontSize: 11 }}>
-            Por la tarde nunca se usan. Quien no cabe en el Resort ni en un hueco de sus pistas va a
-            Satélites, donde se abren las pistas que hagan falta: de tierra y, si la resina del Resort
-            está ocupada, de resina para quien la necesita. Un entrenador por cada dos pistas (el
-            segundo a partir de la tercera). Los invitados no van nunca a Satélites.
+            Quien no cabe en el Resort ni en un hueco de sus pistas va a Satélites, donde se abren las
+            pistas que hagan falta: de tierra y, si la resina del Resort está ocupada, de resina para
+            quien la necesita. Un entrenador por cada dos pistas (el segundo a partir de la tercera), y
+            el mismo en las dos franjas (y por la tarde, si se usan, primero el de la mañana). Los
+            invitados no van nunca a Satélites: si alguien tiene que salir del Resort, sale otro.
           </span>
         </label>
 
