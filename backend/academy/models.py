@@ -591,6 +591,16 @@ class Jugador(models.Model):
                     kwargs["update_fields"] = list(update_fields) + ["orden_division"]
         elif not self.pk and self.orden_division is None:
             self.orden_division = Jugador.puesto_al_final(self.division_id)
+        # Quien vuelve de una baja a una división que ya tiene ranking también
+        # entra el último (23/11/2026: Lucca se reactivó en la D2 sin puesto).
+        if (self.pk and self.activo and self.orden_division is None and self.division_id
+                and (update_fields is None or {"activo", "division"} & set(update_fields))):
+            puesto = Jugador.puesto_al_final(self.division_id, sin=self.pk)
+            if puesto is not None:
+                self.orden_division = puesto
+                if kwargs.get("update_fields") is not None:
+                    kwargs["update_fields"] = sorted(
+                        set(kwargs["update_fields"]) | {"orden_division"})
         super().save(*args, **kwargs)
 
     def __str__(self):

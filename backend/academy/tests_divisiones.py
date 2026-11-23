@@ -126,3 +126,40 @@ class RankingDivisionTests(MoverDivisionTests):
         self.assertAlmostEqual(finos[self.carla.id], 1 + 0.5 / 3)
         self.assertAlmostEqual(finos[self.ana.id], 1 + 2.5 / 3)
         self.assertLess(finos[self.carla.id], finos[self.bea.id])
+
+
+class VuelveDeBajaConPuestoTests(TestCase):
+    """23/11/2026: Lucca estaba de baja cuando se ordenó la D2 y, al volver, se
+    quedó sin puesto. Quien vuelve a una división con ranking entra el último."""
+
+    def setUp(self):
+        self.d2, _ = Division.objects.get_or_create(nivel=2, defaults={"nombre": "División 2"})
+        self.d3, _ = Division.objects.get_or_create(nivel=3, defaults={"nombre": "División 3"})
+        Jugador.objects.filter(division__in=[self.d2, self.d3]).update(activo=False)
+        self.a = Jugador.objects.create(nombre="A", division=self.d2, orden_division=1)
+        self.b = Jugador.objects.create(nombre="B", division=self.d2, orden_division=2)
+
+    def test_al_volver_entra_el_ultimo(self):
+        lucca = Jugador.objects.create(nombre="Lucca", division=self.d2, activo=False)
+        Jugador.objects.filter(pk=lucca.pk).update(orden_division=None)
+        lucca.refresh_from_db()
+        lucca.activo = True
+        lucca.save()
+        lucca.refresh_from_db()
+        self.assertEqual(lucca.orden_division, 3)
+
+    def test_tambien_guardando_solo_el_activo(self):
+        lucca = Jugador.objects.create(nombre="Lucca", division=self.d2, activo=False)
+        Jugador.objects.filter(pk=lucca.pk).update(orden_division=None)
+        lucca.refresh_from_db()
+        lucca.activo = True
+        lucca.save(update_fields=["activo"])
+        lucca.refresh_from_db()
+        self.assertEqual(lucca.orden_division, 3)
+
+    def test_en_una_division_sin_ranking_sigue_sin_puesto(self):
+        nuevo = Jugador.objects.create(nombre="C", division=self.d3, activo=False)
+        nuevo.activo = True
+        nuevo.save()
+        nuevo.refresh_from_db()
+        self.assertIsNone(nuevo.orden_division)
