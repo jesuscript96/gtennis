@@ -66,6 +66,32 @@ def informe_abierto(jugador, crear=True):
     return inf
 
 
+def validado_sin_fisica(jugador):
+    """El informe ya validado al que todavía se le puede sumar la física que
+    llega tarde (24/11/2026): el último validado del jugador, sin parte física,
+    sin enviar a la familia y de este trimestre (validado hace menos de 75
+    días). Si no, la física es para el informe siguiente."""
+    ult = ultimo_validado(jugador)
+    if ult is None or ult.fisica_id or ult.enviado_en:
+        return None
+    if (timezone.now() - ult.validado_en).days >= CICLO_PRONTO:
+        return None
+    return ult
+
+
+def _reabrir_para_fisica(inf, ev):
+    """Vuelve a abrir el informe validado para sumarle la física (24/11/2026).
+    Como al reabrirlo para corregir: versión nueva y, al terminar la física,
+    otra vez a validar con el PDF completo. Si estaba programado para salir,
+    deja de estarlo; se avisa a quien lo aprobó y a quien lo programó."""
+    avisar = [inf.validado_por, inf.envio_programado_por if inf.envio_programado else None]
+    reabrir(inf, None)
+    _avisar(avisar, f"Informe de {inf.jugador.nombre}: se le suma la parte física",
+            f"{ev.nombre_evaluador or 'El preparador'} está haciendo la preparación física de este informe, que "
+            f"ya estaba aprobado y aún no se había enviado a la familia. Cuando la termine, vuelve a validar "
+            f"con el PDF completo{' (se ha cancelado el envío programado)' if avisar[1] else ''}.")
+
+
 def vincular(ev):
     """Cuelga una evaluación recién creada (de tenis o física) del informe
     abierto de su jugador. Si ese informe ya tiene esa parte, no deja crear
@@ -74,10 +100,18 @@ def vincular(ev):
     Desde el 10/11/2026 también Alto rendimiento (decisión 12): su informe pasa
     por la misma validación y lo manda la parte de tenis. Desde el 17/11/2026
     la parte física también se cuelga del informe de Alto rendimiento (se suma
-    al PDF, sin hacer falta para validarlo)."""
+    al PDF, sin hacer falta para validarlo). Desde el 24/11/2026, la física que
+    llega cuando el tenis ya está validado se suma a ese informe si aún no ha
+    salido hacia la familia (antes abría el del trimestre siguiente)."""
     campo = "tenis" if isinstance(ev, Evaluacion) else "fisica"
     with transaction.atomic():
-        inf = informe_abierto(ev.jugador)
+        inf = informe_abierto(ev.jugador, crear=False)
+        if inf is None and campo == "fisica":
+            inf = validado_sin_fisica(ev.jugador)
+            if inf is not None:
+                _reabrir_para_fisica(inf, ev)
+        if inf is None:
+            inf = Informe.objects.create(jugador=ev.jugador)
         actual = getattr(inf, campo)
         if actual is not None and actual.pk != ev.pk:
             raise InformeError(actual.pk)
@@ -197,16 +231,24 @@ def guardar_en_drive(inf):
     return aviso
 
 
-def tras_borrar_parte(inf):
+def tras_borrar_parte(inf, fisica=False):
     """Después de borrar una evaluación: si su informe se ha quedado sin
     ninguna parte, se borra también, y su PDF va a la papelera de Drive
-    (12/11/2026: se borran los de prueba para empezar del 1 al 10)."""
+    (12/11/2026: se borran los de prueba para empezar del 1 al 10). Si se
+    borra la física de un informe de Alto rendimiento que se había reabierto
+    para sumársela (24/11/2026), el tenis ya terminado vuelve a validar."""
     from . import drive
 
     if inf is None:
         return
     inf = Informe.objects.filter(pk=inf.pk).first()
-    if inf is None or inf.tenis_id or inf.fisica_id:
+    if inf is None:
+        return
+    if (fisica and inf.tenis_id and inf.estado == Informe.Estado.EN_CURSO
+            and inf.circuito == "alto_rendimiento" and inf.completo):
+        parte_terminada(inf.tenis)
+        return
+    if inf.tenis_id or inf.fisica_id:
         return
     drive.a_la_papelera(inf.drive_file_id)
     inf.delete()
@@ -250,7 +292,11 @@ def parte_terminada(ev):
     nombre = inf.jugador.nombre
     # Tardes: se avisa a quien coordina (decisión 11). Alto rendimiento, a
     # dirección, que es quien lo valida (12/11/2026).
-    if inf.circuito == "alto_rendimiento":
+    if fisica_de_ar:
+        # La física que se suma a un informe reabierto para ella (24/11/2026).
+        partes = (f"{inf.fisica.nombre_evaluador} ha terminado la preparación física; el tenis "
+                  f"({inf.tenis.nombre_evaluador}) ya estaba. El PDF ya lleva las dos partes.")
+    elif inf.circuito == "alto_rendimiento":
         partes = f"{inf.tenis.nombre_evaluador} ha terminado la evaluación de tenis."
     else:
         partes = "Tenis y preparación física están terminados."
@@ -273,10 +319,80 @@ def aprobar(inf, usuario, destinatarios):
     inf.validado_en = timezone.now()
     inf.destinatarios = destinatarios
     inf.save()
+    guardar_correos_en_ficha(inf.jugador, destinatarios)
     aviso_drive = guardar_en_drive(inf)
     _avisar(autores(inf), f"Informe de {inf.jugador.nombre} validado",
             "Ya está validado y en la carpeta «Validados» de Drive. El siguiente toca en unos 90 días.")
     return aviso_drive
+
+
+def guardar_correos_en_ficha(jugador, destinatarios):
+    """Los correos que quien aprueba escribe a mano se quedan en la ficha del
+    jugador (24/11/2026), para que el siguiente informe ya los proponga. Solo
+    rellena lo que estaba vacío (primer correo, luego el segundo): nunca cambia
+    ni quita uno que ya hubiera. Devuelve cuántos ha guardado."""
+    from django.core.exceptions import ValidationError as ErrorDjango
+    from django.core.validators import validate_email
+
+    from .models import DatosInforme
+
+    datos = DatosInforme.objects.filter(jugador=jugador).first()
+    ya = {e.lower() for e in (jugador.email, datos.email_2 if datos else "") if e}
+    guardados = 0
+    for d in destinatarios or []:
+        email = str(d.get("email", "")).strip()
+        quien = str(d.get("quien", "")).strip()
+        quien = "" if quien.lower() == "familia" else quien[:40]
+        if not email or email.lower() in ya:
+            continue
+        try:
+            validate_email(email)
+        except ErrorDjango:
+            continue
+        if not jugador.email:
+            jugador.email = email
+            jugador.save(update_fields=["email"])
+            if datos is not None and quien and not datos.quien_1:
+                datos.quien_1 = quien
+                datos.save(update_fields=["quien_1"])
+        elif datos is None or not datos.email_2:
+            if datos is None:
+                datos = DatosInforme.objects.create(jugador=jugador, idioma=idioma_familia(jugador))
+            datos.email_2, datos.quien_2 = email, quien
+            datos.save(update_fields=["email_2", "quien_2"])
+        else:
+            break
+        ya.add(email.lower())
+        guardados += 1
+    return guardados
+
+
+def usuarios_envian():
+    """Quien envía los informes a las familias: dirección, Administración y
+    quien tenga la función «Envía informes»."""
+    from django.db.models import Q
+
+    from academy.permissions import ENVIA_INFORMES
+
+    return _usuarios(Q(role="SUPERADMIN") | Q(is_superuser=True) | Q(role="ADMINISTRACION")
+                     | Q(funciones__codigo=ENVIA_INFORMES))
+
+
+def avisar_para_enviar(inf, usuario):
+    """Si lo aprueba quien no envía (el head coach, el coordinador), se avisa a
+    quien envía de que hay uno listo (24/11/2026): antes se quedaba en
+    «Validados» sin que nadie lo supiera."""
+    from academy.permissions import envia_informes
+
+    if envia_informes(usuario):
+        return
+    quien = usuario.get_full_name() or usuario.username
+    falta = ("" if inf.destinatarios else
+             " Ojo: no tiene correo de la familia, así que aún no se puede enviar.")
+    _avisar([u for u in usuarios_envian() if u.pk != usuario.pk],
+            f"Informe de {inf.jugador.nombre} aprobado: listo para enviar",
+            f"Lo ha aprobado {quien}. Envíalo a la familia desde Rendimiento → Informes, en «Por enviar» "
+            f"(ahora o mañana a las 8:30).{falta}")
 
 
 def reabrir(inf, usuario):

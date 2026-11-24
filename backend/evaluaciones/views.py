@@ -344,7 +344,7 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("La borran quien la hizo y quien coordina; un informe aprobado no se borra.")
         inf = getattr(instance, "informe", None)
         instance.delete()
-        informes.tras_borrar_parte(inf)
+        informes.tras_borrar_parte(inf, fisica=True)
 
     @action(detail=False)
     def anterior(self, request):
@@ -526,6 +526,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             })
         return Response({"jugadores": out, "ve_tardes": ve_ct,
                          "puede_validar": valida_informes(request.user) or valida_alto_rendimiento(request.user),
+                         "puede_enviar": envia_informes(request.user),
                          "evalua_tenis": evalua_tenis_solo_informes(request.user),
                          "evalua_fisico": evalua_fisico(request.user),
                          "puede_asignar": coordina_informes(request.user), "yo": request.user.id,
@@ -597,6 +598,8 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
                     informes.enviar(inf, request.user)
             except informes.InformeError as e:
                 aviso = " ".join(filter(None, [aviso, f"Aprobado, pero no enviado: {e}"]))
+        # Quien aprueba sin poder enviar: se avisa a quien envía (24/11/2026).
+        informes.avisar_para_enviar(inf, request.user)
         return Response({**self.get_serializer(inf).data, "aviso": aviso})
 
     def _remitente(self):

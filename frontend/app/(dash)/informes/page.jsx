@@ -170,11 +170,37 @@ function PorValidar({ informes }) {
   );
 }
 
+/** Los aprobados que aún no han salido hacia la familia (24/11/2026), para quien los envía:
+ * antes se quedaban en «Validados» sin que nadie lo supiera. */
+function PorEnviar({ informes }) {
+  if (informes.length === 0) return <p className="msg">No hay informes aprobados esperando a enviarse.</p>;
+  return (
+    <ul className="eval-lista">
+      {informes.map((i) => (
+        <li key={i.id}>
+          <Link href={`/informes/${i.id}`} className="card">
+            <span className="eval-lista-nombre">{i.jugador_nombre}</span>
+            <span className="eval-lista-meta">
+              {i.circuito === "alto_rendimiento" ? "Alto rendimiento" : "Competición de tardes"}
+              {i.validado_por_nombre && ` · aprobado por ${i.validado_por_nombre}`}
+              {i.destinatarios.length === 0 && " · falta el correo de la familia"}
+            </span>
+            {i.envio_programado
+              ? <span className="pill ok">Sale el {fmtLarga(i.envio_programado.slice(0, 10))} a las 8:30</span>
+              : <span className="pill pend">Desde {fmtLarga((i.validado_en || i.actualizado).slice(0, 10))}</span>}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Informes() {
   const params = useSearchParams();
   const [panel, setPanel] = useState(null);
   const [pendientes, setPendientes] = useState([]);
-  const [vista, setVista] = useState(params.get("vista") === "validar" ? "validar" : "jugadores");
+  const [porEnviar, setPorEnviar] = useState([]);
+  const [vista, setVista] = useState(["validar", "enviar"].includes(params.get("vista")) ? params.get("vista") : "jugadores");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -182,6 +208,9 @@ function Informes() {
       setPanel(p);
       if (p.puede_validar) {
         getInformes({ estado: "PENDIENTE" }).then((l) => setPendientes(l.filter((i) => i.puede_validar))).catch(() => {});
+      }
+      if (p.puede_enviar) {
+        getInformes({ estado: "VALIDADO" }).then((l) => setPorEnviar(l.filter((i) => !i.enviado_en && i.puede_enviar))).catch(() => {});
       }
     }).catch((e) => setError(e.message));
   }, []);
@@ -216,17 +245,27 @@ function Informes() {
         grupo; la preparación física se suma si el preparador la hace) los validan <b>dirección</b> y el <b>head coach</b> de su color, también
         aquí en «Por validar». El siguiente toca a los 90 días de validarlo.
       </p>
-      {panel.puede_validar && (
+      {(panel.puede_validar || panel.puede_enviar) && (
         <div className="tabs-inv" role="tablist">
           <button type="button" role="tab" aria-selected={vista === "jugadores"}
             className={`chip${vista === "jugadores" ? " on" : ""}`} onClick={() => setVista("jugadores")}>Jugadores</button>
-          <button type="button" role="tab" aria-selected={vista === "validar"}
-            className={`chip${vista === "validar" ? " on" : ""}`} onClick={() => setVista("validar")}>
-            Por validar{pendientes.length > 0 && <span className="nav-badge">{pendientes.length}</span>}
-          </button>
+          {panel.puede_validar && (
+            <button type="button" role="tab" aria-selected={vista === "validar"}
+              className={`chip${vista === "validar" ? " on" : ""}`} onClick={() => setVista("validar")}>
+              Por validar{pendientes.length > 0 && <span className="nav-badge">{pendientes.length}</span>}
+            </button>
+          )}
+          {panel.puede_enviar && (
+            <button type="button" role="tab" aria-selected={vista === "enviar"}
+              className={`chip${vista === "enviar" ? " on" : ""}`} onClick={() => setVista("enviar")}>
+              Por enviar{porEnviar.length > 0 && <span className="nav-badge">{porEnviar.length}</span>}
+            </button>
+          )}
         </div>
       )}
-      {vista === "validar" && panel.puede_validar ? <PorValidar informes={pendientes} /> : <Jugadores panel={panel} onPanel={setPanel} />}
+      {vista === "validar" && panel.puede_validar ? <PorValidar informes={pendientes} />
+        : vista === "enviar" && panel.puede_enviar ? <PorEnviar informes={porEnviar} />
+          : <Jugadores panel={panel} onPanel={setPanel} />}
     </div>
   );
 }

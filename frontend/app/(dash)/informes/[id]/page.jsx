@@ -126,8 +126,9 @@ function Validar({ inf, onCambio }) {
               ? "El correo aún no está configurado en el servidor: al aprobar no se envía; se podrá enviar después."
               : inf.puede_enviar
                 ? "Le llega a la familia por correo, con el PDF en su idioma: mañana a las 8:30 o ahora mismo."
-                : "Al aprobarlo, dirección o Administración lo envían a la familia por correo, con el PDF en su idioma."}
-            {" "}Al aprobar, el PDF pasa a la carpeta de validados en Drive.
+                : "Al aprobarlo, les llega un aviso a dirección y Administración, que lo envían a la familia por correo, con el PDF en su idioma."}
+            {" "}Al aprobar, el PDF pasa a la carpeta de validados en Drive y el correo que escribas, si la ficha
+            no lo tenía, se queda en la ficha del jugador para el siguiente informe.
           </p>
           <Respuestas inf={inf} />
           <div className="eval-pie">
