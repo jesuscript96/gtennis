@@ -204,9 +204,9 @@ class InformeSerializer(serializers.ModelSerializer):
                   "creado", "actualizado"]
 
     def get_puede_enviar(self, inf):
-        from academy.permissions import envia_informes
+        from .informes import puede_enviar
         req = self.context.get("request")
-        return bool(req and envia_informes(req.user))
+        return bool(req and puede_enviar(req.user, inf))
 
     def get_enviado_por_nombre(self, inf):
         return self._nombre(inf.enviado_por)

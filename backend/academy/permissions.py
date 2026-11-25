@@ -133,8 +133,10 @@ def valida_informes(user):
 
 
 def envia_informes(user):
-    """Envía a las familias los informes aprobados: dirección, Administración
-    y quien tenga la función."""
+    """Envía a las familias todos los informes aprobados: dirección,
+    Administración y quien tenga la función. El head coach envía además los de
+    Alto rendimiento de su color (25/11/2026): eso se mira informe a informe en
+    `evaluaciones.informes.puede_enviar`."""
     return es_administracion(user) or tiene_funcion(user, ENVIA_INFORMES)
 
 

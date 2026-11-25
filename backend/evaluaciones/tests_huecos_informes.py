@@ -12,7 +12,7 @@ from academy.models import Aviso, Jugador
 from users.models import ArchivoMigracion, Funcion, User
 
 from . import pdf
-from .models import DatosInforme, EvaluacionFisica, Informe
+from .models import DatosInforme, Evaluacion, EvaluacionFisica, Informe
 from .tests import SIN_CAPTURA_DE_PLANTILLAS
 from .tests_alto_rendimiento import FISICA, Base
 
@@ -134,24 +134,40 @@ class AvisoParaEnviarTests(ConPreparador):
         self.envia = User.objects.create_user(username="envia", password="x", role=User.Role.ENTRENADOR)
         Funcion.objects.create(usuario=self.envia, codigo="ENVIA_INFORMES")
 
-    def test_si_aprueba_el_head_coach_se_avisa_a_quien_envia(self):
-        self.aprobado(self.ana, destinatarios=[{"email": "madre@ejemplo.com", "quien": "Madre"}])
+    def tardes_aprobado(self, destinatarios=()):
+        """Uno de Competición de tardes aprobado por quien valida, que no envía."""
+        tenis = Evaluacion.objects.create(jugador=self.nino, evaluador=self.u_blas, estado="TERMINADA")
+        fisica = EvaluacionFisica.objects.create(jugador=self.nino, estado="TERMINADA")
+        inf = Informe.objects.create(jugador=self.nino, tenis=tenis, fisica=fisica, estado="PENDIENTE")
+        r = self.api(self.valida).post(f"/api/informes/{inf.id}/aprobar/",
+                                       {"destinatarios": list(destinatarios)}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_si_aprueba_quien_no_envia_se_avisa_a_quien_envia(self):
+        self.tardes_aprobado(destinatarios=[{"email": "madre@ejemplo.com", "quien": "Madre"}])
         avisos = Aviso.objects.filter(titulo__contains="listo para enviar")
         self.assertEqual(set(avisos.values_list("usuario__username", flat=True)), {"dir", "administracion", "envia"})
         self.assertIn("Por enviar", avisos.first().mensaje)
         self.assertNotIn("no tiene correo", avisos.first().mensaje)
 
     def test_dice_si_falta_el_correo(self):
-        self.aprobado(self.ana)
+        self.tardes_aprobado()
         self.assertIn("no tiene correo", Aviso.objects.filter(titulo__contains="listo para enviar").first().mensaje)
 
     def test_si_aprueba_quien_envia_no_se_avisa(self):
         self.aprobado(self.ana, quien=self.dir)
         self.assertFalse(Aviso.objects.filter(titulo__contains="listo para enviar").exists())
 
+    def test_el_head_coach_envia_los_suyos_y_no_avisa(self):
+        """Desde el 25/11/2026 el head coach envía los de su color."""
+        self.aprobado(self.ana, destinatarios=[{"email": "madre@ejemplo.com", "quien": "Madre"}])
+        self.assertFalse(Aviso.objects.filter(titulo__contains="listo para enviar").exists())
+
     def test_el_panel_dice_quien_envia(self):
         self.assertTrue(self.api(self.dir).get("/api/informes/panel/").json()["puede_enviar"])
-        self.assertFalse(self.api(self.u_dani).get("/api/informes/panel/").json()["puede_enviar"])
+        self.assertTrue(self.api(self.u_dani).get("/api/informes/panel/").json()["puede_enviar"])
+        self.assertFalse(self.api(self.josep).get("/api/informes/panel/").json()["puede_enviar"])
+        self.assertFalse(self.api(self.valida).get("/api/informes/panel/").json()["puede_enviar"])
 
 
 @SIN_CAPTURA_DE_PLANTILLAS

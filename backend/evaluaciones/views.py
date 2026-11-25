@@ -526,7 +526,8 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
             })
         return Response({"jugadores": out, "ve_tardes": ve_ct,
                          "puede_validar": valida_informes(request.user) or valida_alto_rendimiento(request.user),
-                         "puede_enviar": envia_informes(request.user),
+                         # El head coach envía los de Alto rendimiento de su color (25/11/2026).
+                         "puede_enviar": envia_informes(request.user) or es_coach(request.user),
                          "evalua_tenis": evalua_tenis_solo_informes(request.user),
                          "evalua_fisico": evalua_fisico(request.user),
                          "puede_asignar": coordina_informes(request.user), "yo": request.user.id,
@@ -590,7 +591,7 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         # «Aprobar y enviar» (decisión 13): si quien aprueba también envía.
         # `enviar`: «ahora» (o true) o «manana» = mañana a las 8:30 (19/11/2026).
         cuando = request.data.get("enviar")
-        if cuando and envia_informes(request.user):
+        if cuando and informes.puede_enviar(request.user, inf):
             try:
                 if cuando == "manana":
                     informes.programar(inf, request.user)
@@ -603,14 +604,20 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({**self.get_serializer(inf).data, "aviso": aviso})
 
     def _remitente(self):
-        if not envia_informes(self.request.user):
-            raise PermissionDenied("Envían los informes dirección, Administración y quien tenga la función.")
-        return self.get_object()
+        u, no = self.request.user, ("Envían los informes dirección, Administración, quien tenga la función y, "
+                                    "los de Alto rendimiento, el head coach de su color.")
+        if not (envia_informes(u) or es_coach(u)):
+            raise PermissionDenied(no)
+        inf = self.get_object()
+        if not informes.puede_enviar(u, inf):
+            raise PermissionDenied(no)
+        return inf
 
     @action(detail=True, methods=["post"])
     def enviar(self, request, pk=None):
-        """Envía a la familia un informe aprobado (dirección, Administración y
-        quien tenga la función). `{cuando: "manana"}` lo deja para mañana a
+        """Envía a la familia un informe aprobado (dirección, Administración,
+        quien tenga la función y, desde el 25/11/2026, el head coach los de Alto
+        rendimiento de su color). `{cuando: "manana"}` lo deja para mañana a
         las 8:30 (19/11/2026); sin él, sale ya."""
         inf = self._remitente()
         try:

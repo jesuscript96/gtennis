@@ -177,6 +177,18 @@ def puede_validar(user, inf):
     return valida_informes(user)
 
 
+def puede_enviar(user, inf):
+    """Quién envía este informe a la familia (o programa o cancela su envío):
+    dirección, Administración y quien tenga «Envía informes», todos; el head
+    coach, desde el 25/11/2026, los de Alto rendimiento que valida (los de su
+    color)."""
+    from academy.permissions import envia_informes
+
+    if envia_informes(user):
+        return True
+    return inf.circuito == "alto_rendimiento" and es_coach(user) and puede_validar(user, inf)
+
+
 def head_coaches_de(jugador):
     """Los head coaches del color del jugador: los de los bloques donde está
     quien le gestiona."""
@@ -379,12 +391,11 @@ def usuarios_envian():
 
 
 def avisar_para_enviar(inf, usuario):
-    """Si lo aprueba quien no envía (el head coach, el coordinador), se avisa a
-    quien envía de que hay uno listo (24/11/2026): antes se quedaba en
-    «Validados» sin que nadie lo supiera."""
-    from academy.permissions import envia_informes
-
-    if envia_informes(usuario):
+    """Si lo aprueba quien no puede enviarlo (el coordinador de tardes), se
+    avisa a quien envía de que hay uno listo (24/11/2026): antes se quedaba en
+    «Validados» sin que nadie lo supiera. El head coach envía los suyos desde
+    el 25/11/2026, así que al aprobar no avisa a nadie."""
+    if puede_enviar(usuario, inf):
         return
     quien = usuario.get_full_name() or usuario.username
     falta = ("" if inf.destinatarios else

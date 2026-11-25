@@ -879,8 +879,11 @@ class InformesTests(Base):
 
     def test_quien_envia(self):
         url = f"/api/informes/{self.inf.id}/enviar/"
-        for u in (self.salva, self.validador, self.pablo):
+        for u in (self.salva, self.validador):
             self.assertEqual(self.api(u).post(url).status_code, 403, u.username)
+        # El head coach envía solo los de Alto rendimiento de su color
+        # (25/11/2026); este de tardes ni lo ve.
+        self.assertEqual(self.api(self.pablo).post(url).status_code, 404)
         adm = User.objects.create_user(username="adm", password="x", role=User.Role.ADMINISTRACION)
         envia = User.objects.create_user(username="envia", password="x", role=User.Role.ENTRENADOR)
         Funcion.objects.create(usuario=envia, codigo="ENVIA_INFORMES")
