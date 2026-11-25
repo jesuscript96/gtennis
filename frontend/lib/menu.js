@@ -59,7 +59,10 @@ export const MENU = [
   { key: "torneos", label: "Torneos", ve: deportivo, tabs: [
     { href: "/torneos", label: "Calendario" },
     { href: "/torneos/jugadores", label: "Por jugador" },
-    { href: "/torneos/nuevo", label: "Nuevo torneo", ve: club },
+    // También quien coordina Competición de tardes, para sus jugadores (25/11/2026).
+    { href: "/torneos/nuevo", label: "Nuevo torneo", ve: (u) => club(u) || Boolean(u?.lleva_torneos) },
+    // El correo del día 1 a las familias, que validan head coaches y dirección (25/11/2026).
+    { href: "/torneos/correos", label: "Correos a familias", ve: (u) => club(u) || Boolean(u?.lleva_torneos) },
   ] },
   { key: "invitados", label: "Invitados", ve: (u) => Boolean(u?.aprueba_invitados), tabs: [
     { href: "/invitados", label: "Invitados" },

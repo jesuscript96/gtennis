@@ -6,5 +6,6 @@ router = DefaultRouter()
 router.register("torneos", views.TorneoViewSet, basename="torneo")
 router.register("torneos-participantes", views.ParticipanteViewSet, basename="torneo-participante")
 router.register("torneos-cambios", views.CambioTorneoViewSet, basename="torneo-cambio")
+router.register("torneos-correos", views.CorreoTorneosViewSet, basename="torneo-correo")
 
 urlpatterns = router.urls

@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ asunto }}</title></head>
+<body style="margin:0;padding:0;background:#f3efe8;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3efe8;">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Helvetica,Arial,sans-serif;color:#1f1e1d;">
+
+  <tr><td style="background:#24201d;padding:22px 26px;">
+    <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#e9b8a3;font-weight:bold;">G Tenis Academy · {{ t.titulo }}</div>
+    <div style="font-family:Georgia,'Times New Roman',serif;font-size:24px;line-height:1.2;color:#ffffff;margin-top:6px;">{{ asunto }}</div>
+  </td></tr>
+
+  <tr><td style="padding:22px 26px 6px;font-size:15px;line-height:1.5;">
+    <p style="margin:0 0 10px;">{{ tx.hola }}</p>
+    <p style="margin:0 0 10px;">{{ intro }}</p>
+    {% if hay_pendientes %}<p style="margin:0 0 10px;color:#6f6b64;">{{ tx.intro_pend }}</p>{% endif %}
+    {% if hay_abiertas %}<p style="margin:0 0 4px;color:#6f6b64;">{{ tx.inscripcion }}</p>{% endif %}
+  </td></tr>
+
+  {% for x in torneos %}
+  <tr><td style="padding:8px 26px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e7e2d9;border-left:4px {% if x.confirmado %}solid #2f6b4f{% else %}dashed #a86d12{% endif %};border-radius:10px;">
+      <tr>
+        <td style="padding:14px 16px;vertical-align:top;">
+          <div style="font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#9f4a2e;">{{ x.fechas }}</div>
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.25;margin-top:3px;">{{ x.nombre }}</div>
+          {% if x.lugar or x.circuito %}<div style="font-size:13px;color:#6f6b64;margin-top:3px;">{{ x.lugar }}{% if x.lugar and x.circuito %} · {% endif %}{{ x.circuito }}</div>{% endif %}
+          {% if x.previa %}<div style="font-size:13px;color:#6f6b64;margin-top:2px;">{{ x.previa }}</div>{% endif %}
+          {% if x.acompana %}<div style="font-size:13px;color:#6f6b64;margin-top:2px;">{{ tx.acompana }}: <b style="color:#1f1e1d;">{{ x.acompana }}</b></div>{% endif %}
+          <div style="margin-top:8px;">
+            <span style="display:inline-block;font-size:11px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;padding:3px 9px;border-radius:99px;{% if x.confirmado %}background:#e3efe8;color:#2f6b4f;{% else %}background:#fbefd9;color:#a86d12;{% endif %}">{% if x.confirmado %}{{ t.confirmado }}{% else %}{{ t.por_confirmar }}{% endif %}</span>
+          </div>
+        </td>
+        <td width="170" style="padding:14px 16px 14px 0;vertical-align:top;width:170px;">
+          {% if x.cierre.clase == "abierta" %}
+          <div style="background:#c96442;color:#ffffff;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:10px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;opacity:0.9;">{{ x.cierre.etq }}</div>
+            <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;line-height:1.15;margin-top:2px;">{{ x.cierre.fecha }}</div>
+            <div style="font-size:12px;opacity:0.9;">{{ x.cierre.quedan }}</div>
+          </div>
+          {% elif x.cierre.clase == "cerrada" %}
+          <div style="background:#faf7f2;color:#9a958c;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:10px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;">{{ x.cierre.etq }}</div>
+            <div style="font-size:14px;color:#6f6b64;margin-top:2px;">{{ x.cierre.fecha }}</div>
+          </div>
+          {% else %}
+          <div style="background:#faf7f2;color:#9a958c;border-radius:8px;padding:10px 12px;font-size:12px;">{{ x.cierre.etq }}</div>
+          {% endif %}
+          {% if x.borrado %}<div style="font-size:12px;color:#6f6b64;margin-top:6px;">{{ x.borrado }}</div>{% endif %}
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+  {% endfor %}
+
+  {% if normas %}
+  <tr><td style="padding:16px 26px 4px;">
+    <div style="background:#faf7f2;border:1px solid #e7e2d9;border-radius:10px;padding:16px 18px;font-size:14px;line-height:1.5;">
+      <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;margin-bottom:6px;">{{ t.normas }}</div>
+      {% for b in normas %}
+        {% if b.lista %}<ul style="margin:6px 0;padding-left:20px;">{% for i in b.lista %}<li style="margin:3px 0;">{{ i }}</li>{% endfor %}</ul>
+        {% else %}<p style="margin:6px 0;">{{ b.texto }}</p>{% endif %}
+      {% endfor %}
+    </div>
+  </td></tr>
+  {% endif %}
+
+  <tr><td style="padding:16px 26px 24px;font-size:15px;line-height:1.5;">
+    <p style="margin:0 0 10px;">{{ tx.adjunto }}</p>
+    <p style="margin:0 0 14px;">{{ tx.dudas }}</p>
+    <p style="margin:0;color:#6f6b64;">{% for l in firma %}{{ l }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

@@ -4,11 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   delParticipante, getPorConfirmar, getTorneos, getTorneosEntrenadores, getTorneosResumen, guardarTorneo, updParticipante,
+  validarParticipantes,
 } from "../../../lib/api";
-import { apuntaATorneos, canWrite } from "../../../lib/perms";
+import { apuntaATorneos, mandaEnTorneos } from "../../../lib/perms";
 import DeshacerTorneos from "../../../components/DeshacerTorneos";
 import {
-  ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, nombreCategoria, semanasDe,
+  CERTEZA_AYUDA, CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, nombreCategoria, semanasDe,
   semanasOcupadas, solapa,
 } from "../../../lib/torneos";
 
@@ -79,7 +80,7 @@ function JugadoresCell({ t, sel, setSel, onMover, puedeEditar }) {
       onClick={() => { if (esDestino) { onMover(sel.id, sel.torneo, t.id); setSel(null); } }}>
       {t.jugadores.map((j) => (
         <span key={j.id} draggable={puedeEditar}
-          className={`jug-chip${j.certeza !== "CONFIRMADO" ? " dudoso" : ""}${j.de_baja ? " baja" : ""}${sel?.id === j.id ? " sel" : ""}${puedeEditar ? " movible" : ""}`}
+          className={`jug-chip${j.certeza === "VALIDADO_COACH" ? " falta-dir" : j.certeza !== "CONFIRMADO" ? " dudoso" : ""}${j.de_baja ? " baja" : ""}${sel?.id === j.id ? " sel" : ""}${puedeEditar ? " movible" : ""}`}
           onDragStart={(e) => {
             e.dataTransfer.setData("participante", String(j.id));
             e.dataTransfer.setData("torneo", String(t.id));
@@ -90,7 +91,8 @@ function JugadoresCell({ t, sel, setSel, onMover, puedeEditar }) {
             if (!puedeEditar) return;
             setSel(sel?.id === j.id ? null : { id: j.id, torneo: t.id, nombre: j.nombre });
           }}
-          title={[j.de_baja && "Dado de baja: ya no entrena en el club", j.apuntado_por_nombre && `Apuntado por ${j.apuntado_por_nombre}${j.certeza === "PENDIENTE" ? ", pendiente de confirmar" : ""}`,
+          title={[j.de_baja && "Dado de baja: ya no entrena en el club", j.apuntado_por_nombre && `Apuntado por ${j.apuntado_por_nombre}`,
+            j.certeza !== "CONFIRMADO" && CERTEZA_AYUDA[j.certeza],
             puedeEditar && "Arrastra a otro torneo, o toca y luego toca el torneo de destino"].filter(Boolean).join(". ")}>
           {j.nombre}
         </span>
@@ -100,37 +102,74 @@ function JugadoresCell({ t, sel, setSel, onMover, puedeEditar }) {
   );
 }
 
-// Lo que han apuntado los entrenadores y falta confirmar. El head coach (y
-// dirección) lo confirma o lo quita aquí, o lo arrastra a otro torneo en el
-// calendario; el entrenador ve lo suyo y puede quitarlo.
-function PorConfirmar({ filas, puedeEditar, onAccion }) {
+// Lo que falta por validar (25/11/2026): primero lo que espera al head coach
+// (lo apuntado por los entrenadores), luego lo que el head coach ya validó y
+// espera a dirección. Cada uno valida lo suyo, de uno en uno o todo a la vez;
+// para reasignar, se arrastra el jugador a otro torneo en el calendario.
+function PorValidar({ filas, puedeEditar, onAccion }) {
+  const [verDireccion, setVerDireccion] = useState(false);
   if (!filas?.length) return null;
+  const mias = filas.filter((p) => p.puede_validar);
+  const deHC = filas.filter((p) => p.espera === "head_coach" && !p.puede_validar);
+  const deDir = filas.filter((p) => p.espera === "direccion" && !p.puede_validar);
+  const fila = (p) => (
+    <li key={p.id}>
+      <b>{p.jugador ? <Link href={`/torneos/jugadores/${p.jugador}`}>{p.nombre}</Link> : p.nombre}</b>
+      <Link href={`/torneos/${p.torneo_detalle.id}`}>{p.torneo_detalle.nombre}</Link>
+      <span className={`pill ${CERTEZA_CLASS[p.certeza]}`} title={CERTEZA_AYUDA[p.certeza]}>{CERTEZA_LABEL[p.certeza]}</span>
+      <span className="muted">
+        {fmtRango(p.torneo_detalle.qualy_inicio || p.torneo_detalle.fecha_inicio, p.torneo_detalle.fecha_fin)}
+        {p.torneo_detalle.cierre_inscripcion && ` · cierra el ${fmtCorta(p.torneo_detalle.cierre_inscripcion)}`}
+        {p.apuntado_por_nombre && ` · apuntado por ${p.apuntado_por_mi ? "ti" : p.apuntado_por_nombre}`}
+        {p.validado_coach_por_nombre && p.espera === "direccion" && ` · validado por ${p.validado_coach_por_nombre}`}
+        {p.detalle && ` · «${p.detalle}»`}
+      </span>
+      <span className="row-actions">
+        {p.puede_validar && (
+          <button type="button" className="btn sm ghost" onClick={() => onAccion(() => validarParticipantes([p.id]))}>Validar</button>
+        )}
+        {(puedeEditar || (p.apuntado_por_mi && p.certeza === "PENDIENTE")) && (
+          <button type="button" className="btn sm danger" onClick={() => onAccion(() => delParticipante(p.id))}>Quitar</button>
+        )}
+      </span>
+    </li>
+  );
+  if (!puedeEditar) {
+    return (
+      <div className="card cierres-card por-confirmar">
+        <div className="cierres-head">Lo que has apuntado y falta validar</div>
+        <ul className="cierres-lista">{filas.map(fila)}</ul>
+      </div>
+    );
+  }
   return (
     <div className="card cierres-card por-confirmar">
-      <div className="cierres-head">
-        {puedeEditar ? "Por confirmar · apuntados por los entrenadores" : "Lo que has apuntado y falta confirmar"}
+      <div className="por-validar-cab">
+        <div className="cierres-head">Por validar · {mias.length ? `te toca${mias.length > 1 ? "n" : ""} ${mias.length}` : "nada tuyo"}</div>
+        {mias.length > 1 && (
+          <button type="button" className="btn sm" onClick={() => onAccion(() => validarParticipantes(mias.map((p) => p.id)))}>
+            Validar los {mias.length}
+          </button>
+        )}
       </div>
-      <ul className="cierres-lista">
-        {filas.map((p) => (
-          <li key={p.id}>
-            <b>{p.nombre}</b>
-            <Link href={`/torneos/${p.torneo_detalle.id}`}>{p.torneo_detalle.nombre}</Link>
-            <span className="muted">
-              {fmtRango(p.torneo_detalle.qualy_inicio || p.torneo_detalle.fecha_inicio, p.torneo_detalle.fecha_fin)}
-              {p.torneo_detalle.cierre_inscripcion && ` · cierra el ${fmtCorta(p.torneo_detalle.cierre_inscripcion)}`}
-              {puedeEditar && ` · apuntado por ${p.apuntado_por_nombre}`}
-              {p.detalle && ` · «${p.detalle}»`}
-            </span>
-            <span className="row-actions">
-              {puedeEditar && (
-                <button type="button" className="btn sm ghost"
-                  onClick={() => onAccion(() => updParticipante(p.id, { certeza: "CONFIRMADO" }))}>Confirmar</button>
-              )}
-              <button type="button" className="btn sm danger" onClick={() => onAccion(() => delParticipante(p.id))}>Quitar</button>
-            </span>
-          </li>
-        ))}
-      </ul>
+      <p className="muted por-validar-ayuda">
+        El entrenador apunta, su head coach valida (o lo arrastra a otro torneo) y dirección da el visto bueno final.
+      </p>
+      {mias.length > 0 && <ul className="cierres-lista">{mias.map(fila)}</ul>}
+      {deHC.length > 0 && (
+        <>
+          <div className="cierres-head por-validar-sub">Esperan a su head coach ({deHC.length})</div>
+          <ul className="cierres-lista">{deHC.map(fila)}</ul>
+        </>
+      )}
+      {deDir.length > 0 && (
+        <>
+          <button type="button" className="link-mas por-validar-sub" onClick={() => setVerDireccion((v) => !v)}>
+            {verDireccion ? "Ocultar" : "Ver"} los que ya has validado y esperan a dirección ({deDir.length})
+          </button>
+          {verDireccion && <ul className="cierres-lista">{deDir.map(fila)}</ul>}
+        </>
+      )}
     </div>
   );
 }
@@ -157,7 +196,7 @@ export default function TorneosPage() {
     if (n.has(lunes)) n.delete(lunes); else n.add(lunes);
     return n;
   });
-  const puedeEditar = canWrite("torneos");
+  const puedeEditar = mandaEnTorneos();
   const apunta = apuntaATorneos();
   const [pendientes, setPendientes] = useState([]);
 
@@ -235,7 +274,7 @@ export default function TorneosPage() {
     catch (e) { setError(e.message); cargar(); }
   }
 
-  // Confirmar o quitar desde «Por confirmar».
+  // Validar o quitar desde «Por validar».
   async function accionPendiente(fn) {
     setError("");
     try { await fn(); setTick((n) => n + 1); cargar(); cargarPendientes(); cargarResumen(); }
@@ -320,24 +359,26 @@ export default function TorneosPage() {
           caben varios entrenadores («+ añadir otro entrenador…»); solo se ofrecen los que no están de vacaciones esas fechas
           (ir de torneo no cuenta como vacaciones). Los jugadores se pueden
           <b> arrastrar de un torneo a otro</b> (en el móvil: tocar el jugador y luego el torneo de destino).
-          Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar: dudas del Excel o
-          jugadores que ha apuntado un entrenador.
+          Los nombres en <span className="jug-chip dudoso">naranja</span> esperan al head coach (los ha apuntado un
+          entrenador o son dudas del Excel) y los <span className="jug-chip falta-dir">azules</span>, a dirección.
         </p>
       ) : apunta ? (
         <p className="help">
           Semana a semana: cada torneo sale en todas las semanas que dura, con quién
-          acompaña y qué jugadores van. Para <b>apuntar a uno de tus jugadores</b>, abre el torneo y elígelo: queda
-          pendiente hasta que tu head coach o dirección lo confirmen. Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar.
+          acompaña y qué jugadores van. Para <b>apuntar a uno de tus jugadores</b>, abre el torneo y elígelo: lo valida tu
+          head coach y después dirección. Los nombres en <span className="jug-chip dudoso">naranja</span> esperan al head
+          coach y los <span className="jug-chip falta-dir">azules</span>, a dirección.
         </p>
       ) : (
         <p className="help">
           Semana a semana: cada torneo sale en todas las semanas que dura, con quién
           acompaña y qué jugadores van. Es solo consulta: los cambios los hacen los head coaches y dirección.
-          Los nombres en <span className="jug-chip dudoso">naranja</span> están por confirmar.
+          Los nombres en <span className="jug-chip dudoso">naranja</span> esperan al head coach y los
+          <span className="jug-chip falta-dir">azules</span>, a dirección.
         </p>
       )}
 
-      <PorConfirmar filas={pendientes} puedeEditar={puedeEditar} onAccion={accionPendiente} />
+      <PorValidar filas={pendientes} puedeEditar={puedeEditar} onAccion={accionPendiente} />
 
       {resumen && (
         <div className="metrics">

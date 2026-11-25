@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from academy.models import Entrenador, Jugador
+from users.models import User
 
 from .models import CambioTorneo, Participante, Torneo
 
@@ -21,7 +22,8 @@ CAMPOS = ("nombre", "circuito", "nivel", "lugar", "fecha_inicio", "fecha_fin",
 # Añadidos después de la primera versión (16/10, 03/11, 10/11): una foto
 # anterior no los trae y entonces se respetan los que tenga ahora el torneo.
 CAMPOS_NUEVOS = ("qualy_inicio", "qualy_fin", "solo_fines_semana", "categorias", "fecha_borrado")
-CAMPOS_P = ("id", "jugador_id", "nombre", "certeza", "entrenador_ref", "detalle", "apuntado_por_id")
+CAMPOS_P = ("id", "jugador_id", "nombre", "certeza", "entrenador_ref", "detalle", "apuntado_por_id",
+            "validado_coach_por_id", "validado_coach_en", "confirmado_por_id", "confirmado_en")
 
 
 def _estado(tid):
@@ -80,6 +82,7 @@ def deshacer(cambio):
         id__in=[p["jugador_id"] for e in foto_.values() if e for p in e["participantes"] if p["jugador_id"]]
     ).values_list("id", flat=True))
     entrenadores = set(Entrenador.objects.values_list("id", flat=True))
+    usuarios = set(User.objects.values_list("id", flat=True))
     nuevos = []
     for tid, e in ((int(k), v) for k, v in foto_.items()):
         if e is None:
@@ -96,8 +99,12 @@ def deshacer(cambio):
         Torneo.objects.filter(pk=tid).update(created_at=creado)
         Torneo.objects.get(pk=tid).acompanantes.set([i for i in e["acompanantes"] if i in entrenadores])
         for p in e["participantes"]:
+            # Quien apuntó o validó pudo dejar de existir; los vistos buenos
+            # (25/11/2026) no vienen en las fotos anteriores y quedan vacíos.
+            quienes = {k: (v if v in usuarios else None) for k, v in p.items() if k.endswith("_por_id")}
             nuevos.append(Participante(
-                torneo_id=tid, **{**p, "jugador_id": p["jugador_id"] if p["jugador_id"] in jugadores else None}))
+                torneo_id=tid, **{**p, **quienes,
+                                  "jugador_id": p["jugador_id"] if p["jugador_id"] in jugadores else None}))
     Participante.objects.bulk_create(nuevos)
     descripcion = cambio.descripcion
     cambio.delete()

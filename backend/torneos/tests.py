@@ -183,20 +183,31 @@ class EntrenadorApuntaTests(TestCase):
         Participante.objects.filter(pk=otra).update(certeza="PENDIENTE")
         self.assertEqual(self.api(self.u_blas).delete(f"/api/torneos-participantes/{otra}/").status_code, 403)
 
-    def test_el_head_coach_confirma_y_mueve(self):
+    def test_el_head_coach_valida_y_mueve_y_direccion_confirma(self):
+        # 25/11/2026: el head coach lo deja validado por él; el visto bueno
+        # final es de dirección.
         pid = self.apuntar(self.u_blas, self.ana).data["id"]
         c = self.api(self.u_pablo)
         self.assertEqual(c.patch(f"/api/torneos-participantes/{pid}/", {"torneo": self.otro.id},
                                  format="json").status_code, 200)
-        r = c.patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
-        self.assertEqual(r.status_code, 200, r.data)
         p = Participante.objects.get(pk=pid)
-        self.assertEqual((p.torneo, p.certeza, p.apuntado_por), (self.otro, "CONFIRMADO", self.u_blas))
+        self.assertEqual((p.torneo, p.certeza, p.validado_coach_por), (self.otro, "VALIDADO_COACH", self.u_pablo))
+        # Ya lleva su visto bueno: pedir «confirmar» otra vez no sube nada.
+        r = c.patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
+        self.assertEqual(r.status_code, 400, r.data)
+        r = self.api(self.u_dir).patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        p.refresh_from_db()
+        self.assertEqual((p.certeza, p.confirmado_por, p.apuntado_por), ("CONFIRMADO", self.u_dir, self.u_blas))
+        self.assertEqual(r.data["confirmado_por_nombre"], "dir")
 
-    def test_lo_que_apunta_el_head_coach_va_confirmado(self):
+    def test_lo_que_apunta_el_head_coach_espera_a_direccion(self):
         r = self.apuntar(self.u_pablo, self.ana)
-        self.assertEqual((r.data["certeza"], r.data["apuntado_por_nombre"]), ("CONFIRMADO", "pablo"))
+        self.assertEqual((r.data["certeza"], r.data["apuntado_por_nombre"]), ("VALIDADO_COACH", "pablo"))
+        self.assertEqual(r.data["espera"], "direccion")
         self.assertFalse(Aviso.objects.exists())
+        r = self.apuntar(self.u_dir, self.ana, self.otro)
+        self.assertEqual((r.data["certeza"], r.data["espera"]), ("CONFIRMADO", None))
 
     def test_por_confirmar(self):
         pid = self.apuntar(self.u_blas, self.ana).data["id"]
@@ -208,8 +219,17 @@ class EntrenadorApuntaTests(TestCase):
         u_santi = User.objects.create_user(username="santi", password="x", role=User.Role.COACH)
         Coach.objects.create(nombre="Santi", user=u_santi, color="naranja").entrenadores.set([self.mario])
         self.assertEqual(self.api(u_santi).get(url).data, [])
+        self.assertEqual([(x["espera"], x["puede_validar"]) for x in self.api(self.u_pablo).get(url).data],
+                         [("head_coach", True)])
         self.api(self.u_pablo).patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
-        self.assertEqual(self.api(self.u_pablo).get(url).data, [])
+        # Validado por el head coach: lo sigue viendo, pero ya espera a dirección.
+        self.assertEqual([(x["espera"], x["puede_validar"]) for x in self.api(self.u_pablo).get(url).data],
+                         [("direccion", False)])
+        self.assertEqual([(x["espera"], x["puede_validar"]) for x in self.api(self.u_dir).get(url).data],
+                         [("direccion", True)])
+        self.api(self.u_dir).patch(f"/api/torneos-participantes/{pid}/", {"certeza": "CONFIRMADO"}, format="json")
+        for u in (self.u_blas, self.u_pablo, self.u_dir):
+            self.assertEqual(self.api(u).get(url).data, [])
 
     def test_deshace_lo_suyo(self):
         self.apuntar(self.u_blas, self.ana)

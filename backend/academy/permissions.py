@@ -125,6 +125,13 @@ def es_coordinador_tardes(user):
     return bool(_autenticado(user) and COORDINA_TARDES in user.codigos_funcion())
 
 
+def lleva_torneos(user):
+    """En Torneos da de alta torneos y hace de head coach de su grupo: los head
+    coaches y, para los jugadores de Competición de tardes, quien la coordina
+    (25/11/2026, Alberto Sanz). Dirección, todo."""
+    return es_direccion(user) or es_coach(user) or es_coordinador_tardes(user)
+
+
 def valida_informes(user):
     """Aprueba, corrige o devuelve los informes de Competición de tardes. Abre y
     corrige las dos partes (decisión 11). Los de Alto rendimiento, solo
@@ -230,6 +237,7 @@ def resumen(user):
         "ve_informes": ve_informes(user),
         "ve_tardes": ve_tardes(user),
         "valida_alto_rendimiento": valida_alto_rendimiento(user),
+        "lleva_torneos": lleva_torneos(user),
         # Compatibilidad con pantallas que aún lo leen.
         "gestion_deportiva": es_direccion(user),
     }

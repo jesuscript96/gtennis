@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getTorneosPorJugador } from "../../../../lib/api";
-import { fmtCorta, fmtRango, hoyISO } from "../../../../lib/torneos";
+import { CERTEZA_CLASS, CERTEZA_LABEL, fmtCorta, fmtRango, hoyISO } from "../../../../lib/torneos";
 
 export default function TorneosPorJugadorPage() {
   const hoy = hoyISO();
@@ -28,7 +28,7 @@ export default function TorneosPorJugadorPage() {
       <div className="page-head"><h1>Torneos por jugador</h1></div>
       <p className="help">
         Cuántos torneos tiene cada jugador en la temporada, cuál es el siguiente y cuándo cierra su inscripción.
-        Pulsa una fila para desplegar todos sus torneos.
+        Pulsa una fila para desplegar todos sus torneos, o su nombre para ver su calendario y sacarlo en PDF.
       </p>
       <div className="toolbar">
         <input className="search" placeholder="Buscar jugador…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -55,7 +55,7 @@ export default function TorneosPorJugadorPage() {
               return (
                 <Fragment key={clave}>
                   <tr className="fila-click" onClick={() => setAbierto(abierto === clave ? null : clave)}>
-                    <td><b>{f.nombre}</b>{!f.en_academia && <span className="pill gris">sin ficha</span>}
+                    <td><b>{f.jugador ? <Link href={`/torneos/jugadores/${f.jugador}`} onClick={(e) => e.stopPropagation()}>{f.nombre}</Link> : f.nombre}</b>{!f.en_academia && <span className="pill gris">sin ficha</span>}
                       {f.de_baja && <span className="pill no">de baja</span>}</td>
                     <td>{f.torneos.length}</td>
                     <td className="muted">{jugados}</td>
@@ -71,7 +71,7 @@ export default function TorneosPorJugadorPage() {
                               <span className="td-fechas">{fmtRango(t.fecha_inicio, t.fecha_fin)}</span>
                               <Link href={`/torneos/${t.id}`}>{t.nombre}</Link>
                               {t.circuito && <span className="pill circ">{t.circuito}</span>}
-                              {t.certeza !== "CONFIRMADO" && <span className="pill pend">{t.certeza === "DEDUCIDO" ? "deducido" : "pendiente"}</span>}
+                              {t.certeza !== "CONFIRMADO" && <span className={`pill ${CERTEZA_CLASS[t.certeza]}`}>{CERTEZA_LABEL[t.certeza]}</span>}
                             </li>
                           ))}
                         </ul>

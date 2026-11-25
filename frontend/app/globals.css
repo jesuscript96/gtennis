@@ -2011,3 +2011,96 @@ table.data.funciones select { min-width: 150px; }
   .fd-cabecera h1 { font-size: 28px; }
   .fd-dia { margin: 0; padding: 8px 0; }
 }
+
+/* ---- Torneos: circuito de validación, página del jugador y correos (25/11/2026) ---- */
+.pill.pend2 { background: #e8eef8; color: #3b5a8a; }
+.jug-chip.falta-dir { border-color: #c9d6ec; background: #eef3fb; color: #3b5a8a; }
+.por-validar-cab { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.por-validar-cab .cierres-head { margin-bottom: 0; }
+.por-validar-ayuda { font-size: 12px; margin: 4px 0 10px; }
+.por-validar-sub { display: block; margin-top: 12px; }
+.cierres-lista .pill { font-size: 10.5px; padding: 2px 8px; }
+
+.tj-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.tj-meta { margin: 4px 0 0; font-size: 14px; }
+.tj-meta .pill { margin-left: 8px; }
+.tj-botones { display: flex; gap: 8px; flex-wrap: wrap; }
+.tj-cifras { margin-bottom: 8px; }
+.tj-cifras .metric { min-width: 0; }
+.metric.tj-destacada { background: var(--accent); border-color: var(--accent); color: #fff; }
+.metric.tj-destacada .label { color: rgba(255,255,255,.85); }
+.tj-cual { font-size: 12.5px; margin-top: 4px; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tj-jugados { font-size: 13px; margin: 0 0 18px; }
+.tj-vacio { padding: 22px; text-align: center; color: var(--muted); }
+.tj-mes-bloque { margin-bottom: 22px; }
+.tj-mes-titulo { font-family: var(--font-serif); font-weight: 500; font-size: 20px; text-transform: capitalize;
+  margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.tj-torneo { display: grid; grid-template-columns: 96px 1fr 220px; border: 1px solid var(--border);
+  border-left: 4px solid #2e6f4e; border-radius: 12px; background: var(--surface); margin-bottom: 10px; overflow: hidden; }
+.tj-torneo.pend { border-left: 4px dashed #c08a00; }
+.tj-torneo.cancelado { opacity: .55; }
+.tj-torneo.cancelado .tj-nombre { text-decoration: line-through; }
+.tj-sello { background: var(--surface-2); text-align: center; padding: 16px 6px; }
+.tj-dias { font-family: var(--font-serif); font-size: 24px; font-weight: 600; line-height: 1; }
+.tj-dias.largo { font-size: 16px; line-height: 1.2; }
+.tj-mes { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-hover); margin-top: 5px; }
+.tj-que { padding: 14px 16px; min-width: 0; }
+.tj-nombre { font-family: var(--font-serif); font-size: 17px; font-weight: 600; display: inline-block; margin-bottom: 2px; }
+.tj-nombre:hover { color: var(--accent); }
+.tj-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.tj-chips .pill { font-size: 11px; padding: 2px 9px; }
+.tj-acomp { font-size: 13px; color: var(--muted); margin-top: 7px; }
+.tj-acomp b { color: var(--text); font-weight: 500; }
+.tj-notas { font-size: 12.5px; color: var(--muted); margin-top: 4px; font-style: italic; }
+.tj-lado { padding: 14px 16px 14px 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.tj-insc { border-radius: 9px; padding: 8px 11px; display: flex; flex-direction: column; width: 100%; }
+.tj-insc-etq { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.tj-insc-f { font-family: var(--font-serif); font-size: 18px; font-weight: 600; line-height: 1.2; }
+.tj-insc-q { font-size: 12px; }
+.tj-insc.abierta { background: var(--accent); color: #fff; }
+.tj-insc.abierta .tj-insc-etq, .tj-insc.abierta .tj-insc-q { color: rgba(255,255,255,.9); }
+.tj-insc.abierta.urge { box-shadow: 0 0 0 3px rgba(201,100,66,.25); }
+.tj-insc.cerrada { background: var(--surface-2); color: var(--muted); }
+.tj-insc.cerrada .tj-insc-f { font-size: 14px; font-weight: 500; }
+.tj-insc.sin { background: var(--surface-2); color: var(--muted); font-size: 12px; }
+.tj-borrado { font-size: 12px; }
+.tj-pie { font-size: 12.5px; margin-top: 18px; }
+
+.normas-card { padding: 14px 18px; margin-bottom: 18px; }
+.normas-card.vacias { border-left: 3px solid #e0a15c; }
+.normas-cab { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.normas-cab .btn { margin-left: auto; }
+.normas-texto { white-space: pre-wrap; font-family: var(--font-sans); font-size: 13.5px; margin: 0; max-height: 160px; overflow: auto; }
+.normas-card textarea { width: 100%; font: inherit; font-size: 13.5px; padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: 8px; }
+.correos-toolbar { flex-wrap: wrap; }
+.correos-toolbar select { width: auto; }
+.mes-nav { display: flex; align-items: center; gap: 6px; }
+.mes-nombre { text-transform: capitalize; min-width: 130px; text-align: center; font-family: var(--font-serif); font-weight: 500; font-size: 16px; }
+.correos-masivo { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
+.correos-masivo .check { margin-bottom: 0; }
+.tabla-correos td { vertical-align: top; }
+.tabla-correos .pill { margin-left: 6px; white-space: nowrap; display: inline-block; }
+.tabla-correos td:nth-child(6) .pill { margin-left: 0; }
+.pill.insc-abierta { background: var(--accent); color: #fff; margin-left: 0 !important; }
+.td-para { font-size: 12.5px; max-width: 240px; overflow-wrap: anywhere; }
+.correo-cuando { font-size: 11.5px; margin-top: 3px; }
+.modal.modal-correo { width: 760px; }
+.modal-correo h2 { font-size: 18px; margin-bottom: 10px; }
+.correo-meta { font-size: 13px; display: grid; gap: 5px; margin-bottom: 10px; }
+.correo-meta .muted { display: inline-block; min-width: 96px; }
+.correo-para { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.correo-para input { width: 240px; padding: 5px 8px; font-size: 13px; }
+.correo-html { width: 100%; height: 52vh; border: 1px solid var(--border); border-radius: 10px; background: #f3efe8; }
+.aviso-correo { background: #fdf4ea; border: 1px solid #ecc9a4; color: #8a4b17; border-radius: 9px; padding: 9px 12px; font-size: 13px; }
+
+@media (max-width: 760px) {
+  .tj-torneo { grid-template-columns: 84px 1fr; }
+  .tj-sello { padding: 14px 4px; }
+  .tj-dias { white-space: nowrap; }
+  .tj-lado { grid-column: 1 / -1; padding: 0 14px 14px; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .tj-insc { width: auto; }
+  .tj-dias { font-size: 18px; }
+  .correo-para input { width: 100%; }
+  .correo-html { height: 46vh; }
+  .tabla-correos td:first-child { width: 28px; }
+}

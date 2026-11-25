@@ -111,6 +111,23 @@ class Command(BaseCommand):
                         self.stdout.write(f"{ahora:%Y-%m-%d %H:%M} recordatorios de informes: {n} jugadores")
                 except Exception:  # noqa: BLE001 — que un fallo aquí no pare la generación
                     self.stdout.write(traceback.format_exc()[-2000:])
+                # Correos de torneos del día 1 a las familias (25/11/2026): el
+                # día 1 se preparan; repetir no duplica.
+                try:
+                    from torneos.mensual import revisar as correos_torneos
+                    n = correos_torneos(ahora)
+                    if n:
+                        self.stdout.write(f"{ahora:%Y-%m-%d %H:%M} correos de torneos preparados: {n}")
+                except Exception:  # noqa: BLE001
+                    self.stdout.write(traceback.format_exc()[-2000:])
+            # Correos de torneos ya validados: salen en el minuto siguiente.
+            try:
+                from torneos.mensual import enviar_validados
+                n = enviar_validados()
+                if n:
+                    self.stdout.write(f"{ahora:%Y-%m-%d %H:%M} correos de torneos enviados: {n}")
+            except Exception:  # noqa: BLE001
+                self.stdout.write(traceback.format_exc()[-2000:])
             # Informes programados para salir por correo (19/11/2026, 8:30).
             try:
                 from evaluaciones.informes import enviar_programados

@@ -79,9 +79,14 @@ class Participante(models.Model):
     están (o ya no están) en el cuadrante de entrenamientos.
     """
 
+    # El circuito desde el 25/11/2026: el entrenador apunta (PENDIENTE), su
+    # head coach lo valida o lo mueve (VALIDADO_COACH) y dirección da el visto
+    # bueno final o lo mueve (CONFIRMADO). Lo que apunta un head coach entra ya
+    # validado por él; lo que apunta dirección, confirmado.
     class Certeza(models.TextChoices):
         CONFIRMADO = "CONFIRMADO", "Confirmado"
-        PENDIENTE = "PENDIENTE", "Pendiente de confirmar"
+        VALIDADO_COACH = "VALIDADO_COACH", "Validado por el head coach"
+        PENDIENTE = "PENDIENTE", "Pendiente del head coach"
         DEDUCIDO = "DEDUCIDO", "Deducido del Excel"
 
     torneo = models.ForeignKey(Torneo, on_delete=models.CASCADE, related_name="participantes")
@@ -90,7 +95,7 @@ class Participante(models.Model):
         related_name="participaciones_torneo",
     )
     nombre = models.CharField(max_length=120)
-    certeza = models.CharField(max_length=10, choices=Certeza.choices, default=Certeza.CONFIRMADO)
+    certeza = models.CharField(max_length=16, choices=Certeza.choices, default=Certeza.CONFIRMADO)
     # Entrenador de referencia del jugador en el Excel (no implica que viaje).
     entrenador_ref = models.CharField(max_length=120, blank=True)
     detalle = models.CharField(max_length=200, blank=True)
@@ -100,6 +105,17 @@ class Participante(models.Model):
         "users.User", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="torneos_apuntados",
     )
+    # Quién dio cada visto bueno (25/11/2026).
+    validado_coach_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="torneos_validados_coach",
+    )
+    validado_coach_en = models.DateTimeField(null=True, blank=True)
+    confirmado_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="torneos_confirmados",
+    )
+    confirmado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Participante"
@@ -157,3 +173,65 @@ class CategoriaJugador(models.Model):
 
     def __str__(self):
         return f"{self.jugador} → {self.get_categoria_display()}"
+
+
+class NormasTorneos(models.Model):
+    """Las normas de torneos de G Tenis que van al final del correo mensual a
+    las familias (25/11/2026). Una sola fila; la escribe dirección."""
+
+    texto = models.TextField(blank=True)
+    texto_en = models.TextField(blank=True, help_text="Para las familias en inglés; vacío = el de español")
+    actualizado_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Normas de torneos"
+        verbose_name_plural = "Normas de torneos"
+
+    def __str__(self):
+        return "Normas de torneos"
+
+    @classmethod
+    def actuales(cls):
+        return cls.objects.first() or cls()
+
+
+class CorreoTorneos(models.Model):
+    """El correo del día 1 a la familia de un jugador con sus torneos del mes
+    y del siguiente (25/11/2026). Se genera el día 1 y sale cuando lo valida
+    su head coach o dirección. Hasta entonces se enseña con los datos del
+    momento; al validarlo se guarda tal cual (`contenido`) y eso es lo que sale."""
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Por validar"
+        VALIDADO = "VALIDADO", "Validado, saliendo"
+        ENVIADO = "ENVIADO", "Enviado"
+        DESCARTADO = "DESCARTADO", "No se envía"
+
+    jugador = models.ForeignKey("academy.Jugador", on_delete=models.CASCADE, related_name="correos_torneos")
+    # Primer día del mes del correo: cubre ese mes y el siguiente.
+    mes = models.DateField()
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.PENDIENTE)
+    contenido = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    destinatarios = models.JSONField(default=list, blank=True)
+    idioma = models.CharField(max_length=2, default="ES")
+    validado_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    validado_en = models.DateTimeField(null=True, blank=True)
+    enviado_en = models.DateTimeField(null=True, blank=True)
+    envio_error = models.CharField(max_length=300, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Correo mensual de torneos"
+        verbose_name_plural = "Correos mensuales de torneos"
+        ordering = ["-mes", "jugador__nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["jugador", "mes"], name="correo_torneos_unico_por_mes"),
+        ]
+
+    def __str__(self):
+        return f"{self.jugador} · {self.mes:%m/%Y}"

@@ -24,13 +24,19 @@ class ParticipanteSerializer(serializers.ModelSerializer):
     fuera_de_categoria = serializers.SerializerMethodField()
     # Ya no entrena en el club (10/11/2026: salían en las listas de torneos).
     de_baja = serializers.SerializerMethodField()
+    # Circuito de validación (25/11/2026): a quién espera y quién validó.
+    espera = serializers.SerializerMethodField()
+    validado_coach_por_nombre = serializers.SerializerMethodField()
+    confirmado_por_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = Participante
         fields = ["id", "torneo", "jugador", "nombre", "certeza", "certeza_display",
                   "entrenador_ref", "entrenador", "detalle", "apuntado_por", "apuntado_por_nombre",
-                  "apuntado_por_mi", "categoria", "fuera_de_categoria", "de_baja"]
-        read_only_fields = ["apuntado_por"]
+                  "apuntado_por_mi", "categoria", "fuera_de_categoria", "de_baja",
+                  "espera", "validado_coach_por_nombre", "validado_coach_en",
+                  "confirmado_por_nombre", "confirmado_en"]
+        read_only_fields = ["apuntado_por", "validado_coach_en", "confirmado_en"]
         # La restricción (torneo, nombre) se comprueba abajo, una vez resuelto el
         # nombre a partir de la ficha; el validador automático obligaría a mandarlo.
         validators = []
@@ -63,6 +69,16 @@ class ParticipanteSerializer(serializers.ModelSerializer):
     def get_de_baja(self, obj):
         return de_baja(obj.jugador)
 
+    def get_espera(self, obj):
+        from .circuito import espera_a
+        return espera_a(obj.certeza)
+
+    def get_validado_coach_por_nombre(self, obj):
+        return nombre_de(obj.validado_coach_por)
+
+    def get_confirmado_por_nombre(self, obj):
+        return nombre_de(obj.confirmado_por)
+
     def get_entrenador(self, obj):
         return entrenador_de(obj.jugador) if obj.jugador_id else ""
 
@@ -81,12 +97,23 @@ def entrenador_de(jugador):
     return " y ".join(dict.fromkeys(nombres))
 
 
+def es_de_tardes(jugador):
+    """Alumno de Competición de tardes (escuela «solo informes»)."""
+    return bool(jugador is not None and jugador.escuela_id and jugador.escuela.solo_informes)
+
+
 def de_baja(jugador, dia=None):
     """Dado de baja: ficha desactivada o su último día de entrenamiento ya
-    pasó (o es anterior a `dia`). Un nombre sin ficha no está de baja."""
+    pasó (o es anterior a `dia`). Un nombre sin ficha no está de baja.
+
+    Los de Competición de tardes tienen la ficha desactivada siempre (no
+    entran en el cuadrante): para ellos solo cuenta la fecha de baja."""
     if jugador is None:
         return False
-    return not jugador.activo or (jugador.fecha_baja is not None and jugador.fecha_baja < (dia or date.today()))
+    pasada = jugador.fecha_baja is not None and jugador.fecha_baja < (dia or date.today())
+    if not jugador.activo and not es_de_tardes(jugador):
+        return True
+    return pasada
 
 
 def nombre_de(user):
@@ -186,6 +213,8 @@ class TorneoListaSerializer(TorneoSerializer):
         fields = [f for f in TorneoSerializer.Meta.fields if f not in ("participantes", "puede_borrar")] + ["jugadores"]
 
     def get_jugadores(self, obj):
+        from .circuito import espera_a
         return [{"id": p.id, "nombre": p.nombre, "jugador": p.jugador_id, "certeza": p.certeza,
+                 "espera": espera_a(p.certeza),
                  "apuntado_por_nombre": nombre_de(p.apuntado_por), "de_baja": de_baja(p.jugador)}
                 for p in obj.participantes.all()]

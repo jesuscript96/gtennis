@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="{{ t.lang }}">
+<head>
+<meta charset="utf-8">
+<title>{{ t.titulo }} · {{ jugador }}</title>
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("fuentes/inter-latin-400-normal.woff"); }
+@font-face { font-family: "Inter"; font-weight: 500; src: url("fuentes/inter-latin-500-normal.woff"); }
+@font-face { font-family: "Inter"; font-weight: 600; src: url("fuentes/inter-latin-600-normal.woff"); }
+@font-face { font-family: "Fraunces"; font-weight: 500; src: url("fuentes/fraunces-latin-500-normal.woff"); }
+@font-face { font-family: "Fraunces"; font-weight: 600; src: url("fuentes/fraunces-latin-600-normal.woff"); }
+@font-face { font-family: "Fraunces"; font-weight: 400; font-style: italic; src: url("fuentes/fraunces-latin-400-italic.woff"); }
+
+:root {
+  --tinta: #1f1e1d; --gris: #6f6b64; --suave: #9a958c; --linea: #e7e2d9;
+  --fondo: #faf7f2; --arcilla: #c96442; --arcilla-osc: #9f4a2e; --arcilla-clara: #f6e6de;
+  --verde: #2f6b4f; --verde-claro: #e3efe8; --ambar: #a86d12; --ambar-claro: #fbefd9;
+}
+
+@page {
+  size: A4;
+  margin: 0 0 13mm 0;
+  @bottom-left { content: "{{ pie|safe }}"; font: 400 7pt "Inter"; color: #9a958c; padding-left: 15mm; }
+  @bottom-right { content: counter(page) " / " counter(pages); font: 400 7pt "Inter"; color: #9a958c; padding-right: 15mm; }
+}
+@page :not(:first) { margin-top: 12mm; }
+
+* { box-sizing: border-box; }
+body { font: 400 9.5pt/1.45 "Inter"; color: var(--tinta); margin: 0; }
+h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.ancho { padding: 0 15mm; }
+.etq { font: 600 7pt "Inter"; letter-spacing: 0.13em; text-transform: uppercase; }
+
+/* ---------- Portada ---------- */
+.portada {
+  height: 72mm; position: relative; color: #fff;
+  background:
+    linear-gradient(to bottom, rgba(26,18,14,0.30) 0%, rgba(26,18,14,0.12) 40%, rgba(26,18,14,0.85) 100%),
+    url("img/pista-atardecer.jpg") center 55% / cover no-repeat;
+}
+.portada .barra { position: absolute; top: 11mm; left: 15mm; right: 15mm; }
+.portada .barra table { width: 100%; border-collapse: collapse; }
+.portada .barra td { padding: 0; color: rgba(255,255,255,0.9); }
+.portada .barra .der { text-align: right; }
+.portada .titulo { position: absolute; left: 15mm; right: 66mm; bottom: 10mm; }
+.portada .titulo .etq { color: rgba(255,255,255,0.85); }
+.portada h1 { font-size: 30pt; line-height: 1.04; color: #fff; margin-top: 4pt; }
+.portada .sub { font: 400 italic 12pt "Fraunces"; color: rgba(255,255,255,0.92); margin-top: 4pt; }
+.foto { position: absolute; right: 15mm; bottom: -15mm; width: 40mm; height: 40mm; border-radius: 50%;
+  border: 3.5pt solid #fff; background: var(--arcilla-clara); overflow: hidden; }
+.foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto .iniciales { width: 100%; padding-top: 11mm; text-align: center; font: 600 28pt/1 "Fraunces"; color: var(--arcilla-osc); }
+.bajo { height: 18mm; padding-top: 4.5mm; padding-right: 62mm; color: var(--gris); font-size: 9.5pt; }
+.bajo b { color: var(--tinta); font-weight: 600; }
+
+/* ---------- Cifras ---------- */
+.cifras { width: calc(100% + 10pt); margin: 0 -5pt 4mm; border-collapse: separate; border-spacing: 5pt 0; table-layout: fixed; }
+.cifras td { vertical-align: top; padding: 0; }
+.cifra { border-radius: 9pt; padding: 11pt 13pt; height: 66pt; background: var(--fondo); border: 0.75pt solid var(--linea); }
+.cifra .etq { color: var(--gris); white-space: nowrap; }
+.cifra .num { font: 600 28pt/1 "Fraunces"; margin-top: 7pt; }
+.cifra .num small { font: 500 11pt "Fraunces"; color: var(--suave); }
+.cifra.principal { background: var(--arcilla); border-color: var(--arcilla); color: #fff; }
+.cifra.principal .etq { color: rgba(255,255,255,0.85); }
+.cifra .que { font: 600 17pt/1.1 "Fraunces"; margin-top: 7pt; }
+.cifra .cual { font-size: 8pt; margin-top: 3pt; color: rgba(255,255,255,0.88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cifra.apagada .que { font-size: 11pt; color: var(--gris); }
+
+/* ---------- Meses y torneos ---------- */
+.mes { margin-top: 6mm; page-break-after: avoid; }
+.mes h2 { font-size: 15pt; text-transform: capitalize; padding-bottom: 3pt; border-bottom: 1pt solid var(--linea); }
+.torneo { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 3.2mm; page-break-inside: avoid;
+  border: 0.75pt solid var(--linea); border-left: 3.5pt solid var(--verde); border-radius: 8pt; background: #fff; }
+.torneo.pend { border-left: 3.5pt dashed var(--ambar); }
+.torneo td { vertical-align: top; padding: 9pt 11pt; }
+.torneo .sello { width: 27mm; text-align: center; background: var(--fondo); border-radius: 6pt 0 0 6pt; }
+.sello .dias { font: 600 19pt/1 "Fraunces"; }
+.sello .dias.largo { font-size: 12.5pt; line-height: 1.15; }
+.sello .m { font: 600 7.5pt "Inter"; letter-spacing: 0.12em; text-transform: uppercase; color: var(--arcilla-osc); margin-top: 3pt; }
+.torneo .que h3 { font-size: 12.5pt; line-height: 1.2; }
+.torneo .donde { color: var(--gris); margin-top: 2pt; }
+.chips { margin-top: 5pt; }
+.chip { display: inline-block; font: 500 7.5pt "Inter"; padding: 1.5pt 6pt; border-radius: 99pt; margin: 0 3pt 3pt 0;
+  background: var(--fondo); border: 0.6pt solid var(--linea); color: var(--gris); }
+.chip.circ { background: var(--arcilla-clara); border-color: var(--arcilla-clara); color: var(--arcilla-osc); }
+.acomp { margin-top: 3pt; font-size: 8.5pt; color: var(--gris); }
+.acomp b { color: var(--tinta); font-weight: 600; }
+.torneo .lado { width: 47mm; }
+.estado { display: inline-block; font: 600 7pt "Inter"; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 2pt 7pt; border-radius: 99pt; background: var(--verde-claro); color: var(--verde); }
+.estado.pend { background: var(--ambar-claro); color: var(--ambar); }
+.insc { margin-top: 6pt; border-radius: 6pt; padding: 6pt 8pt; }
+.insc .etq { font-size: 6.5pt; }
+.insc .f { font: 600 12pt/1.1 "Fraunces"; margin-top: 2pt; }
+.insc .q { font-size: 8pt; margin-top: 1pt; }
+.insc.abierta { background: var(--arcilla); color: #fff; }
+.insc.abierta .etq, .insc.abierta .q { color: rgba(255,255,255,0.9); }
+.insc.cerrada { background: var(--fondo); color: var(--suave); }
+.insc.cerrada .f { font-size: 10pt; color: var(--gris); }
+.insc.sin { background: var(--fondo); color: var(--suave); font-size: 8pt; }
+.borrado { font-size: 7.5pt; color: var(--gris); margin-top: 4pt; }
+.vacio { margin-top: 8mm; padding: 14pt; border-radius: 9pt; background: var(--fondo); color: var(--gris); text-align: center; }
+.leyenda { margin-top: 5mm; font-size: 8pt; color: var(--suave); }
+.leyenda .estado { margin-right: 4pt; }
+
+/* ---------- Normas ---------- */
+.normas { margin-top: 8mm; padding: 12pt 15pt; border-radius: 9pt; background: var(--fondo); border: 0.75pt solid var(--linea); page-break-inside: auto; }
+.normas h2 { font-size: 14pt; margin-bottom: 5pt; }
+.normas p { margin: 4pt 0; }
+.normas ul { margin: 4pt 0; padding-left: 14pt; }
+.normas li { margin: 2pt 0; }
+</style>
+</head>
+<body>
+
+<div class="portada">
+  <div class="barra"><table><tr>
+    <td class="etq">{{ t.club }}</td>
+    <td class="der etq">{{ t.titulo }}</td>
+  </tr></table></div>
+  <div class="titulo">
+    <h1>{{ jugador }}</h1>
+    <div class="sub">{{ subtitulo }}</div>
+  </div>
+  <div class="foto">{% if foto %}<img src="{{ foto }}">{% else %}<div class="iniciales">{{ iniciales }}</div>{% endif %}</div>
+</div>
+<div class="ancho">
+  <div class="bajo">
+    {% if entrenador %}{{ t.entrenador }}: <b>{{ entrenador }}</b>{% endif %}
+    {% if entrenador and categoria %} · {% endif %}
+    {% if categoria %}{{ t.categoria }}: <b>{{ categoria }}</b>{% endif %}
+  </div>
+
+  <table class="cifras"><tr>
+    <td><div class="cifra"><div class="etq">{{ t.torneos }}</div><div class="num">{{ r.total }}</div></div></td>
+    <td><div class="cifra"><div class="etq">{{ t.confirmados }}</div>
+      <div class="num">{{ r.confirmados }} <small>{{ t.de }} {{ r.total }}</small></div></div></td>
+    <td>{% if proximo_cierre %}
+      <div class="cifra principal"><div class="etq">{{ t.proximo_cierre }}</div>
+        <div class="que">{{ proximo_cierre }}</div><div class="cual">{{ r.proximo_cierre_torneo }}</div></div>
+    {% else %}
+      <div class="cifra apagada"><div class="etq">{{ t.proximo_cierre }}</div><div class="que">{{ t.sin_cierres }}</div></div>
+    {% endif %}</td>
+  </tr></table>
+
+  {% for m in meses %}
+  <div class="mes"><h2>{{ m.nombre }}</h2></div>
+  {% for x in m.torneos %}
+  <table class="torneo{% if not x.confirmado %} pend{% endif %}"><tr>
+    <td class="sello">
+      <div class="dias{% if x.fecha.largo %} largo{% endif %}">{{ x.fecha.dias }}</div>
+      <div class="m">{{ x.fecha.mes }}</div>
+    </td>
+    <td class="que">
+      <h3>{{ x.nombre }}</h3>
+      {% if x.lugar %}<div class="donde">{{ x.lugar }}</div>{% endif %}
+      <div class="chips">
+        {% if x.circuito %}<span class="chip circ">{{ x.circuito }}</span>{% endif %}
+        {% for c in x.categorias %}<span class="chip">{{ c }}</span>{% endfor %}
+        {% if x.previa %}<span class="chip">{{ x.previa }}</span>{% endif %}
+        {% if x.fines %}<span class="chip">{{ x.fines }}</span>{% endif %}
+      </div>
+      {% if x.acompana %}<div class="acomp">{{ t.acompana }}: <b>{{ x.acompana }}</b></div>{% endif %}
+    </td>
+    <td class="lado">
+      <span class="estado{% if not x.confirmado %} pend{% endif %}">{% if x.confirmado %}{{ t.confirmado }}{% else %}{{ t.por_confirmar }}{% endif %}</span>
+      <div class="insc {{ x.cierre.clase }}">
+        <div class="etq">{{ x.cierre.etq }}</div>
+        {% if x.cierre.fecha %}<div class="f">{{ x.cierre.fecha }}</div>{% endif %}
+        {% if x.cierre.quedan %}<div class="q">{{ x.cierre.quedan }}</div>{% endif %}
+      </div>
+      {% if x.borrado %}<div class="borrado">{{ x.borrado }}</div>{% endif %}
+    </td>
+  </tr></table>
+  {% endfor %}
+  {% empty %}
+  <div class="vacio">{{ t.vacio }}</div>
+  {% endfor %}
+
+  {% if hay_pendientes %}
+  <div class="leyenda"><span class="estado pend">{{ t.por_confirmar }}</span>{{ t.leyenda }}</div>
+  {% endif %}
+
+  {% if normas %}
+  <div class="normas">
+    <h2>{{ t.normas }}</h2>
+    {% for b in normas %}
+      {% if b.lista %}<ul>{% for i in b.lista %}<li>{{ i }}</li>{% endfor %}</ul>{% else %}<p>{{ b.texto }}</p>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

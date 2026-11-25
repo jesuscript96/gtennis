@@ -6,12 +6,12 @@ import { useParams, useRouter } from "next/navigation";
 import TorneoForm from "../../../../components/TorneoForm";
 import {
   addParticipante, borrarTorneo, delParticipante, fusionarTorneo, getJugadoresApuntables, getTorneo, getTorneos,
-  getTorneosResumen, guardarTorneo, updParticipante,
+  getTorneosResumen, guardarTorneo, validarParticipantes,
 } from "../../../../lib/api";
-import { apuntaATorneos, canWrite } from "../../../../lib/perms";
+import { apuntaATorneos, mandaEnTorneos, nivelTorneos } from "../../../../lib/perms";
 import DeshacerTorneos from "../../../../components/DeshacerTorneos";
 import {
-  CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, diasHasta, fmtLarga, fmtRango, hoyISO, nombreCategoria, sumaDias,
+  CERTEZA_AYUDA, CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, puedeValidarCerteza, diasHasta, fmtLarga, fmtRango, hoyISO, nombreCategoria, sumaDias,
 } from "../../../../lib/torneos";
 
 export default function TorneoDetallePage() {
@@ -29,11 +29,12 @@ export default function TorneoDetallePage() {
   const [dup, setDup] = useState("");
   const [tick, setTick] = useState(0);
   const hecho = () => setTick((n) => n + 1);
-  const puedeEditar = canWrite("torneos");
+  const puedeEditar = mandaEnTorneos();
   // El entrenador apunta a los de su columna en Grupos (el desplegable ya trae
   // solo esos) y quita lo que apuntó mientras siga pendiente; el resto, head
   // coach y dirección.
   const apunta = puedeEditar || apuntaATorneos();
+  const perfil = nivelTorneos();
 
   const cargar = useCallback(() => getTorneo(id).then(setT).catch((e) => setError(e.message)), [id]);
   useEffect(() => { cargar(); }, [cargar]);
@@ -172,21 +173,33 @@ export default function TorneoDetallePage() {
               {t.participantes.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    {p.nombre}
+                    {p.jugador ? <Link href={`/torneos/jugadores/${p.jugador}`}>{p.nombre}</Link> : p.nombre}
                     {!p.jugador && <span className="pill gris" title="No está en las fichas de la academia">sin ficha</span>}
                     {p.de_baja && <span className="pill no" title="Ya no entrena en el club">de baja</span>}
                     {p.categoria && <span className="muted cat-jug"> · {p.categoria}</span>}
                     {p.fuera_de_categoria && <span className="pill no" title="Su categoría es mayor que las del torneo">fuera de categoría</span>}
                     {p.apuntado_por_nombre && <div className="apuntado-por">apuntado por {p.apuntado_por_mi ? "ti" : p.apuntado_por_nombre}</div>}
                   </td>
-                  <td><span className={`pill ${CERTEZA_CLASS[p.certeza]}`}>{CERTEZA_LABEL[p.certeza]}</span></td>
+                  <td>
+                    <span className={`pill ${CERTEZA_CLASS[p.certeza]}`} title={CERTEZA_AYUDA[p.certeza]}>{CERTEZA_LABEL[p.certeza]}</span>
+                    {(p.confirmado_por_nombre || p.validado_coach_por_nombre) && (
+                      <div className="apuntado-por">
+                        {p.certeza === "CONFIRMADO" && p.confirmado_por_nombre ? `por ${p.confirmado_por_nombre}`
+                          : p.validado_coach_por_nombre ? `validado por ${p.validado_coach_por_nombre}` : ""}
+                      </div>
+                    )}
+                  </td>
                   <td className="muted">{p.entrenador || "—"}</td>
                   <td className="muted">{p.detalle || "—"}</td>
                   {conAcciones && (
                     <td>
                       <div className="row-actions">
-                        {puedeEditar && p.certeza !== "CONFIRMADO" && (
-                          <button className="btn sm ghost" onClick={() => accion(() => updParticipante(p.id, { certeza: "CONFIRMADO" }))}>Confirmar</button>
+                        {puedeEditar && puedeValidarCerteza(p.certeza, perfil) && (
+                          <button className="btn sm ghost" onClick={() => accion(async () => {
+                            // El servidor se salta lo que no es de su grupo: que se vea por qué.
+                            const r = await validarParticipantes([p.id]);
+                            if (!r.validados && r.saltados.length) throw new Error(r.saltados[0]);
+                          })}>Validar</button>
                         )}
                         {(puedeEditar || quitaEntrenador(p)) && (
                           <button className="btn sm danger" onClick={() => accion(() => delParticipante(p.id))}>Quitar</button>
@@ -207,7 +220,7 @@ export default function TorneoDetallePage() {
             </select>
             {notasInput}
             <button className="btn" disabled={!nuevo.jugador}>Apuntar</button>
-            <span className="muted apuntar-nota">Queda pendiente hasta que tu head coach o dirección lo confirmen.{avisoCategorias}</span>
+            <span className="muted apuntar-nota">Lo valida tu head coach y después dirección.{avisoCategorias}</span>
           </form>
         )}
         {puedeEditar && (

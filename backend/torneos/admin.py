@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CambioTorneo, CategoriaJugador, Participante, Torneo
+from .models import CambioTorneo, CategoriaJugador, CorreoTorneos, NormasTorneos, Participante, Torneo
 
 
 class ParticipanteInline(admin.TabularInline):
@@ -29,3 +29,16 @@ class CategoriaJugadorAdmin(admin.ModelAdmin):
 class CambioTorneoAdmin(admin.ModelAdmin):
     list_display = ("descripcion", "creado_por", "creado_at")
     list_filter = ("creado_por",)
+
+
+@admin.register(CorreoTorneos)
+class CorreoTorneosAdmin(admin.ModelAdmin):
+    list_display = ("jugador", "mes", "estado", "validado_por", "enviado_en", "envio_error")
+    list_filter = ("mes", "estado")
+    search_fields = ("jugador__nombre",)
+    autocomplete_fields = ["jugador"]
+
+
+@admin.register(NormasTorneos)
+class NormasTorneosAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "actualizado_por", "actualizado_en")

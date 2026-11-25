@@ -45,8 +45,22 @@ export const CATEGORIAS = [
   { codigo: "ABSOLUTA", nombre: "Absoluta", sub: "Senior" },
 ];
 export const nombreCategoria = (c) => CATEGORIAS.find((x) => x.codigo === c)?.nombre || c;
-export const CERTEZA_LABEL = { CONFIRMADO: "Confirmado", PENDIENTE: "Pendiente", DEDUCIDO: "Deducido" };
-export const CERTEZA_CLASS = { CONFIRMADO: "ok", PENDIENTE: "pend", DEDUCIDO: "ded" };
+// Circuito (25/11/2026): el entrenador apunta → su head coach valida → dirección confirma.
+export const CERTEZA_LABEL = {
+  CONFIRMADO: "Confirmado", VALIDADO_COACH: "Falta dirección", PENDIENTE: "Falta head coach", DEDUCIDO: "Deducido",
+};
+export const CERTEZA_CLASS = { CONFIRMADO: "ok", VALIDADO_COACH: "pend2", PENDIENTE: "pend", DEDUCIDO: "ded" };
+export const CERTEZA_AYUDA = {
+  CONFIRMADO: "Confirmado por dirección",
+  VALIDADO_COACH: "Validado por su head coach; falta el visto bueno de dirección",
+  PENDIENTE: "Apuntado por su entrenador; falta que lo valide su head coach",
+  DEDUCIDO: "Sacado del Excel antiguo; falta que lo valide su head coach",
+};
+// ¿Le puede dar su visto bueno quien mira? Dirección, a todo lo no confirmado;
+// el head coach, a lo que aún no ha validado nadie (el servidor mira además el grupo).
+export const puedeValidarCerteza = (certeza, perfil) =>
+  perfil === "direccion" ? certeza !== "CONFIRMADO"
+    : perfil === "head_coach" ? certeza === "PENDIENTE" || certeza === "DEDUCIDO" : false;
 export const ESTADO_CLASS = { VALIDADO: "ok", CANCELADO: "no" };
 export function sumaDias(iso, n) {
   const d = new Date(iso + "T00:00:00");

@@ -57,6 +57,19 @@ export function canVisit(path, user = getUser()) {
   return Boolean(dondeEsta(path, user));
 }
 
+// Da de alta torneos y hace de head coach de su grupo en ellos: head coaches,
+// dirección y quien coordina Competición de tardes (25/11/2026, sus jugadores).
+export function mandaEnTorneos(user = getUser()) {
+  return roleRank(user) >= 2 || Boolean(user?.lleva_torneos);
+}
+
+// Altura en el circuito de validación de torneos: dirección, head coach (o
+// quien coordina tardes) o entrenador.
+export function nivelTorneos(user = getUser()) {
+  if (roleRank(user) >= 3) return "direccion";
+  return mandaEnTorneos(user) ? "head_coach" : "entrenador";
+}
+
 // En torneos, además de head coaches y dirección, el entrenador apunta a sus
 // jugadores a torneos que ya existen; queda pendiente de confirmar (03/11/2026).
 export function apuntaATorneos(user = getUser()) {

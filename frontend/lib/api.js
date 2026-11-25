@@ -361,6 +361,27 @@ export const delParticipante = (id) => req(`/torneos-participantes/${id}/`, { me
 // Lo que han apuntado los entrenadores y falta confirmar (al head coach, los de
 // su grupo; al entrenador, lo suyo).
 export const getPorConfirmar = () => req("/torneos-participantes/por_confirmar/");
+// Visto bueno a varios a la vez (25/11/2026): el head coach los deja para
+// dirección; dirección, confirmados.
+export const validarParticipantes = (ids) =>
+  req("/torneos-participantes/validar/", { method: "POST", body: JSON.stringify({ ids }) });
+// La página de un jugador: sus torneos por delante, y el mismo contenido en PDF.
+export const getTorneosDeJugador = (id) => req(`/torneos/jugador/${id}/`);
+export const descargarPdfTorneosJugador = (id, idioma = "ES") =>
+  fichero(`/torneos/jugador/${id}/pdf/?idioma=${idioma}`, `torneos-${id}.pdf`);
+// Correos del día 1 a las familias.
+export const getCorreosTorneos = (mes) => req(`/torneos-correos/${mes ? `?mes=${mes}` : ""}`);
+export const getCorreoTorneos = (id) => req(`/torneos-correos/${id}/`);
+export const validarCorreosTorneos = (ids, destinatarios) =>
+  req("/torneos-correos/validar/", { method: "POST", body: JSON.stringify({ ids, ...(destinatarios && { destinatarios }) }) });
+export const accionCorreoTorneos = (id, accion) =>
+  req(`/torneos-correos/${id}/${accion}/`, { method: "POST", body: "{}" });
+export const generarCorreosTorneos = (mes) =>
+  req("/torneos-correos/generar/", { method: "POST", body: JSON.stringify({ mes }) });
+export const descargarPdfCorreoTorneos = (id) => fichero(`/torneos-correos/${id}/pdf/`, `torneos-${id}.pdf`);
+export const getNormasTorneos = () => req("/torneos-correos/normas/");
+export const guardarNormasTorneos = (texto, texto_en) =>
+  req("/torneos-correos/normas/", { method: "PUT", body: JSON.stringify({ texto, texto_en }) });
 // A quién puede apuntar cada uno: los de su columna en Grupos (el head coach,
 // los de sus entrenadores; dirección, todos), con su entrenador.
 // Con `torneo`, solo los que entran por categoría y con la suya ese año.
