@@ -20,7 +20,10 @@ DEST = [{"email": "familia@example.com", "quien": "Madre"}]
 @override_settings(EMAIL_HOST="smtp.prueba", CORREO_GMAIL="", ANTHROPIC_API_KEY="",
                    GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="", DRIVE_CT_USUARIO="",
                    DEFAULT_FROM_EMAIL="gestion@gtennis.com")
-class HeadCoachEnviaTests(TestCase):
+class Base(TestCase):
+    """Santi (rojo, Patricio → Ana), Pablo (turquesa, Mario → Leo), un jugador
+    de Alto rendimiento sin responsable y uno de tardes."""
+
     def setUp(self):
         pdf = mock.patch.object(informes, "pdf_de", return_value=("informe.pdf", b"%PDF-1.4 prueba"))
         pdf.start()
@@ -57,6 +60,9 @@ class HeadCoachEnviaTests(TestCase):
         c.force_authenticate(user)
         return c
 
+
+
+class HeadCoachEnviaTests(Base):
     def test_envia_ya_los_de_su_color(self):
         inf = self.informe(self.ana)
         r = self.api(self.santi).post(f"/api/informes/{inf.id}/enviar/", {}, format="json")
@@ -123,4 +129,46 @@ class HeadCoachEnviaTests(TestCase):
         ct = self.informe(self.nino)
         self.assertEqual(self.api(self.alberto).post(f"/api/informes/{ct.id}/enviar/", {}, format="json")
                          .status_code, 403)
+        self.assertEqual(mail.outbox, [])
+
+
+class PruebaDeEnvioTests(Base):
+    """Mandar a un correo, y a nadie más, el mismo correo que recibiría la
+    familia (25/11/2026), sin que cuente como enviado."""
+
+    def test_llega_solo_a_ese_correo_y_el_informe_no_cambia(self):
+        inf = self.informe(self.ana)
+        antes = Informe.objects.filter(pk=inf.pk).values().get()
+        r = self.api(self.santi).post(f"/api/informes/{inf.id}/prueba/", {"email": " santi@example.com "},
+                                      format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["enviado_a"], "santi@example.com")
+        self.assertEqual(len(mail.outbox), 1)
+        m = mail.outbox[0]
+        self.assertEqual((m.to, m.cc, m.bcc), (["santi@example.com"], [], []))
+        self.assertEqual(m.from_email, "gestion@gtennis.com")
+        self.assertIn("Ana Rojo", m.subject)
+        self.assertEqual(m.attachments[0][0], "informe.pdf")
+        self.assertEqual(Informe.objects.filter(pk=inf.pk).values().get(), antes)
+
+    def test_mismo_correo_que_la_familia(self):
+        inf = self.informe(self.ana)
+        self.api(self.santi).post(f"/api/informes/{inf.id}/prueba/", {"email": "santi@example.com"}, format="json")
+        self.api(self.santi).post(f"/api/informes/{inf.id}/enviar/", {}, format="json")
+        prueba, real = mail.outbox
+        self.assertEqual((prueba.subject, prueba.body, prueba.reply_to, prueba.attachments),
+                         (real.subject, real.body, real.reply_to, real.attachments))
+        self.assertEqual(real.to, ["familia@example.com"])
+
+    def test_quien_puede_y_que(self):
+        inf = self.informe(self.ana)
+        self.assertEqual(self.api(self.pablo).post(f"/api/informes/{inf.id}/prueba/", {"email": "a@b.es"},
+                                                   format="json").status_code, 404)
+        self.assertEqual(self.api(self.u_patricio).post(f"/api/informes/{inf.id}/prueba/", {"email": "a@b.es"},
+                                                        format="json").status_code, 403)
+        self.assertEqual(self.api(self.santi).post(f"/api/informes/{inf.id}/prueba/", {"email": "no"},
+                                                   format="json").status_code, 400)
+        pendiente = self.informe(self.ana, estado="PENDIENTE")
+        self.assertEqual(self.api(self.dir).post(f"/api/informes/{pendiente.id}/prueba/", {"email": "a@b.es"},
+                                                 format="json").status_code, 400)
         self.assertEqual(mail.outbox, [])

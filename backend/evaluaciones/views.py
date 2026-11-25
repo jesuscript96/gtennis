@@ -630,6 +630,18 @@ class InformeViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(self.get_serializer(inf).data)
 
     @action(detail=True, methods=["post"])
+    def prueba(self, request, pk=None):
+        """`{email}`: manda a ese correo, y a nadie más, el mismo correo que le
+        llegaría a la familia, para verlo antes (25/11/2026). Quien puede
+        enviar el informe; no cuenta como enviado."""
+        inf = self._remitente()
+        try:
+            email = informes.enviar_prueba(inf, request.data.get("email"))
+        except informes.InformeError as e:
+            raise ValidationError({"detail": str(e)})
+        return Response({"enviado_a": email, "informe": inf.id})
+
+    @action(detail=True, methods=["post"])
     def cancelar_envio(self, request, pk=None):
         """Quita el envío programado: no sale."""
         inf = informes.cancelar_envio(self._remitente())

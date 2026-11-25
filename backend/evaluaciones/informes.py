@@ -475,23 +475,52 @@ def _listo_para_enviar(inf):
     return para
 
 
-def enviar(inf, usuario):
-    """Envía el informe aprobado a la familia por correo, con el PDF en su
-    idioma (10/11/2026, decisión 13). Deja constancia de cuándo y quién."""
+def _mensaje(inf, para):
+    """El correo del informe tal y como lo recibe la familia: su asunto y su
+    texto, el PDF en su idioma y las respuestas a gestion@ y su head coach."""
     from django.conf import settings
     from django.core.mail import EmailMessage
 
     from .correo import correo
 
-    para = _listo_para_enviar(inf)
     idioma = idioma_pdf(inf)
     con_fisica = bool(inf.fisica_id and inf.fisica.estado == EvaluacionFisica.Estado.TERMINADA)
+    nombre_pdf, contenido = pdf_de(inf, idioma)
+    asunto, texto = correo(inf.jugador.nombre, idioma, inf.circuito, con_fisica)
+    mensaje = EmailMessage(asunto, texto, settings.DEFAULT_FROM_EMAIL, para, reply_to=responder_a(inf))
+    mensaje.attach(nombre_pdf, contenido, "application/pdf")
+    return mensaje
+
+
+def enviar_prueba(inf, email):
+    """Manda a `email` (y a nadie más) el mismo correo que recibiría la familia,
+    para verlo antes (25/11/2026). No cuenta como enviado: el informe no cambia."""
+    from django.core.exceptions import ValidationError as ErrorDeCorreo
+    from django.core.validators import validate_email
+
+    if inf.estado != Informe.Estado.VALIDADO:
+        raise InformeError("Solo se prueban informes aprobados.")
+    email = (email or "").strip()
     try:
-        nombre_pdf, contenido = pdf_de(inf, idioma)
-        asunto, texto = correo(inf.jugador.nombre, idioma, inf.circuito, con_fisica)
-        mensaje = EmailMessage(asunto, texto, settings.DEFAULT_FROM_EMAIL, para, reply_to=responder_a(inf))
-        mensaje.attach(nombre_pdf, contenido, "application/pdf")
-        mensaje.send(fail_silently=False)
+        validate_email(email)
+    except ErrorDeCorreo:
+        raise InformeError("Ese correo no es válido.")
+    if not correo_configurado():
+        raise InformeError("El envío por correo aún no está configurado en el servidor.")
+    try:
+        _mensaje(inf, [email]).send(fail_silently=False)
+    except Exception as e:  # noqa: BLE001
+        raise InformeError(f"No se ha podido enviar la prueba: {e}")
+    log.info("Prueba del informe %s enviada a %s", inf.pk, email)
+    return email
+
+
+def enviar(inf, usuario):
+    """Envía el informe aprobado a la familia por correo, con el PDF en su
+    idioma (10/11/2026, decisión 13). Deja constancia de cuándo y quién."""
+    para = _listo_para_enviar(inf)
+    try:
+        _mensaje(inf, para).send(fail_silently=False)
     except Exception as e:  # noqa: BLE001 — se guarda el motivo y se dice
         inf.envio_error = str(e)[:300]
         inf.save(update_fields=["envio_error", "actualizado"])
