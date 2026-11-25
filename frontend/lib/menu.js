@@ -30,8 +30,11 @@ export const MENU = [
     { href: "/cuadrante", label: "Cuadrante" },
     { href: "/semanas", label: "Todas las semanas" },
   ] },
+  // «Del día» (25/11/2026): las faltas de un día por grupos, pensada para el
+  // móvil; es lo primero que se abre. «Semana» es la lista para apuntarlas.
   { key: "faltas", label: "Faltas", ve: deportivo, tabs: [
-    { href: "/faltas", label: "Faltas" },
+    { href: "/faltas/dia", label: "Del día" },
+    { href: "/faltas", label: "Semana" },
   ] },
   { key: "avisos", label: "Avisos", ve: todos, tabs: [
     { href: "/avisos", label: "Avisos" },

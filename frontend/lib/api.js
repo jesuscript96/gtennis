@@ -276,6 +276,8 @@ export const guardarEntrenadoresJugador = (jugadorId, body) =>
 // --- Grupos de entrenamiento (entrenador ↔ alumnos) ------------------------
 export const getGrupos = () => req("/grupos/");
 export const getGruposDivisiones = () => req("/grupos/divisiones/");
+// Las faltas de un día por grupos (25/11/2026); sin fecha, hoy.
+export const getFaltasDelDia = (fecha) => req(`/grupos/faltas/${fecha ? `?fecha=${fecha}` : ""}`);
 // Divisiones: ¿puede mover alumnos? y moverlos (division null = sin división).
 export const getPermisosDivisiones = () => req("/divisiones/permisos/");
 export const moverDeDivision = (jugador, division) =>

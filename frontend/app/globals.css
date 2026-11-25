@@ -1885,3 +1885,129 @@ button.link:hover { text-decoration: underline; }
 .cuadrante-head { align-items: flex-start; }
 table.data.funciones th { white-space: normal; min-width: 90px; }
 table.data.funciones select { min-width: 150px; }
+
+/* ---- Faltas del día (25/11/2026): primero el móvil ---- */
+.fd { max-width: 760px; }
+.fd-cabecera { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.fd-cabecera h1 { font-family: var(--font-serif); font-size: 22px; font-weight: 500; margin: 0; }
+.fd-apuntar { font-size: 13px; color: var(--accent); white-space: nowrap; padding: 8px 0; }
+.fd-apuntar:hover { text-decoration: underline; }
+
+/* Selector de día: pegado arriba al bajar, flechas grandes para el dedo. */
+.fd-dia {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: stretch; gap: 6px;
+  margin: 0 -14px; padding: 8px 14px;
+  background: var(--bg-page); border-bottom: 1px solid var(--border);
+}
+.fd-flecha {
+  flex: none; width: 48px; min-height: 52px; border-radius: 12px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  font-size: 26px; line-height: 1; color: var(--text);
+}
+.fd-flecha:active { background: #efece5; }
+.fd-fecha {
+  position: relative; flex: 1; min-width: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border);
+  padding: 4px 8px; text-align: center;
+}
+.fd-rel { font-size: 17px; font-weight: 600; }
+.fd-larga { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/* El input de fecha cubre la tarjeta: al tocarla se abre el calendario del móvil. */
+.fd-fecha input[type="date"] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: 0; padding: 0; margin: 0;
+}
+.fd-fecha input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer;
+}
+.fd-hoy {
+  display: block; margin: 10px auto 0; padding: 8px 16px; border-radius: 999px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border-strong); font-size: 13px; color: var(--text);
+}
+
+.fd-cuerpo { transition: opacity .15s ease; }
+.fd-cuerpo.fd-cargando { opacity: .5; }
+.fd-resumen { margin: 14px 2px 12px; font-size: 14px; color: var(--muted); }
+.fd-resumen b { color: var(--st-ausencia); font-size: 18px; font-weight: 600; }
+.fd-nadie { margin: 0; padding: 14px; color: var(--muted); font-size: 14px; }
+
+/* Un bloque por color, con su tinte; dentro, una tarjeta por entrenador. */
+.fd-bloque {
+  --grupo: var(--border-strong); --grupo-tinte: var(--surface-2);
+  margin-bottom: 16px; padding: 10px; border-radius: 14px;
+  background: var(--grupo-tinte); border-left: 4px solid var(--grupo);
+}
+.fd-bloque.color-amarillo { --grupo: #e3bf00; --grupo-tinte: #fdf8d8; }
+.fd-bloque.color-turquesa { --grupo: #3aaab6; --grupo-tinte: #e3f4f6; }
+.fd-bloque.color-naranja  { --grupo: #ef9220; --grupo-tinte: #fdeedb; }
+.fd-bloque.color-verde    { --grupo: #3fa34d; --grupo-tinte: #e5f4e7; }
+.fd-bloque.color-azul     { --grupo: #4a7fd9; --grupo-tinte: #e6eefb; }
+.fd-bloque.color-morado   { --grupo: #8a5cd6; --grupo-tinte: #f0e9fb; }
+.fd-bloque-tit {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 2px 4px 10px; font-size: 15px; font-weight: 600;
+}
+.fd-punto { width: 10px; height: 10px; border-radius: 50%; background: var(--grupo); flex: none; }
+.fd-bloque-coach { font-weight: 400; color: var(--muted); font-size: 13px; }
+
+.fd-grupo {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+}
+.fd-grupo + .fd-grupo { margin-top: 8px; }
+.fd-grupo-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+}
+.fd-ent { font-weight: 600; font-size: 15px; min-width: 0; }
+.fd-cuenta {
+  flex: none; font-size: 12px; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+}
+.fd-cuenta.hay { background: #fbeaea; color: var(--st-ausencia); border-color: #f0caca; font-weight: 600; }
+.fd-ent-fuera {
+  margin: 0; padding: 9px 14px; font-size: 13px; color: var(--st-coach);
+  background: #f3effc; border-bottom: 1px solid var(--border);
+}
+
+.fd-lista { list-style: none; margin: 0; padding: 0; }
+.fd-jug { display: flex; gap: 12px; padding: 12px 14px; align-items: flex-start; }
+.fd-jug + .fd-jug { border-top: 1px solid var(--border); }
+.fd-avatar { width: 38px; height: 38px; font-size: 12px; }
+.fd-jug-txt { flex: 1; min-width: 0; }
+.fd-jug-nombre { font-size: 15px; font-weight: 500; display: flex; align-items: baseline; gap: 8px; }
+.fd-div { font-size: 11px; color: var(--muted); font-weight: 400; }
+.fd-falta + .fd-falta { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.fd-falta-linea { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 5px; }
+.fd-motivo {
+  font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+  background: #efece5; color: var(--text);
+}
+.fd-motivo.fd-torneo { background: #fcecdd; color: #b25c17; }
+.fd-motivo.fd-salud { background: #fbeaea; color: var(--st-ausencia); }
+.fd-parte { font-size: 13px; color: var(--text); }
+.fd-rango { font-size: 12px; color: var(--muted); }
+.fd-nota { margin-top: 5px; font-size: 13px; color: var(--text); font-style: italic; overflow-wrap: anywhere; }
+.fd-meta { margin-top: 5px; font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.fd-corte {
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: #fbf2e3; color: var(--st-calentamiento);
+}
+.fd-sin { margin: 10px 4px 2px; font-size: 13px; color: var(--muted); }
+.fd-sin span { font-weight: 600; }
+.fd-sin-grupo .fd-bloque-tit { color: var(--muted); }
+
+/* En el móvil la barra de arriba del menú también es fija: el día va debajo. */
+@media (max-width: 860px) {
+  .fd-dia { top: calc(56px + env(safe-area-inset-top)); margin: 0 -16px; padding: 8px 16px; }
+}
+@media (max-width: 640px) {
+  .fd-dia { margin: 0 -14px; padding: 8px 14px; }
+  .fd-bloque { margin-left: -6px; margin-right: -6px; padding: 8px; }
+}
+@media (min-width: 861px) {
+  .fd-cabecera h1 { font-size: 28px; }
+  .fd-dia { margin: 0; padding: 8px 0; }
+}

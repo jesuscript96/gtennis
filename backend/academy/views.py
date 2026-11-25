@@ -2013,6 +2013,11 @@ class GrupoViewSet(viewsets.ViewSet):
             "bloques": bloques,
             "sin_grupo": sin_grupo,
             "sin_grupo_entrenadores": sin_grupo_entrenadores,
+            # Las columnas de quien no está en ningún grupo de color: no se
+            # pintan en Grupos, pero el entrenador sigue teniendo las suyas
+            # (Faltas del día, 25/11/2026).
+            "otras_columnas": [g for clave, columnas in por_bloque.items()
+                               if clave not in con_color for g in columnas],
             "entrenadores": entrenadores,
             "direccion": direccion,
         }
@@ -2087,6 +2092,150 @@ class GrupoViewSet(viewsets.ViewSet):
             divisiones.append({"id": None, "nivel": None, "nombre": "Sin división",
                                "jugadores": por_division[None]})
         return Response({"divisiones": divisiones})
+
+    @staticmethod
+    def _falta_del_dia(a, cierre):
+        """Una falta tal como sale en Faltas del día."""
+        if a.estado == "EN_TORNEO":
+            motivo = "Torneo"
+        elif a.subtipo:
+            motivo = a.get_subtipo_display()
+        elif a.estado == "AUSENCIA_JUGADOR":
+            motivo = "Falta"
+        else:
+            motivo = a.get_estado_display()
+        if a.creada_por_id:
+            apuntada = a.creada_por.get_full_name() or a.creada_por.username
+        else:
+            apuntada = a.declarada_por.nombre if a.declarada_por_id else None
+        return {
+            "id": a.id,
+            "motivo": motivo,
+            "estado": a.estado,
+            "subtipo": a.subtipo,
+            "ambito": a.ambito,
+            "hora_desde": a.hora_desde.strftime("%H:%M") if a.hora_desde else None,
+            "hora_hasta": a.hora_hasta.strftime("%H:%M") if a.hora_hasta else None,
+            "fecha_inicio": a.fecha_inicio.isoformat(),
+            "fecha_fin": a.fecha_fin.isoformat(),
+            "nota": a.nota,
+            # Apuntada después del corte de ESE día (no solo del primero):
+            # no entró en el cuadrante y hubo que moverle a mano.
+            "tras_corte": bool(a.created_at and a.created_at >= cierre),
+            "apuntada_por": apuntada,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+
+    @action(detail=False, methods=["get"])
+    def faltas(self, request):
+        """Las faltas de un día, por grupos (25/11/2026): `?fecha=AAAA-MM-DD`,
+        y sin fecha, hoy. Pensado para mirarlo en el móvil.
+
+        Cada uno ve los grupos que lleva, los mismos que en Grupos:
+          * Dirección → todos los grupos de color y, al final, quien no está
+            en ninguno.
+          * Head coach de un color (Dani Gimeno, Pablo, Santi) → todas las
+            columnas de su color.
+          * Entrenador → su columna (la compartida, si la lleva con otro).
+
+        En cada columna sale también si el entrenador que la lleva no está ese
+        día (su calendario), que es la otra mitad de «quién falta hoy».
+        """
+        from django.utils import timezone
+
+        from scheduling.corte import corte
+        from scheduling.models import AusenciaJugador
+
+        valor = request.query_params.get("fecha")
+        try:
+            fecha = date.fromisoformat(valor) if valor else timezone.localdate()
+        except ValueError:
+            raise ValidationError({"fecha": "Fecha no válida (AAAA-MM-DD)."})
+
+        user = request.user
+        org = self._organigrama(request)
+        coach = _coach_activo(user)
+        ent = getattr(user, "entrenador", None)
+        sin_grupo = []
+        if user.is_superadmin:
+            alcance, bloques, sin_grupo = "club", org["bloques"], org["sin_grupo"]
+        elif coach is not None and coach.color:
+            alcance = "color"
+            bloques = [b for b in org["bloques"] if b["coach"]["id"] == coach.id]
+        elif ent is not None:
+            alcance = "grupo"
+            bloques = []
+            for b in org["bloques"]:
+                suyas = [g for g in b["grupos"] if ent.id in g["entrenador"]["ids"]]
+                if suyas:
+                    bloques.append({**b, "grupos": suyas})
+            if not bloques:
+                suyas = [g for g in org["otras_columnas"] if ent.id in g["entrenador"]["ids"]]
+                if suyas:
+                    bloques.append({"coach": None, "grupos": suyas})
+        else:
+            raise PermissionDenied(
+                "Las faltas por grupo las ven dirección, los head coaches y los entrenadores.")
+
+        def viene_ese_dia(f):
+            # Las altas que aún no han empezado y quien ya se ha ido no cuentan.
+            return ((not f["fecha_alta"] or f["fecha_alta"] <= fecha.isoformat())
+                    and (not f["fecha_baja"] or f["fecha_baja"] >= fecha.isoformat()))
+
+        alumnos = {f["id"] for b in bloques for g in b["grupos"] for f in g["jugadores"]
+                   if viene_ese_dia(f)} | {f["id"] for f in sin_grupo if viene_ese_dia(f)}
+        cierre = corte(fecha)
+        faltas = defaultdict(list)
+        for a in (AusenciaJugador.objects
+                  .filter(jugador_id__in=alumnos, fecha_inicio__lte=fecha, fecha_fin__gte=fecha)
+                  .select_related("creada_por", "declarada_por")
+                  .order_by("created_at", "id")):
+            faltas[a.jugador_id].append(self._falta_del_dia(a, cierre))
+
+        ents = {i for b in bloques for g in b["grupos"] for i in g["entrenador"]["ids"]}
+        fuera = defaultdict(list)
+        for v in (VacacionesEntrenador.objects
+                  .filter(entrenador_id__in=ents, fecha_inicio__lte=fecha, fecha_fin__gte=fecha)
+                  .select_related("entrenador").order_by("id")):
+            fuera[v.entrenador_id].append({
+                "id": v.id,
+                "entrenador": v.entrenador.nombre,
+                "motivo": v.motivo,
+                "ambito": v.ambito,
+                "hora_desde": v.hora_desde.strftime("%H:%M") if v.hora_desde else None,
+                "hora_hasta": v.hora_hasta.strftime("%H:%M") if v.hora_hasta else None,
+                "fecha_inicio": v.fecha_inicio.isoformat(),
+                "fecha_fin": v.fecha_fin.isoformat(),
+            })
+
+        def falta_de(f):
+            return {
+                "jugador": {"id": f["id"], "nombre": f["nombre"], "foto": f["foto"],
+                            "division": f["division"]},
+                # Gestión compartida: con quién más lo lleva esta columna.
+                "con": f.get("con") or [],
+                "faltas": faltas[f["id"]],
+            }
+
+        def columna(g):
+            suyos = [f for f in g["jugadores"] if f["id"] in alumnos]
+            return {
+                "entrenador": {k: g["entrenador"][k] for k in ("id", "ids", "nombre", "foto")},
+                "alumnos": len(suyos),
+                "faltan": [falta_de(f) for f in suyos if faltas.get(f["id"])],
+                "entrenador_fuera": [x for i in g["entrenador"]["ids"] for x in fuera.get(i, [])],
+            }
+
+        return Response({
+            "fecha": fecha.isoformat(),
+            "alcance": alcance,
+            "bloques": [{"coach": b["coach"], "grupos": [columna(g) for g in b["grupos"]]}
+                        for b in bloques],
+            "sin_grupo": [falta_de(f) for f in sin_grupo
+                          if f["id"] in alumnos and faltas.get(f["id"])],
+            "total_alumnos": len(alumnos),
+            "total_faltan": len(faltas),
+        })
 
     def _jugador(self, request):
         jugador = Jugador.objects.filter(pk=request.data.get("jugador")).first()
