@@ -119,8 +119,9 @@ class EvaluacionFisicaSerializer(_ConInforme, serializers.ModelSerializer):
     class Meta:
         model = EvaluacionFisica
         fields = ["id", "jugador", "jugador_nombre", "evaluador", "nombre_evaluador", "fecha", "estado",
-                  "puntuaciones", "textos", "puntuados", "puede_editar", "puede_borrar", "informe", "creada", "actualizada", "terminada_en"]
-        read_only_fields = ["evaluador", "nombre_evaluador", "estado", "creada", "actualizada", "terminada_en"]
+                  "puntuaciones", "escala", "textos", "puntuados", "puede_editar", "puede_borrar", "informe", "creada",
+                  "actualizada", "terminada_en"]
+        read_only_fields = ["evaluador", "nombre_evaluador", "estado", "escala", "creada", "actualizada", "terminada_en"]
 
     def get_puntuados(self, ev):
         return sum(1 for k in catalogo.CRITERIOS_FISICO if k in ev.puntuaciones)
@@ -141,11 +142,17 @@ class EvaluacionFisicaSerializer(_ConInforme, serializers.ModelSerializer):
     def validate_puntuaciones(self, valor):
         if not isinstance(valor, dict):
             raise serializers.ValidationError("Formato no válido.")
+        if self.instance is not None:
+            maximo = self.instance.escala
+        else:
+            jugador = self.initial_data.get("jugador") if hasattr(self, "initial_data") else None
+            j = Jugador.objects.select_related("escuela").filter(pk=jugador).first() if jugador else None
+            maximo = catalogo.escala_de(j) if j else catalogo.ESCALA_TARDES
         for clave, nota in valor.items():
             if clave not in catalogo.CRITERIOS_FISICO:
                 raise serializers.ValidationError(f"Criterio desconocido: {clave}.")
-            if not isinstance(nota, int) or isinstance(nota, bool) or not 1 <= nota <= 5:
-                raise serializers.ValidationError(f"{clave}: la nota va del 1 al 5.")
+            if not isinstance(nota, int) or isinstance(nota, bool) or not 1 <= nota <= maximo:
+                raise serializers.ValidationError(f"{clave}: la nota va del 1 al {maximo}.")
         return valor
 
     def validate_textos(self, valor):

@@ -134,10 +134,13 @@ def para_api():
 
 # --- Preparación física (21/10/2026) ---------------------------------------
 # «Informe trimestral de preparación física y cuidado corporal» del club: 11
-# criterios del 1 al 5 en tres bloques y tres textos del preparador. Lo
-# rellena el preparador físico (o gestión deportiva) y va en el mismo PDF que
-# el de tenis.
+# criterios en tres bloques y tres textos del preparador. Lo rellena el
+# preparador físico (o gestión deportiva) y va en el mismo PDF que el de tenis.
+# Se puntúa con la misma escala que el tenis del jugador (`escala_de`): del 1
+# al 10 en Alto rendimiento desde el 25/11/2026, del 1 al 5 en tardes.
 
+# Los cinco tramos del club. Del 1 al 10, cada tramo son dos notas (1-2 muy
+# deficiente, 3-4 insuficiente…): lo pinta así el asistente de la web.
 ESCALA_FISICO = {
     1: "Muy deficiente", 2: "Insuficiente", 3: "Aceptable / En desarrollo", 4: "Bueno", 5: "Excelente",
 }

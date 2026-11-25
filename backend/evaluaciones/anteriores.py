@@ -42,7 +42,7 @@ def fisica(jugador_id):
         return None
     d = e.datos
     return {
-        "fecha": d.get("fecha"), "evaluador": d.get("nombre_evaluador") or "",
+        "fecha": d.get("fecha"), "evaluador": d.get("nombre_evaluador") or "", "escala": d.get("escala") or 5,
         "terminada": d.get("estado") == "TERMINADA",
         "puntuaciones": d.get("puntuaciones") or {}, "textos": d.get("textos") or {},
     }

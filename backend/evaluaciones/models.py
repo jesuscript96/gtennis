@@ -118,8 +118,8 @@ class CarpetaJugador(models.Model):
 
 class EvaluacionFisica(models.Model):
     """La parte física del informe de un jugador, hecha por el preparador
-    físico (o gestión deportiva): 11 notas del 1 al 5 y tres textos. Irá en el
-    mismo PDF que la evaluación de tenis cuando se monte la validación."""
+    físico (o gestión deportiva): 11 notas del 1 a `escala` y tres textos. Va
+    en el mismo PDF que la evaluación de tenis."""
 
     class Estado(models.TextChoices):
         BORRADOR = "BORRADOR", "Borrador"
@@ -133,8 +133,12 @@ class EvaluacionFisica(models.Model):
     nombre_evaluador = models.CharField(max_length=120)
     fecha = models.DateField(default=timezone.localdate)
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.BORRADOR)
-    # {"fis_aceleracion": 4, …}: las 11 claves de `catalogo.CRITERIOS_FISICO`, del 1 al 5.
+    # {"fis_aceleracion": 4, …}: las 11 claves de `catalogo.CRITERIOS_FISICO`, del 1 a `escala`.
     puntuaciones = models.JSONField(default=dict, blank=True)
+    # Nota máxima de cada criterio (25/11/2026): como el tenis, Alto rendimiento
+    # del 1 al 10 y Competición de tardes del 1 al 5. db_default: durante el
+    # despliegue el código anterior crea evaluaciones sin esta columna.
+    escala = models.PositiveSmallIntegerField(default=5, db_default=5)
     # {"puntos_fuertes": "…", "a_mejorar": "…", "notas_fisio": "…"}
     textos = models.JSONField(default=dict, blank=True)
     # Como en `Evaluacion.traduccion`: los textos en el idioma de la familia.

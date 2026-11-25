@@ -325,7 +325,8 @@ class EvaluacionFisicaViewSet(viewsets.ModelViewSet):
         if not jugadores_con_fisico().filter(pk=jugador.pk).exists():
             raise PermissionDenied("A ese jugador no se le hace la parte física (solo Competición de tardes y Alto rendimiento).")
         _sin_duplicar(jugador, "fisica")
-        ev = serializer.save(evaluador=self.request.user, nombre_evaluador=_nombre_evaluador(self.request.user))
+        ev = serializer.save(evaluador=self.request.user, nombre_evaluador=_nombre_evaluador(self.request.user),
+                             escala=catalogo.escala_de(jugador))
         informes.vincular(ev)
 
     def _editable(self, ev):

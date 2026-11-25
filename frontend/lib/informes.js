@@ -42,3 +42,21 @@ export async function abrirParte(router, jugadorId, parte, existenteId) {
     throw e;
   }
 }
+
+/** La etiqueta del club para una nota física de esa escala. Del 1 al 10
+ * (Alto rendimiento, 25/11/2026) cada tramo son dos notas: 1-2 muy
+ * deficiente, 3-4 insuficiente… */
+export function tramoFisico(catalogo, nota, escala = 5) {
+  if (!nota) return "";
+  const tramo = Math.ceil((nota * catalogo.escala.length) / escala);
+  return catalogo.escala.find((e) => e.valor === tramo)?.etiqueta || "";
+}
+
+/** La leyenda de la escala física: «1 Muy deficiente…» o «1-2 Muy deficiente…». */
+export function leyendaFisico(catalogo, escala = 5) {
+  const paso = escala / catalogo.escala.length;
+  return catalogo.escala.map((e) => ({
+    valor: paso === 1 ? `${e.valor}` : `${(e.valor - 1) * paso + 1}-${e.valor * paso}`,
+    etiqueta: e.etiqueta,
+  }));
+}

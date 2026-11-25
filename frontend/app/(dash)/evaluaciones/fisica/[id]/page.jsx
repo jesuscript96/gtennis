@@ -6,10 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import InformeDeLaEvaluacion from "../../../../../components/InformeDeLaEvaluacion";
 import AsistenteFisico from "../../../../../components/AsistenteFisico";
 import { borrarEvaluacionFisica, getCatalogoFisico, getEvaluacionFisica, getUser } from "../../../../../lib/api";
+import { tramoFisico } from "../../../../../lib/informes";
 import { fmtLarga } from "../../../../../lib/torneos";
 
 function Informe({ ev, catalogo }) {
-  const etiqueta = (n) => catalogo.escala.find((e) => e.valor === n)?.etiqueta || "";
+  const escala = ev.escala || 5;
+  const etiqueta = (n) => tramoFisico(catalogo, n, escala);
+  const valores = Array.from({ length: escala }, (_, i) => i + 1);
   return (
     <div className="eval-informe">
       {catalogo.bloques.map((b) => {
@@ -17,13 +20,13 @@ function Informe({ ev, catalogo }) {
         const media = notas.length ? (notas.reduce((a, x) => a + x, 0) / notas.length).toFixed(1).replace(".", ",") : "—";
         return (
           <section key={b.clave} className="card eval-informe-bloque">
-            <h2>{b.titulo} <span className="fis-media">{media} / 5</span></h2>
+            <h2>{b.titulo} <span className="fis-media">{media} / {escala}</span></h2>
             <ul>
               {b.criterios.map((c) => (
                 <li key={c.clave}>
                   <span>{c.etiqueta}</span>
-                  <span className="eval-puntos" aria-label={`${ev.puntuaciones[c.clave] ?? "—"} de 5, ${etiqueta(ev.puntuaciones[c.clave])}`}>
-                    {[1, 2, 3, 4, 5].map((n) => <i key={n} className={n <= (ev.puntuaciones[c.clave] || 0) ? "on" : ""} />)}
+                  <span className="eval-puntos" aria-label={`${ev.puntuaciones[c.clave] ?? "—"} de ${escala}, ${etiqueta(ev.puntuaciones[c.clave])}`}>
+                    {valores.map((n) => <i key={n} className={n <= (ev.puntuaciones[c.clave] || 0) ? "on" : ""} />)}
                     <b>{ev.puntuaciones[c.clave] ?? "—"}</b>
                   </span>
                 </li>

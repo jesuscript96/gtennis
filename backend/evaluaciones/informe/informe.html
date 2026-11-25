@@ -311,7 +311,7 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
 <!-- ===== Página de preparación física ===== -->
 <section class="fisico-pag">
   <div class="banda fisica">
-    <div class="txt"><h2>{{ t.fisico_titulo }}</h2><p>{{ t.fisico_sub }}</p></div>
+    <div class="txt"><h2>{{ t.fisico_titulo }}</h2><p>{{ fisico.sub }}</p></div>
     <div class="leyenda">{{ fisico.evaluador }}</div>
   </div>
   <div class="ancho">
@@ -325,7 +325,7 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
               <circle cx="31" cy="31" r="26" fill="none" stroke="#c96442" stroke-width="6" stroke-linecap="round"
                 stroke-dasharray="{{ b.arco }} 200" transform="rotate(-90 31 31)"/>
             </svg>
-            <div class="valor">{{ b.media }}<small>/ 5</small></div>
+            <div class="valor">{{ b.media }}<small>/ {{ fisico.escala }}</small></div>
           </div>
           <div class="nombre">{{ b.corto }}{% if b.evol %} <span class="evol {{ b.evol.dir }}">{{ b.evol.txt }}</span>{% endif %}</div>
         </td>
@@ -339,11 +339,11 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
           <table class="bloque-cab"><tr>
             <td class="num"><div class="chapa">{{ forloop.counter }}</div></td>
             <td class="tit">{{ b.titulo }}</td>
-            <td class="prom">{{ b.media }} <small>/ 5</small></td>
+            <td class="prom">{{ b.media }} <small>/ {{ fisico.escala }}</small></td>
           </tr></table>
           <div class="bloque-cuerpo"><table class="crits">
             {% for c in b.criterios %}
-            <tr><td>{{ c.etiqueta }}</td><td class="seg">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
+            <tr><td>{{ c.etiqueta }}</td><td class="seg{% if fisico.escala > 5 %} diez{% endif %}">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
             {% endfor %}
           </table></div>
         </td>
@@ -355,11 +355,11 @@ h1, h2, h3 { font-family: "Fraunces"; font-weight: 600; margin: 0; letter-spacin
           <table class="bloque-cab"><tr>
             <td class="num"><div class="chapa">3</div></td>
             <td class="tit">{{ b.titulo }}</td>
-            <td class="prom">{{ b.media }} <small>/ 5</small></td>
+            <td class="prom">{{ b.media }} <small>/ {{ fisico.escala }}</small></td>
           </tr></table>
           <div class="bloque-cuerpo"><table class="crits">
             {% for c in b.criterios %}
-            <tr><td>{{ c.etiqueta }}</td><td class="seg">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
+            <tr><td>{{ c.etiqueta }}</td><td class="seg{% if fisico.escala > 5 %} diez{% endif %}">{% for on in c.segmentos %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}</td><td class="n">{{ c.nota }}</td></tr>
             {% endfor %}
           </table></div>
         </td>

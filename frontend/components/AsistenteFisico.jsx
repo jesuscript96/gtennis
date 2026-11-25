@@ -2,15 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { getEvaluacionFisicaAnterior, guardarEvaluacionFisica, terminarEvaluacionFisica } from "../lib/api";
+import { leyendaFisico, tramoFisico } from "../lib/informes";
 import { fmtLarga } from "../lib/torneos";
 
 /**
- * La evaluación física paso a paso: un paso por bloque (notas del 1 al 5 con
- * la escala del club) y un último paso con las observaciones del preparador.
+ * La evaluación física paso a paso: un paso por bloque (notas con la escala
+ * del club: del 1 al 10 en Alto rendimiento desde el 25/11/2026, del 1 al 5 en
+ * tardes) y un último paso con las observaciones del preparador.
  * Cada «Siguiente» guarda en el servidor, así que se puede dejar a medias.
  */
 export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCambio, onTerminada }) {
-  const { bloques, textos, escala } = catalogo;
+  const { bloques, textos } = catalogo;
+  const maximo = evaluacion.escala || 5;
+  const valores = Array.from({ length: maximo }, (_, i) => i + 1);
   const pasoTextos = bloques.length;
   const primerIncompleto = bloques.findIndex((b) => b.criterios.some((c) => !(c.clave in evaluacion.puntuaciones)));
   const [ev, setEv] = useState(evaluacion);
@@ -26,7 +30,7 @@ export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCa
     getEvaluacionFisicaAnterior(evaluacion.jugador).then((r) => setAntes(r.anterior)).catch(() => {});
   }, [evaluacion.jugador]);
 
-  const etiqueta = (n) => escala.find((e) => e.valor === n)?.etiqueta || "";
+  const etiqueta = (n, esc = maximo) => tramoFisico(catalogo, n, esc);
   const actualizar = (nuevo) => { setEv(nuevo); onCambio?.(nuevo); };
 
   useEffect(() => {
@@ -83,7 +87,7 @@ export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCa
         <div className="card eval-paso">
           <h2>{bloques[paso].titulo}</h2>
           <p className="eval-nota fis-escala">
-            {escala.map((e) => <span key={e.valor}><b>{e.valor}</b> {e.etiqueta}</span>)}
+            {leyendaFisico(catalogo, maximo).map((e) => <span key={e.valor}><b>{e.valor}</b> {e.etiqueta}</span>)}
           </p>
           <div className="eval-criterios">
             {bloques[paso].criterios.map((c) => (
@@ -92,15 +96,15 @@ export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCa
                   <span className="eval-criterio-nombre" id={`lbl-${c.clave}`}>{c.etiqueta}
                     {antes?.puntuaciones?.[c.clave] ? (
                       <span className="eval-antes-nota" title={`Nota de la evaluación anterior (${fmtLarga(antes.fecha)})`}>
-                        antes: {antes.puntuaciones[c.clave]} · {etiqueta(antes.puntuaciones[c.clave])}
+                        antes: {antes.puntuaciones[c.clave]}/{antes.escala || 5} · {etiqueta(antes.puntuaciones[c.clave], antes.escala || 5)}
                       </span>
                     ) : null}
                   </span>
                   <span className="fis-pregunta">{c.pregunta}</span>
                 </div>
                 <div className="fis-respuesta">
-                  <div className="eval-notas" role="radiogroup" aria-labelledby={`lbl-${c.clave}`}>
-                    {[1, 2, 3, 4, 5].map((n) => (
+                  <div className={`eval-notas${maximo > 5 ? " diez" : ""}`} role="radiogroup" aria-labelledby={`lbl-${c.clave}`}>
+                    {valores.map((n) => (
                       <button key={n} type="button" role="radio" aria-checked={notas[c.clave] === n}
                         title={etiqueta(n)} className={notas[c.clave] === n ? "activa" : ""}
                         onClick={() => setNotas((prev) => ({ ...prev, [c.clave]: n }))}>{n}</button>

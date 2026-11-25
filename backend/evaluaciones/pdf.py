@@ -97,7 +97,8 @@ def _foto(jugador):
     return ""
 
 
-# Los textos que hablan de la escala del tenis (la física sigue del 1 al 5).
+# Los textos que hablan de la escala del tenis; el de la física
+# (`fisico_sub`) va aparte, con la escala de la evaluación física.
 _TEXTOS_ESCALA = ("sobre", "nota_media", "escala_corta", "escala")
 
 
@@ -229,27 +230,36 @@ def anterior(inf):
 def datos_fisico(inf, idioma):
     ev = inf.fisica
     en = idioma == "EN"
+    escala = ev.escala or 5
     previo = anterior(inf)
     prev_p = previo.fisica.puntuaciones if previo and previo.fisica else None
+    # Si el anterior se puntuó con otra escala (del 1 al 5), se lleva a la de ahora.
+    factor = escala / (previo.fisica.escala or 5) if prev_p else 1
     bloques = []
     for b in catalogo.BLOQUES_FISICO:
         claves = [c[0] for c in b["criterios"]]
         media = _media(ev.puntuaciones, claves)
+        antes = _media(prev_p, claves) if prev_p else None
         bloques.append({
             "titulo": catalogo.FISICO_EN[b["clave"]] if en else b["titulo"],
             "corto": catalogo.CORTO_FISICO[b["clave"]][1 if en else 0],
             "media": _num(media, idioma),
-            "arco": f"{(media or 0) / 5 * PERIMETRO:.2f}",
-            "evol": _evol(media, _media(prev_p, claves) if prev_p else None, idioma),
+            "arco": f"{(media or 0) / escala * PERIMETRO:.2f}",
+            "evol": _evol(media, None if antes is None else antes * factor, idioma),
             "criterios": [{
                 "etiqueta": catalogo.FISICO_EN[k] if en else e,
                 "nota": ev.puntuaciones.get(k) or "—",
-                "segmentos": [bool(ev.puntuaciones.get(k)) and i < ev.puntuaciones.get(k) for i in range(5)],
+                "segmentos": [bool(ev.puntuaciones.get(k)) and i < ev.puntuaciones.get(k) for i in range(escala)],
             } for k, e, _ in b["criterios"]],
         })
     textos = traduccion.fisica(ev, idioma)
     t = TEXTOS[idioma]
+    sub = t["fisico_sub"]
+    if escala != 5:
+        sub = sub.replace("del 1 al 5", f"del 1 al {escala}").replace("from 1 to 5", f"from 1 to {escala}")
     return {
+        "escala": escala,
+        "sub": sub,
         "evaluador": ev.nombre_evaluador,
         "bloques": bloques,
         "textos": [{"etiqueta": catalogo.FISICO_EN[k] if en else e, "texto": textos.get(k, "")}
