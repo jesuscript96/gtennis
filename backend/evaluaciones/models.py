@@ -33,8 +33,9 @@ class Evaluacion(models.Model):
 
     # {"drive_preparation": 4, …}: las 34 claves de `catalogo.CRITERIOS`, del 1 a `escala`.
     puntuaciones = models.JSONField(default=dict, blank=True)
-    # Nota máxima de cada criterio (12/11/2026): Alto rendimiento puntúa del
-    # 1 al 10; Competición de tardes y lo anterior, del 1 al 5. db_default:
+    # Nota máxima de cada criterio: del 1 al 10 (Alto rendimiento desde el
+    # 12/11/2026, Competición de tardes desde el 25/11/2026); lo anterior, del 1
+    # al 5. db_default:
     # durante el despliegue el código anterior crea evaluaciones sin esta columna.
     escala = models.PositiveSmallIntegerField(default=5, db_default=5)
     # {"drive": {"original": "…", "pulido": "…", "idioma": "ES"}, …, "competicion": {…}}
@@ -135,9 +136,9 @@ class EvaluacionFisica(models.Model):
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.BORRADOR)
     # {"fis_aceleracion": 4, …}: las 11 claves de `catalogo.CRITERIOS_FISICO`, del 1 a `escala`.
     puntuaciones = models.JSONField(default=dict, blank=True)
-    # Nota máxima de cada criterio (25/11/2026): como el tenis, Alto rendimiento
-    # del 1 al 10 y Competición de tardes del 1 al 5. db_default: durante el
-    # despliegue el código anterior crea evaluaciones sin esta columna.
+    # Nota máxima de cada criterio (25/11/2026): como el tenis, del 1 al 10; lo
+    # anterior, del 1 al 5. db_default: durante el despliegue el código
+    # anterior crea evaluaciones sin esta columna.
     escala = models.PositiveSmallIntegerField(default=5, db_default=5)
     # {"puntos_fuertes": "…", "a_mejorar": "…", "notas_fisio": "…"}
     textos = models.JSONField(default=dict, blank=True)

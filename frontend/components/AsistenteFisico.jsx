@@ -7,8 +7,8 @@ import { fmtLarga } from "../lib/torneos";
 
 /**
  * La evaluación física paso a paso: un paso por bloque (notas con la escala
- * del club: del 1 al 10 en Alto rendimiento desde el 25/11/2026, del 1 al 5 en
- * tardes) y un último paso con las observaciones del preparador.
+ * del club: del 1 al 10 desde el 25/11/2026; las de antes, del 1 al 5) y un
+ * último paso con las observaciones del preparador.
  * Cada «Siguiente» guarda en el servidor, así que se puede dejar a medias.
  */
 export default function AsistenteFisico({ evaluacion, catalogo, pasoInicio, onCambio, onTerminada }) {

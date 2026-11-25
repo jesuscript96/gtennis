@@ -21,7 +21,7 @@ export function pasoInicial(ev, bloques) {
   return i === -1 ? PASO_COMPETICION : i + 1;
 }
 
-// Del 1 al 10 en Alto rendimiento (12/11/2026); del 1 al 5 en tardes y en las de antes.
+// Del 1 al 10 (Alto rendimiento desde el 12/11/2026, tardes desde el 25/11/2026); las de antes, del 1 al 5.
 function Notas({ bloque, notas, onNota, escala = 5, antes }) {
   const valores = Array.from({ length: escala }, (_, i) => i + 1);
   return (

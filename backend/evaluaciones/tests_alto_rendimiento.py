@@ -211,19 +211,21 @@ class ValidaDireccionTests(Base):
 
 
 class EscalaTests(Base):
-    def test_del_1_al_10_en_alto_rendimiento_y_del_1_al_5_en_tardes(self):
+    def test_del_1_al_10_en_alto_rendimiento_y_en_tardes(self):
         c = self.api(self.u_blas)
         ar = c.post("/api/evaluaciones/", {"jugador": self.ana.id}, format="json").json()
         self.assertEqual(ar["escala"], 10)
         url = f"/api/evaluaciones/{ar['id']}/"
         self.assertEqual(c.patch(url, {"puntuaciones": {"drive_impact": 10}}, format="json").status_code, 200)
         self.assertEqual(c.patch(url, {"puntuaciones": {"drive_impact": 11}}, format="json").status_code, 400)
-        # Tardes sigue del 1 al 5.
+        # Tardes, también del 1 al 10 desde el 25/11/2026.
         ct = self.api(self.dir).post("/api/evaluaciones/", {"jugador": self.nino.id}, format="json").json()
-        self.assertEqual(ct["escala"], 5)
-        r = self.api(self.dir).patch(f"/api/evaluaciones/{ct['id']}/", {"puntuaciones": {"drive_impact": 6}},
-                                     format="json")
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(ct["escala"], 10)
+        url = f"/api/evaluaciones/{ct['id']}/"
+        self.assertEqual(self.api(self.dir).patch(url, {"puntuaciones": {"drive_impact": 10}}, format="json")
+                         .status_code, 200)
+        self.assertEqual(self.api(self.dir).patch(url, {"puntuaciones": {"drive_impact": 11}}, format="json")
+                         .status_code, 400)
 
     @SIN_CAPTURA_DE_PLANTILLAS
     @override_settings(ANTHROPIC_API_KEY="", GOOGLE_SERVICE_ACCOUNT_JSON="", DRIVE_INFORMES_ID="")

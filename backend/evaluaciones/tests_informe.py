@@ -154,9 +154,11 @@ class InformeTests(TestCase):
         self.assertEqual((inf.estado, inf.version), ("PENDIENTE", 2))
 
     def test_pdf_conjunto_con_la_evolucion(self):
+        # El anterior, del 1 al 5 (un 1 es un 2 de 10); el de ahora, 3 de 10: sube.
         anterior = Informe.objects.create(
             jugador=self.nino, estado="VALIDADO", validado_en=timezone.now() - timedelta(days=90),
-            tenis=Evaluacion.objects.create(jugador=self.nino, estado="TERMINADA", puntuaciones={k: 2 for k in TENIS}),
+            tenis=Evaluacion.objects.create(jugador=self.nino, estado="TERMINADA", escala=5,
+                                            puntuaciones={k: 1 for k in TENIS}),
             fisica=EvaluacionFisica.objects.create(jugador=self.nino, estado="TERMINADA",
                                                    puntuaciones={k: 3 for k in FISICO}))
         t = self._tenis()

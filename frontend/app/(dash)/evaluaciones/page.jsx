@@ -65,11 +65,11 @@ function Tenis({ pestanas }) {
       <div className="page-head"><h1>Evaluaciones</h1></div>
       {pestanas}
       <p className="help">
-        El <b>Informe de Rendimiento</b> de un jugador: notas del 1 al 5 por bloque y, si quieres, un
+        El <b>Informe de Rendimiento</b> de un jugador: notas del 1 al 10 por bloque y, si quieres, un
         comentario, escrito o dictado con el micrófono del teclado. Al final escribes sus fortalezas y
         lo que tiene que mejorar, y Claude lo deja bien redactado sin cambiarle el sentido.
         En <b>Alto rendimiento</b> evalúas a los jugadores de tu grupo (el head coach, a los de su
-        color) del 1 al 10; al terminar, el informe pasa a validar (lo validan el <b>head coach</b> de su
+        color); al terminar, el informe pasa a validar (lo validan el <b>head coach</b> de su
         color y <b>dirección</b>) y, si te lo devuelven, te llega un aviso con lo que hay que corregir.
       </p>
 
@@ -187,7 +187,7 @@ function FisicoHechas() {
     <>
       <p className="help">
         La parte de <b>preparación física</b> del informe trimestral de cada jugador de Competición de
-        tardes y de Alto rendimiento: 11 aspectos del 1 al 5 en tres bloques y tus observaciones. Se
+        tardes y de Alto rendimiento: 11 aspectos del 1 al 10 en tres bloques y tus observaciones. Se
         guarda bloque a bloque, así que puedes dejarla a medias y seguir otro día. En Competición de
         tardes el informe espera a que estén tenis y física; en Alto rendimiento la física se suma al
         informe de tenis (en el mismo PDF) y no hace falta para validarlo, pero si la empiezas hay que

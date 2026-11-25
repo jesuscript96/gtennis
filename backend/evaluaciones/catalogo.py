@@ -1,7 +1,8 @@
 """Bloques y criterios del Informe de Rendimiento de Alto Rendimiento.
 
 Sale de la especificación del club (apartado 4.2): ocho bloques técnicos, 34
-criterios del 1 al 5 (del 1 al 10 en Alto rendimiento desde el 12/11/2026) y un comentario por bloque. El orden de cada lista es el
+criterios del 1 al 10 (antes del 1 al 5: Alto rendimiento cambió el 12/11/2026 y
+Competición de tardes el 25/11/2026) y un comentario por bloque. El orden de cada lista es el
 orden en que se puntúa y en que sale en el fichero. Las claves (`drive_impact`…)
 van siempre en inglés y en minúsculas, sea cual sea el idioma del informe.
 """
@@ -109,9 +110,11 @@ def es_nada(texto):
     return not t or t in _NADA
 
 
-# Del 1 al 10 en Alto rendimiento (Sergio, 12/11/2026); tardes sigue del 1 al 5.
+# Del 1 al 10: Alto rendimiento desde el 12/11/2026 (Sergio) y Competición de
+# tardes desde el 25/11/2026, tenis y física. Cada evaluación guarda su escala,
+# así que las de antes (del 1 al 5) se siguen leyendo bien.
 ESCALA_ALTO_RENDIMIENTO = 10
-ESCALA_TARDES = 5
+ESCALA_TARDES = 10
 
 
 def escala_de(jugador):
@@ -137,7 +140,7 @@ def para_api():
 # criterios en tres bloques y tres textos del preparador. Lo rellena el
 # preparador físico (o gestión deportiva) y va en el mismo PDF que el de tenis.
 # Se puntúa con la misma escala que el tenis del jugador (`escala_de`): del 1
-# al 10 en Alto rendimiento desde el 25/11/2026, del 1 al 5 en tardes.
+# al 10 desde el 25/11/2026 (antes, del 1 al 5).
 
 # Los cinco tramos del club. Del 1 al 10, cada tramo son dos notas (1-2 muy
 # deficiente, 3-4 insuficiente…): lo pinta así el asistente de la web.
