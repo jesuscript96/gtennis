@@ -606,6 +606,7 @@ function ReglasJugador({ jugador }) {
           <label>Tipo
             <select value={nuevo.tipo_pareja || "SOFT"} onChange={(e) => setNuevo({ ...nuevo, tipo_pareja: e.target.value })}>
               <option value="SOFT">Si se puede</option><option value="HARD">Siempre en la misma pista</option>
+              <option value="SIN_TOPE">Pueden repetir más días (sin tope)</option>
             </select>
           </label>
         )}

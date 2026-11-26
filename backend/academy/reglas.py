@@ -79,9 +79,12 @@ def anadir(j, datos):
         otro = Jugador.objects.get(pk=_num(datos, "jugador"))
         if otro.pk == j.pk:
             raise ValueError("La pareja tiene que ser otro jugador.")
+        tipo_pareja = datos.get("tipo_pareja") or PreferenciaPareja.Tipo.SOFT
+        if tipo_pareja not in PreferenciaPareja.Tipo.values:
+            raise ValueError("Tipo de pareja desconocido.")
         PreferenciaPareja.objects.update_or_create(
             jugador=j, jugador_objetivo=otro,
-            defaults={"tipo": datos.get("tipo_pareja") or PreferenciaPareja.Tipo.SOFT, "activa": True})
+            defaults={"tipo": tipo_pareja, "activa": True})
     elif tipo == "franja":
         PreferenciaEntrenadorFranja.objects.update_or_create(
             jugador=j, turno=Turno.objects.get(pk=_num(datos, "turno")),

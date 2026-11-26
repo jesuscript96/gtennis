@@ -518,18 +518,25 @@ def _grupos_de_turnos(turnos, exclusivos):
     return sorted(grupos.values(), key=lambda g: min(t.orden for t in g))
 
 
-def _dias_juntos(semana, dia, rehechos=()) -> dict[tuple[int, int], set[int]]:
+def _dias_juntos(semana, dia, rehechos=(), hoy=None) -> dict[tuple[int, int], set[int]]:
     """(a, b) -> los OTROS días de la semana en que ya comparten pista.
 
-    Cuenta toda la semana, no solo lo anterior: si se rehace el miércoles con
-    el jueves y el viernes ya hechos, esos días también cuentan. Lo que no
-    cuenta es lo que está a punto de rehacerse (los días posteriores de esta
-    misma generación), porque se va a borrar. Mañana y tarde del mismo día
-    son un solo día.
+    Cuentan los días anteriores y los que ya han pasado. De los que aún están
+    por venir solo cuenta lo puesto a mano (26/11/2026): lo demás es
+    provisional, porque cada día se rehace a las 19:00 del anterior. Antes
+    contaba toda la semana y el viernes provisional de María y Silvia les
+    gastó el tope del jueves. Lo que está a punto de rehacerse en esta misma
+    generación tampoco cuenta. Mañana y tarde del mismo día son un solo día.
     """
+    from django.utils import timezone as _tz
+
+    hoy = hoy or _tz.localdate()
+    por_venir = [d for d in range(7)
+                 if d > dia and semana.fecha_inicio + timedelta(days=d) > hoy]
     por_celda = defaultdict(list)
     qs = Asignacion.objects.filter(semana=semana).exclude(dia=dia).exclude(
-        dia__in=[d for d in rehechos if d > dia])
+        dia__in=[d for d in rehechos if d > dia]).exclude(
+        dia__in=por_venir, manual=False)
     for a in qs.values_list("dia", "turno_id", "pista_id", "jugador_id"):
         por_celda[a[:3]].append(a[3])
     out: dict[tuple[int, int], set[int]] = defaultdict(set)
@@ -1368,22 +1375,33 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
         return all(abierta(tid, c) for c in resort if c.surface == "RESINA")
 
     def compartible(tid, jid):
-        """El entrenador de Satélites que en esta franja lleva una sola pista:
-        la siguiente que se abra va con él (uno por cada dos pistas)."""
+        """(entrenador, su pista) de Satélites que en esta franja lleva una sola
+        pista y no atiende ya a la de al lado: la siguiente que se abra va con
+        él (uno por cada dos pistas). (None, None) si no hay."""
         cuenta = Counter(coach_de.get((tid, c.id)) for c in satelites if abierta(tid, c))
+        sin_nadie = {c.number for c in satelites
+                     if abierta(tid, c) and coach_de.get((tid, c.id)) is None}
         for c in por_numero(satelites):
             coach = coach_de.get((tid, c.id))
             if (coach and abierta(tid, c) and cuenta[coach] == 1
+                    and not (c.number is not None
+                             and {c.number - 1, c.number + 1} & sin_nadie)
                     and coach not in no_vigilan
                     and coach not in vetos_coach.get(jid, ())):
-                return coach
-        return None
+                return coach, c
+        return None, None
 
-    def satelite_libre(tid, superficie):
-        """La primera pista de Satélites de esa superficie vacía en la franja;
-        None si hay que montar otra."""
-        return next((c for c in por_numero(satelites)
-                     if c.surface == superficie and not abierta(tid, c)), None)
+    def satelite_libre(tid, superficie, cerca=None):
+        """La pista de Satélites de esa superficie vacía en la franja: la de al
+        lado de `cerca` si se puede (la que atiende su entrenador), si no la
+        primera. None si hay que montar otra."""
+        vacias = [c for c in por_numero(satelites)
+                  if c.surface == superficie and not abierta(tid, c)]
+        if cerca is not None and cerca.number is not None:
+            junto = [c for c in vacias if c.number in (cerca.number - 1, cerca.number + 1)]
+            if junto:
+                return junto[0]
+        return vacias[0] if vacias else None
 
     def montar(superficie):
         """Una pista más en Satélites: una de esa superficie que no esté en la
@@ -1492,9 +1510,9 @@ def _rescatar(semana, dia, grupo, fuera, por_id, franjas_de, cfg, vetoes,
             superficie = yo.surface_pref or "TIERRA"
             if superficie == "RESINA" and not resina_del_resort_ocupada(tid):
                 continue
-            c = satelite_libre(tid, superficie)
+            compartido, suya = compartible(tid, jid)
+            c = satelite_libre(tid, superficie, cerca=suya)
             n = 100 + (c.number if c is not None and c.number else 999)
-            compartido = compartible(tid, jid)
             if compartido:
                 opciones.append(((2, 0, en_franja(tid), n, tid),
                                  (c, compartido, [], True, superficie)))
@@ -1759,6 +1777,48 @@ def _trios_en_satelites(semana, dia, grupo, por_id, cfg, vetoes, vetos_coach, at
                          "sale": [a.jugador_id]})
                 cambios += 1
     return cambios
+
+
+def _vigiladas_en_satelites(semana, dia, grupo, nivel_protegido=0, coach_share=None,
+                            report=None):
+    """En Satélites, de las dos pistas de un entrenador, la de al lado se queda
+    sin entrenador: él la atiende desde la suya (26/11/2026, como la 2 y la 5
+    del Resort). Hasta aquí el motor le pone en las dos para llevar la cuenta
+    de «uno por cada dos pistas»; al final se queda en una. Se queda con él la
+    de divisiones protegidas (D1-D2), luego la de más jugadores, luego la de
+    nivel más alto y luego la de número más bajo. La otra no lleva aviso: está
+    atendida. Lo puesto a mano no se toca. Devuelve cuántas ha dejado así."""
+    filas = defaultdict(list)
+    for a in (Asignacion.objects.filter(semana=semana, dia=dia, turno__in=grupo,
+                                        pista__sede__es_satelite=True)
+              .select_related("pista", "jugador__division")):
+        filas[(a.turno_id, a.pista_id)].append(a)
+    unidades = defaultdict(list)
+    for (tid, pid), fs in filas.items():
+        coach = next((a.entrenador_id for a in fs if a.entrenador_id), None)
+        if coach:
+            unidades[(tid, coach)].append(pid)
+
+    def clave(tid, pid):
+        fs = filas[(tid, pid)]
+        alto = min((a.jugador.division.nivel for a in fs if a.jugador.division_id), default=99)
+        protegida = bool(nivel_protegido) and alto <= nivel_protegido
+        return (not protegida, -len(fs), alto, fs[0].pista.numero or 0)
+
+    hechas = 0
+    for (tid, coach), pistas in unidades.items():
+        if len(pistas) != 2 or any(a.manual for p in pistas for a in filas[(tid, p)]):
+            continue
+        _suya, atendida = sorted(pistas, key=lambda p: clave(tid, p))
+        for a in filas[(tid, atendida)]:
+            if coach_share is not None and a.entrenador_id:
+                coach_share[(a.jugador_id, a.entrenador_id)] -= 1
+            Asignacion.objects.filter(pk=a.pk).update(entrenador_id=None)
+            for r in (report or {}).get("satelites", []):
+                if (r["dia"], r["jugador"], r["pista"]) == (dia, a.jugador_id, atendida):
+                    r["entrenador"], r["vigilada_por"] = None, coach
+        hechas += 1
+    return hechas
 
 
 def _mismos_en_satelites(semana, dia, grupo, libre, tomar, soltar, vetos_coach,
@@ -2540,9 +2600,16 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
 
     pairs_hard: set = set()
     pairs_soft: set = set()
+    # «Pueden repetir más días» (26/11/2026, María y Silvia): ni obliga ni
+    # empuja a juntarlos; solo les quita el tope de días juntos a la semana y
+    # el castigo por repetir pareja.
+    sin_tope: set = set()
     for pp in PreferenciaPareja.objects.filter(activa=True):
         key = frozenset((pp.jugador_id, pp.jugador_objetivo_id))
-        (pairs_hard if pp.tipo == "HARD" else pairs_soft).add(key)
+        if pp.tipo == PreferenciaPareja.Tipo.SIN_TOPE:
+            sin_tope.add(key)
+        else:
+            (pairs_hard if pp.tipo == "HARD" else pairs_soft).add(key)
     # Las declaradas a mano saltan las reglas de emparejamiento; las parejas
     # que el motor se inventa por la mañana para repetirlas por la tarde, no.
     pairs_declaradas = pairs_hard | pairs_soft
@@ -2612,7 +2679,8 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
         # entrenador acaba en los dos a la vez.
         ocupacion_coach: dict[int, list] = defaultdict(list)
         overrides = _overrides(semana, dia)
-        recent = _recent_partners(semana, dia)
+        recent = {k: v for k, v in _recent_partners(semana, dia).items()
+                  if k not in sin_tope}
         horario_hoy = _horario_del_dia(
             horario, invitados, semana.fecha_inicio + timedelta(days=dia), dia,
             turno_por_codigo)
@@ -2622,6 +2690,7 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
         topados = {
             par for par, dias_par in _dias_juntos(semana, dia, dias).items()
             if cfg.max_dias_misma_pista and len(dias_par) >= cfg.max_dias_misma_pista
+            and frozenset(par) not in sin_tope
         }
         vetoes_dia = vetoes | topados
         libres = {frozenset(p) for p in topados}
@@ -3160,6 +3229,10 @@ def generate(semana: Semana, dias=None, bloques=None, mantener_manual=True) -> d
                         coach_share=coach_share, report=report,
                         responsable_de=responsable_de, libres_de=libres_rescate,
                         directiva=set(banquillo_orden),
+                    )
+                    _vigiladas_en_satelites(
+                        semana, dia, grupo, cfg.nivel_protegido,
+                        coach_share=coach_share, report=report,
                     )
                 for jid, a in metidos.items():
                     player_sessions[jid] += 1

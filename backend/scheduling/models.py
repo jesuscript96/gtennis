@@ -432,11 +432,12 @@ class ConfiguracionMotor(models.Model):
         default=10, help_text="Penalización por repetir pareja (rotación)."
     )
     max_dias_misma_pista = models.PositiveSmallIntegerField(
-        default=3,
+        default=2,
         verbose_name="Máx. días juntos a la semana",
         help_text="Regla dura: dos alumnos no comparten pista más de estos "
-                  "días en la semana, aunque tengan la pareja declarada. "
-                  "Mañana y tarde del mismo día cuentan como uno. 0 = sin tope.",
+                  "días en la semana, aunque tengan la pareja declarada (salvo "
+                  "las parejas que «pueden repetir más días»). Mañana y tarde "
+                  "del mismo día cuentan como uno. 0 = sin tope.",
     )
     aplicar_vecindad = models.BooleanField(
         default=True, help_text="Aplicar la regla de vecindad de divisiones."

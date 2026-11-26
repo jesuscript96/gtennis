@@ -215,14 +215,19 @@ class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
         self.assertEqual((a.pista, a.entrenador, a.forzada), (self.sat[0], sergio, False))
         self.assertEqual(rep["satelites"][0]["entrenador"], sergio.id)
 
-    def test_la_segunda_pista_va_con_el_mismo_entrenador(self):
+    def test_la_segunda_pista_la_atiende_el_de_al_lado(self):
+        # 26/11/2026: la de al lado se queda sin entrenador y sin aviso; Sergio
+        # se queda en la de la D2 (división protegida) y no sale Ivan.
         self.resort_lleno()
         sergio = self.banquillo("Sergio", 2)
         self.banquillo("Ivan", 3)
         a, b = self.jugador("Uno", 2), self.jugador("Dos", 9)
-        generate(self.semana, dias=[0], bloques=["MANANA"])
+        rep = generate(self.semana, dias=[0], bloques=["MANANA"])
         self.assertEqual({self.de(a).pista, self.de(b).pista}, set(self.sat))
-        self.assertEqual((self.de(a).entrenador, self.de(b).entrenador), (sergio, sergio))
+        self.assertEqual((self.de(a).entrenador, self.de(b).entrenador), (sergio, None))
+        self.assertFalse(self.de(b).forzada)
+        vigilada = next(r for r in rep["satelites"] if r["jugador"] == b.id)
+        self.assertEqual(vigilada["vigilada_por"], sergio.id)
 
     def test_un_entrenador_por_cada_dos_pistas(self):
         self.resort_lleno()
@@ -233,7 +238,9 @@ class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
         generate(self.semana, dias=[0], bloques=["MANANA"])
         por_pista = {self.de(j).pista_id: self.de(j).entrenador for j in jugadores}
         self.assertEqual(len(por_pista), 5)
-        self.assertEqual(Counter(por_pista.values()), {sergio: 2, ivan: 2, jorge: 1})
+        # Tres entrenadores: dos pistas atendidas desde la de al lado.
+        self.assertEqual(Counter(por_pista.values()), {sergio: 1, ivan: 1, jorge: 1, None: 2})
+        self.assertFalse(any(self.de(j).forzada for j in jugadores))
 
     def test_la_tercera_saca_otro_y_si_no_hay_va_sin_entrenador(self):
         self.resort_lleno()
@@ -241,9 +248,11 @@ class ResortPrimeroYBanquilloTests(SatelitesDeRescateTests):
         jugadores = self.sueltos(3)
         generate(self.semana, dias=[0], bloques=["MANANA"])
         entrenadores = Counter(self.de(j).entrenador for j in jugadores)
-        self.assertEqual(entrenadores, {sergio: 2, None: 1})
-        sin = next(self.de(j) for j in jugadores if self.de(j).entrenador is None)
-        self.assertTrue(sin.forzada)
+        self.assertEqual(entrenadores, {sergio: 1, None: 2})
+        # Una atendida por Sergio desde la de al lado (sin aviso) y otra sin
+        # nadie (con aviso).
+        self.assertEqual(sorted(self.de(j).forzada for j in jugadores
+                                if self.de(j).entrenador is None), [False, True])
 
 
 class DirectivaNoVaASatelitesTests(SatelitesDeRescateTests):
@@ -547,7 +556,8 @@ class TrioQuePuedeEntrenarJuntoTests(SatelitesDeRescateTests):
         en_resort = {j for j in (r5, r6, d8, d9, d6) if self.donde(j) == self.resort}
         self.assertEqual(en_resort, {d8, d9})
         fuera = [self.de(j) for j in (r5, r6, d6)]
-        self.assertEqual(len({a.entrenador_id for a in fuera}), 1)
+        # Un entrenador en la pista de la pareja; la de al lado, atendida.
+        self.assertEqual(len({a.entrenador_id for a in fuera} - {None}), 1)
         self.assertEqual(len({a.pista_id for a in fuera}), 2)
         self.assertTrue(rep["trios_satelites"])
 
@@ -565,3 +575,67 @@ class SuEntrenadorASatelitesTests(SatelitesDeRescateTests):
         generate(self.semana, dias=[0], bloques=["MANANA"])
         self.assertEqual((self.de(nik).pista.sede, self.de(nik).entrenador),
                          (self.satelites, marta))
+
+
+
+class TopeDeDiasJuntosTests(SatelitesDeRescateTests):
+    """26/11/2026: el tope de días juntos (2) no cuenta los días que aún están
+    por venir (se rehacen la tarde antes) salvo lo puesto a mano, y no se
+    aplica a las parejas que «pueden repetir más días» (María y Silvia)."""
+
+    def setUp(self):
+        super().setUp()
+        self.cfg.max_dias_misma_pista = 2
+        self.cfg.save()
+        self.m2 = Turno.objects.get(codigo="M2")
+
+    def pareja(self):
+        self.a, self.b = self.jugador("María", 9, sexo="CHICA"), self.jugador("Silvia", 9, sexo="CHICA")
+
+    def juntas(self, dia, manual=False):
+        if not hasattr(self, "a"):
+            self.pareja()
+        for j in (self.a, self.b):
+            Asignacion.objects.create(semana=self.semana, dia=dia, turno=self.m2,
+                                      pista=self.resort, jugador=j, manual=manual)
+
+    def topadas(self, dia, hoy):
+        from engine.service import _dias_juntos
+
+        par = tuple(sorted((self.a.id, self.b.id)))
+        return _dias_juntos(self.semana, dia, hoy=hoy).get(par, set())
+
+    def test_lo_que_esta_por_venir_no_cuenta_salvo_a_mano(self):
+        from datetime import timedelta
+
+        self.juntas(0)
+        self.juntas(4)                   # viernes, aún provisional
+        jueves = LUNES + timedelta(days=3)
+        self.assertEqual(self.topadas(3, hoy=jueves), {0})
+        Asignacion.objects.filter(semana=self.semana, dia=4).update(manual=True)
+        self.assertEqual(self.topadas(3, hoy=jueves), {0, 4})
+
+    def test_lo_ya_pasado_cuenta_aunque_vaya_despues(self):
+        from datetime import timedelta
+
+        self.juntas(4)
+        # Rehacer el miércoles cuando el viernes ya ha pasado.
+        self.assertEqual(self.topadas(2, hoy=LUNES + timedelta(days=6)), {4})
+
+    def test_sin_tope_pueden_repetir(self):
+        from academy.models import PreferenciaPareja
+
+        # Ya han ido juntas dos días (ya pasados) y el lunes vienen las dos
+        # solo en M1, donde hay una pista y dos satélites.
+        self.juntas(3, manual=True)
+        self.juntas(4, manual=True)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertNotEqual(self.celda(self.a), self.celda(self.b))
+        PreferenciaPareja.objects.create(jugador=self.a, jugador_objetivo=self.b,
+                                         tipo=PreferenciaPareja.Tipo.SIN_TOPE)
+        generate(self.semana, dias=[0], bloques=["MANANA"])
+        self.assertEqual(self.celda(self.a), self.celda(self.b))
+
+    def celda(self, j):
+        a = Asignacion.objects.filter(semana=self.semana, dia=0, jugador=j).first()
+        return (a.turno_id, a.pista_id)

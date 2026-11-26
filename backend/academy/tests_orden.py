@@ -591,6 +591,17 @@ class ReglasDelJugadorTests(Base):
         r = self.api(self.pablo).post(self.url(), {"tipo": "rencilla", "jugador": self.ana.id}, format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_pareja_que_puede_repetir_mas_dias(self):
+        # 26/11/2026: María y Silvia, sin tope de días juntos.
+        otra = Jugador.objects.create(nombre="Silvia", entrenador_responsable=self.javi)
+        r = self.api(self.dir).post(self.url(), {"tipo": "pareja", "jugador": otra.id,
+                                                 "tipo_pareja": "SIN_TOPE"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([(x["nombre"], x["tipo"]) for x in r.json()["parejas"]], [("Silvia", "SIN_TOPE")])
+        r = self.api(self.dir).post(self.url(), {"tipo": "pareja", "jugador": otra.id,
+                                                 "tipo_pareja": "OTRA"}, format="json")
+        self.assertEqual(r.status_code, 400)
+
     def test_ni_el_entrenador_ni_otro_grupo_las_cambian(self):
         self.assertEqual(self.api(self.u_blas).post(self.url(), {
             "tipo": "rencilla", "jugador": self.ajeno.id}, format="json").status_code, 403)

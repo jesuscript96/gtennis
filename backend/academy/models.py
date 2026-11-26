@@ -987,6 +987,9 @@ class PreferenciaPareja(models.Model):
     class Tipo(models.TextChoices):
         HARD = "HARD", "Obligatoria (misma pista)"
         SOFT = "SOFT", "Preferente (bonus)"
+        # 26/11/2026 (María y Silvia): pueden entrenar juntos más días que el
+        # tope semanal. Ni obliga ni da puntos por juntarlos.
+        SIN_TOPE = "SIN_TOPE", "Pueden repetir más días (sin tope)"
 
     jugador = models.ForeignKey(
         Jugador, on_delete=models.CASCADE, related_name="parejas_pref"
@@ -994,7 +997,7 @@ class PreferenciaPareja(models.Model):
     jugador_objetivo = models.ForeignKey(
         Jugador, on_delete=models.CASCADE, related_name="parejas_pref_objetivo"
     )
-    tipo = models.CharField(max_length=4, choices=Tipo.choices, default=Tipo.HARD)
+    tipo = models.CharField(max_length=8, choices=Tipo.choices, default=Tipo.HARD)
     activa = models.BooleanField(default=True)
 
     class Meta:

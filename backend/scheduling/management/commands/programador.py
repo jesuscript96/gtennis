@@ -70,7 +70,9 @@ def generar_dia(fecha):
                         "como «forzada» en el cuadrante.")
         satelites = informe.get("satelites", [])
         if satelites:
-            sin = sum(1 for s in satelites if not s.get("entrenador"))
+            # La de al lado de su entrenador está atendida (26/11/2026).
+            sin = sum(1 for s in satelites
+                      if not s.get("entrenador") and not s.get("vigilada_por"))
             mensaje += (f" {len(satelites)} jugador(es) no cabían en el Resort y "
                         "van a Satélites"
                         + (f" ({sin} sin entrenador)." if sin else "."))
