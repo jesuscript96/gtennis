@@ -8,6 +8,7 @@ import {
 } from "../../../lib/api";
 import { apuntaATorneos, mandaEnTorneos } from "../../../lib/perms";
 import DeshacerTorneos from "../../../components/DeshacerTorneos";
+import SeleccionMultiple from "../../../components/SeleccionMultiple";
 import {
   CERTEZA_AYUDA, CERTEZA_CLASS, CERTEZA_LABEL, ESTADO_CLASS, MESES, diasHasta, fmtCorta, fmtRango, fmtSemana, hoyISO, inicioEfectivo, lunesDe, nombreCategoria, semanasDe,
   semanasOcupadas, solapa,
@@ -181,7 +182,8 @@ export default function TorneosPage() {
   const [entrenadores, setEntrenadores] = useState([]);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
-  const [circuito, setCircuito] = useState("");
+  // Varios circuitos a la vez (26/11/2026); vacío = todos.
+  const [circuitos, setCircuitos] = useState([]);
   const [mes, setMes] = useState("prox");
   const [soloConJug, setSoloConJug] = useState(false);
   const [sel, setSel] = useState(null);
@@ -208,8 +210,8 @@ export default function TorneosPage() {
     return { desde: `${a}-${String(m).padStart(2, "0")}-01`, hasta: `${a}-${String(m).padStart(2, "0")}-${new Date(a, m, 0).getDate()}` };
   }, [mes, hoy]);
 
-  const cargar = useCallback(() => getTorneos({ q, circuito, ...rango, con_jugadores: soloConJug ? 1 : "" })
-    .then(setItems).catch((e) => setError(e.message)), [q, circuito, rango, soloConJug]);
+  const cargar = useCallback(() => getTorneos({ q, circuito: circuitos, ...rango, con_jugadores: soloConJug ? 1 : "" })
+    .then(setItems).catch((e) => setError(e.message)), [q, circuitos, rango, soloConJug]);
 
   const cargarResumen = useCallback(() => getTorneosResumen().then(setResumen).catch(() => {}), []);
   useEffect(() => { cargarResumen(); }, [cargarResumen]);
@@ -423,10 +425,9 @@ export default function TorneosPage() {
             </optgroup>
           ))}
         </select>
-        <select className="filtro-select" value={circuito} onChange={(e) => setCircuito(e.target.value)}>
-          <option value="">Todos los circuitos</option>
-          {(resumen?.circuitos || []).map((c) => <option key={c.nombre} value={c.nombre}>{c.nombre} ({c.n})</option>)}
-        </select>
+        <SeleccionMultiple
+          opciones={(resumen?.circuitos || []).map((c) => ({ valor: c.nombre, etiqueta: c.nombre, n: c.n }))}
+          valores={circuitos} onChange={setCircuitos} todos="Todos los circuitos" plural="circuitos" />
         <label className="check filtro-check">
           <input type="checkbox" checked={soloConJug} onChange={(e) => setSoloConJug(e.target.checked)} />
           Solo con jugadores

@@ -342,7 +342,11 @@ export const quitarDiasSuperficie = (id, desde, hasta) =>
 // --- Torneos (módulo aparte: comparte jugadores y entrenadores) -----------
 export const getTorneos = async (params = {}) => {
   const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v) p.set(k, v);
+  // Una lista (varios circuitos) va como el mismo parámetro repetido.
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else if (v) p.set(k, v);
+  }
   const s = p.toString();
   return rows(await req(entera(`/torneos/${s ? `?${s}` : ""}`)));
 };

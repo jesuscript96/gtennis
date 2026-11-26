@@ -381,3 +381,15 @@ class CompeticionTardesTests(Base):
         self.assertEqual(mail.outbox[0].to, ["asier@x.es"])
         # Pablo (head coach) no ve el correo de un jugador de tardes.
         self.assertEqual(self.api(self.u_pablo).get(f"/api/torneos-correos/?mes={mes:%Y-%m}").data["filas"], [])
+
+
+class FiltroCircuitosTests(Base):
+    def test_varios_circuitos_a_la_vez(self):
+        Torneo.objects.filter(pk=self.otro.pk).update(circuito="Challenger")
+        Torneo.objects.filter(pk=self.pasado.pk).update(circuito="MARCA")
+        c = self.api(self.u_blas)
+        nombres = lambda url: sorted(t["nombre"] for t in c.get(url).data)  # noqa: E731
+        self.assertEqual(nombres("/api/torneos/?circuito=ITF+Junior"), ["ITF J30 Silla"])
+        self.assertEqual(nombres("/api/torneos/?circuito=ITF+Junior&circuito=Challenger"),
+                         ["ITF J30 Silla", "ITF J30 Valencia"])
+        self.assertEqual(len(c.get("/api/torneos/").data), 3)

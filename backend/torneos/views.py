@@ -173,7 +173,8 @@ class TorneoViewSet(viewsets.ModelViewSet):
     """Calendario de torneos.
 
     Lo ve cualquiera con sesión; lo cambian head coaches y dirección. Filtros: `?desde=&hasta=` (solapamiento),
-    `?q=` (nombre, lugar, circuito, jugador), `?circuito=`, `?jugador=<id>`,
+    `?q=` (nombre, lugar, circuito, jugador), `?circuito=` (se puede repetir:
+    varios circuitos a la vez, 26/11/2026), `?jugador=<id>`,
     `?entrenador=<id>` (acompaña), `?con_jugadores=1`.
     """
 
@@ -199,8 +200,9 @@ class TorneoViewSet(viewsets.ModelViewSet):
         if p.get("hasta"):
             # La previa también cuenta: un torneo cuya previa cae en el tramo sale.
             qs = qs.filter(Q(fecha_inicio__lte=p["hasta"]) | Q(qualy_inicio__lte=p["hasta"]))
-        if p.get("circuito"):
-            qs = qs.filter(circuito=p["circuito"])
+        circuitos = [c for c in p.getlist("circuito") if c]
+        if circuitos:
+            qs = qs.filter(circuito__in=circuitos)
         if p.get("jugador"):
             qs = qs.filter(participantes__jugador_id=p["jugador"])
         if p.get("entrenador"):
